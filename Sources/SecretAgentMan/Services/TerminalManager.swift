@@ -11,7 +11,7 @@ final class TerminalManager {
     private var lastStates: [UUID: AgentState] = [:]
 
     /// Seconds of no output before considering agent idle (ready for input).
-    private let idleThreshold: TimeInterval = 4.0
+    private let idleThreshold: TimeInterval = 5.0
 
     var themeName: String = UserDefaults.standard.string(forKey: "terminalTheme") ?? "Catppuccin Mocha" {
         didSet { applyThemeToAll() }
@@ -83,8 +83,24 @@ final class TerminalManager {
         for (agentId, terminal) in terminals {
             guard terminal.process?.running == true else { continue }
 
-            // Status detection temporarily simplified
-            let newState: AgentState = .active
+            let idle = terminal.secondsSinceMeaningfulData > idleThreshold
+            let hasSubmitted = terminal.userSubmittedAt != nil
+
+            let newState: AgentState
+            if idle {
+                // No meaningful output for a while — Claude is at the prompt
+                if hasSubmitted {
+                    // User has interacted before, Claude finished
+                    newState = .awaitingInput
+                } else {
+                    // Never submitted — still on startup or just loaded
+                    let startedRecently = terminal.secondsSinceMeaningfulData < 15
+                    newState = startedRecently ? .active : .awaitingInput
+                }
+            } else {
+                // Getting meaningful output — Claude is working
+                newState = .active
+            }
 
             if lastStates[agentId] != newState {
                 lastStates[agentId] = newState
