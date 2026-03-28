@@ -15,11 +15,7 @@ struct SecretAgentManApp: App {
             NavigationSplitView {
                 SidebarView(store: store, onRemoveAgent: removeAgent)
             } content: {
-                if store.selectedAgent != nil {
-                    ChangesView(changes: fileChanges, fullDiff: fullDiff)
-                } else {
-                    EmptyStateView()
-                }
+                ChangesView(changes: fileChanges, fullDiff: fullDiff)
             } detail: {
                 GeometryReader { geo in
                     VSplitView {

@@ -12,19 +12,22 @@ struct ChangesView: View {
     }
 
     var body: some View {
-        if changes.isEmpty {
-            ContentUnavailableView(
-                "No Changes",
-                systemImage: "doc.text",
-                description: Text("No file changes detected in this directory")
-            )
-        } else {
+        ZStack {
             VSplitView {
                 fileList
                     .frame(minHeight: 80, idealHeight: 120)
 
                 DiffView(diffText: visibleDiff)
                     .frame(minHeight: 200)
+            }
+            .opacity(changes.isEmpty ? 0 : 1)
+
+            if changes.isEmpty {
+                ContentUnavailableView(
+                    "No Changes",
+                    systemImage: "doc.text",
+                    description: Text("No file changes detected in this directory")
+                )
             }
         }
     }
@@ -67,7 +70,6 @@ struct ChangesView: View {
         .listStyle(.inset)
     }
 
-    /// Extract only the diff hunks for a specific file from the full unified diff.
     private func filterDiff(_ diff: String, forFile path: String) -> String {
         let lines = diff.components(separatedBy: "\n")
         var result: [String] = []
@@ -75,8 +77,6 @@ struct ChangesView: View {
 
         for line in lines {
             if line.hasPrefix("diff --git") {
-                // Check if this diff block is for our target file
-                // Format: "diff --git a/path b/path"
                 inTargetFile = line.contains("b/\(path)")
             }
             if inTargetFile {
