@@ -33,7 +33,7 @@ actor DiffService {
         let vcs = detectVCS(in: directory)
         switch vcs {
         case .jj:
-            return await runCommand("/opt/homebrew/bin/jj", args: ["diff"], in: directory)
+            return await runCommand("/opt/homebrew/bin/jj", args: ["diff", "--git"], in: directory)
         case .git:
             return await runCommand("/usr/bin/git", args: ["diff"], in: directory)
         case .none:

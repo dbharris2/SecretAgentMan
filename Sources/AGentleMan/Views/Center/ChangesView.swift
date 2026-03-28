@@ -4,6 +4,13 @@ struct ChangesView: View {
     let changes: [FileChange]
     let fullDiff: String
 
+    @State private var selectedFile: String?
+
+    private var visibleDiff: String {
+        guard let selected = selectedFile else { return fullDiff }
+        return filterDiff(fullDiff, forFile: selected)
+    }
+
     var body: some View {
         if changes.isEmpty {
             ContentUnavailableView(
@@ -14,23 +21,23 @@ struct ChangesView: View {
         } else {
             VSplitView {
                 fileList
-                    .frame(minHeight: 100)
+                    .frame(minHeight: 80, idealHeight: 120)
 
-                diffView
+                DiffView(diffText: visibleDiff)
                     .frame(minHeight: 200)
             }
         }
     }
 
     private var fileList: some View {
-        List {
+        List(selection: $selectedFile) {
             Section("Changed Files (\(changes.count))") {
                 ForEach(changes) { change in
-                    HStack {
+                    HStack(spacing: 8) {
                         Text(change.status.label)
-                            .font(.system(size: 11, design: .monospaced))
+                            .font(.system(size: 11, weight: .medium, design: .monospaced))
                             .foregroundStyle(statusColor(change.status))
-                            .frame(width: 16)
+                            .frame(width: 14, alignment: .center)
 
                         Text(change.path)
                             .font(.system(size: 12, design: .monospaced))
@@ -39,35 +46,45 @@ struct ChangesView: View {
 
                         Spacer()
 
-                        HStack(spacing: 4) {
+                        HStack(spacing: 6) {
                             if change.insertions > 0 {
                                 Text("+\(change.insertions)")
-                                    .font(.system(size: 11, design: .monospaced))
+                                    .font(.system(size: 11, weight: .medium, design: .monospaced))
                                     .foregroundStyle(.green)
                             }
                             if change.deletions > 0 {
                                 Text("-\(change.deletions)")
-                                    .font(.system(size: 11, design: .monospaced))
+                                    .font(.system(size: 11, weight: .medium, design: .monospaced))
                                     .foregroundStyle(.red)
                             }
                         }
                     }
-                    .padding(.vertical, 1)
+                    .tag(change.path)
+                    .padding(.vertical, 2)
                 }
             }
         }
         .listStyle(.inset)
     }
 
-    private var diffView: some View {
-        ScrollView {
-            Text(fullDiff.isEmpty ? "No diff output" : fullDiff)
-                .font(.system(size: 12, design: .monospaced))
-                .textSelection(.enabled)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(8)
+    /// Extract only the diff hunks for a specific file from the full unified diff.
+    private func filterDiff(_ diff: String, forFile path: String) -> String {
+        let lines = diff.components(separatedBy: "\n")
+        var result: [String] = []
+        var inTargetFile = false
+
+        for line in lines {
+            if line.hasPrefix("diff --git") {
+                // Check if this diff block is for our target file
+                // Format: "diff --git a/path b/path"
+                inTargetFile = line.contains("b/\(path)")
+            }
+            if inTargetFile {
+                result.append(line)
+            }
         }
-        .background(.background.secondary)
+
+        return result.joined(separator: "\n")
     }
 
     private func statusColor(_ status: FileChange.ChangeStatus) -> Color {
