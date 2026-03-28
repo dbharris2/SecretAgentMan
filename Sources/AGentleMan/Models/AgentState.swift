@@ -3,6 +3,7 @@ import SwiftUI
 enum AgentState: String, Hashable {
     case idle
     case active
+    case needsPermission
     case awaitingInput
     case finished
     case error
@@ -10,8 +11,9 @@ enum AgentState: String, Hashable {
     var label: String {
         switch self {
         case .idle: "Idle"
-        case .active: "Active"
-        case .awaitingInput: "Waiting"
+        case .active: "Working"
+        case .needsPermission: "Needs Approval"
+        case .awaitingInput: "Ready"
         case .finished: "Done"
         case .error: "Error"
         }
@@ -20,9 +22,10 @@ enum AgentState: String, Hashable {
     var color: Color {
         switch self {
         case .idle: .secondary
-        case .active: .green
-        case .awaitingInput: .orange
-        case .finished: .blue
+        case .active: .orange
+        case .needsPermission: .red
+        case .awaitingInput: .green
+        case .finished: .secondary
         case .error: .red
         }
     }
@@ -30,10 +33,11 @@ enum AgentState: String, Hashable {
     var systemImage: String {
         switch self {
         case .idle: "circle"
-        case .active: "circle.fill"
-        case .awaitingInput: "hourglass.circle.fill"
-        case .finished: "checkmark.circle.fill"
-        case .error: "exclamationmark.circle.fill"
+        case .active: "bolt.circle.fill"
+        case .needsPermission: "exclamationmark.circle.fill"
+        case .awaitingInput: "circle.fill"
+        case .finished: "checkmark.circle"
+        case .error: "exclamationmark.triangle.fill"
         }
     }
 }

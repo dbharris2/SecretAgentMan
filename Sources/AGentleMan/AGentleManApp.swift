@@ -44,9 +44,13 @@ struct AGentleManApp: App {
             }
             .onAppear {
                 startDiffPolling()
+                terminalManager.startMonitoring { id, state in
+                    store.updateState(id: id, state: state)
+                }
             }
             .onDisappear {
                 diffTimer?.invalidate()
+                terminalManager.stopMonitoring()
             }
         }
         .windowStyle(.titleBar)

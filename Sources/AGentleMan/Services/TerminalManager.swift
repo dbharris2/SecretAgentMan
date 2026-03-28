@@ -3,9 +3,15 @@ import SwiftTerm
 
 @MainActor
 final class TerminalManager {
-    private var terminals: [UUID: LocalProcessTerminalView] = [:]
+    private var terminals: [UUID: MonitoredTerminalView] = [:]
     private var delegates: [UUID: TerminalDelegate] = [:]
-    private let processManager = AgentProcessManager()
+    private var processManager = AgentProcessManager()
+    private var statusTimer: Timer?
+    private var onStateChange: ((UUID, AgentState) -> Void)?
+    private var lastStates: [UUID: AgentState] = [:]
+
+    /// Seconds of no output before considering agent idle (ready for input).
+    private let idleThreshold: TimeInterval = 4.0
 
     var themeName: String = UserDefaults.standard.string(forKey: "terminalTheme") ?? "Catppuccin Mocha" {
         didSet { applyThemeToAll() }
@@ -15,14 +21,30 @@ final class TerminalManager {
         GhosttyThemeLoader.load(named: themeName)
     }
 
-    func terminal(for agent: Agent, onStateChange: @escaping (UUID, AgentState) -> Void) -> LocalProcessTerminalView {
+    func startMonitoring(onStateChange: @escaping (UUID, AgentState) -> Void) {
+        self.onStateChange = onStateChange
+        statusTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.pollStatus()
+            }
+        }
+    }
+
+    func stopMonitoring() {
+        statusTimer?.invalidate()
+        statusTimer = nil
+    }
+
+    func terminal(
+        for agent: Agent,
+        onStateChange: @escaping (UUID, AgentState) -> Void
+    ) -> MonitoredTerminalView {
         if let existing = terminals[agent.id] {
             return existing
         }
 
-        let terminal = LocalProcessTerminalView(frame: .zero)
+        let terminal = MonitoredTerminalView(frame: .zero)
         terminal.font = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
-
         applyTheme(to: terminal)
 
         let delegate = TerminalDelegate(agentId: agent.id, onStateChange: onStateChange)
@@ -38,6 +60,7 @@ final class TerminalManager {
             sessionId: agent.sessionId
         )
 
+        lastStates[agent.id] = .active
         onStateChange(agent.id, .active)
 
         return terminal
@@ -49,20 +72,42 @@ final class TerminalManager {
         }
         terminals.removeValue(forKey: agentId)
         delegates.removeValue(forKey: agentId)
+        lastStates.removeValue(forKey: agentId)
     }
 
     func hasTerminal(for agentId: UUID) -> Bool {
         terminals[agentId] != nil
     }
 
-    private func applyTheme(to terminal: LocalProcessTerminalView) {
-        guard let theme = currentTheme else { return }
+    private func pollStatus() {
+        for (agentId, terminal) in terminals {
+            guard terminal.process?.running == true else { continue }
 
+            let newState: AgentState
+            let idle = terminal.idleSeconds > idleThreshold
+
+            if idle {
+                terminal.userSubmitted = false
+                newState = .awaitingInput
+            } else if terminal.userSubmitted {
+                newState = .active
+            } else {
+                newState = .active
+            }
+
+            if lastStates[agentId] != newState {
+                lastStates[agentId] = newState
+                onStateChange?(agentId, newState)
+            }
+        }
+    }
+
+    private func applyTheme(to terminal: MonitoredTerminalView) {
+        guard let theme = currentTheme else { return }
         terminal.nativeBackgroundColor = theme.background
         terminal.nativeForegroundColor = theme.foreground
         terminal.caretColor = theme.cursorColor
         terminal.selectedTextBackgroundColor = theme.selectionBackground
-
         let swiftTermColors = theme.swiftTermColors.map { nsColorToTermColor($0) }
         terminal.installColors(swiftTermColors)
     }
@@ -93,9 +138,7 @@ final class TerminalDelegate: NSObject, LocalProcessTerminalViewDelegate, @unche
     }
 
     func sizeChanged(source: LocalProcessTerminalView, newCols: Int, newRows: Int) {}
-
     func setTerminalTitle(source: LocalProcessTerminalView, title: String) {}
-
     func hostCurrentDirectoryUpdate(source: TerminalView, directory: String?) {}
 
     func processTerminated(source: TerminalView, exitCode: Int32?) {

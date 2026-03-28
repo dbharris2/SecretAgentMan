@@ -48,7 +48,7 @@ struct TerminalPanelView: NSViewRepresentable {
         }
     }
 
-    private func embed(_ terminal: LocalProcessTerminalView, in container: NSView) {
+    private func embed(_ terminal: MonitoredTerminalView, in container: NSView) {
         // Remove from previous parent if reparenting
         terminal.removeFromSuperview()
         terminal.translatesAutoresizingMaskIntoConstraints = false
