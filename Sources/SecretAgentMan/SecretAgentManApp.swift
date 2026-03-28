@@ -59,6 +59,17 @@ struct SecretAgentManApp: App {
         Settings {
             SettingsView(terminalManager: terminalManager)
         }
+        .commands {
+            CommandMenu("Agents") {
+                let orderedAgents = store.agentsByFolder.flatMap(\.agents)
+                ForEach(Array(orderedAgents.prefix(9).enumerated()), id: \.element.id) { index, agent in
+                    Button(agent.name) {
+                        store.selectedAgentId = agent.id
+                    }
+                    .keyboardShortcut(KeyEquivalent(Character("\(index + 1)")), modifiers: .command)
+                }
+            }
+        }
     }
 
     private func removeAgent(_ id: UUID) {
