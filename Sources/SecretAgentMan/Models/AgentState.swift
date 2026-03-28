@@ -1,6 +1,6 @@
 import SwiftUI
 
-enum AgentState: String, Hashable {
+enum AgentState: String, Hashable, Codable {
     case idle
     case active
     case needsPermission

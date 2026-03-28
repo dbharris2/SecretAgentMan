@@ -1,6 +1,6 @@
 import Foundation
 
-struct Agent: Identifiable, Hashable {
+struct Agent: Identifiable, Hashable, Codable {
     let id: UUID
     var name: String
     var folder: URL

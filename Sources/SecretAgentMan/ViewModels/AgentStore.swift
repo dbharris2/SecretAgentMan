@@ -7,6 +7,17 @@ final class AgentStore {
     var agents: [Agent] = []
     var selectedAgentId: UUID?
 
+    private static let saveURL: URL = {
+        let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("SecretAgentMan", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir.appendingPathComponent("agents.json")
+    }()
+
+    init() {
+        load()
+    }
+
     var selectedAgent: Agent? {
         agents.first { $0.id == selectedAgentId }
     }
@@ -22,6 +33,7 @@ final class AgentStore {
         let agent = Agent(name: name, folder: folder, initialPrompt: initialPrompt)
         agents.append(agent)
         selectedAgentId = agent.id
+        save()
         return agent
     }
 
@@ -30,6 +42,7 @@ final class AgentStore {
         if selectedAgentId == id {
             selectedAgentId = agents.first?.id
         }
+        save()
     }
 
     func updateState(id: UUID, state: AgentState) {
@@ -48,5 +61,31 @@ final class AgentStore {
 
     var awaitingInputCount: Int {
         agents.filter { $0.state == .awaitingInput }.count
+    }
+
+    // MARK: - Persistence
+
+    private func save() {
+        do {
+            let data = try JSONEncoder().encode(agents)
+            try data.write(to: Self.saveURL, options: .atomic)
+        } catch {
+            print("Failed to save agents: \(error)")
+        }
+    }
+
+    private func load() {
+        guard let data = try? Data(contentsOf: Self.saveURL),
+              var loaded = try? JSONDecoder().decode([Agent].self, from: data)
+        else { return }
+
+        // Reset transient state — processes aren't running after restart
+        for i in loaded.indices {
+            loaded[i].state = .idle
+            loaded[i].pid = nil
+        }
+
+        agents = loaded
+        selectedAgentId = agents.first?.id
     }
 }
