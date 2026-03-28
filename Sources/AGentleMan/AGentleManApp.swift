@@ -75,11 +75,11 @@ struct AGentleManApp: App {
         }
 
         Task {
-            let changes = await diffService.fetchChanges(in: agent.folder)
             let diff = await diffService.fetchFullDiff(in: agent.folder)
+            let changes = await diffService.parseChanges(from: diff)
             await MainActor.run {
-                fileChanges = changes
                 fullDiff = diff
+                fileChanges = changes
             }
         }
     }

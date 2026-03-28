@@ -17,18 +17,6 @@ actor DiffService {
         return .none
     }
 
-    func fetchChanges(in directory: URL) async -> [FileChange] {
-        let vcs = detectVCS(in: directory)
-        switch vcs {
-        case .jj:
-            return await runDiffStat(command: "/opt/homebrew/bin/jj", args: ["diff", "--stat"], in: directory)
-        case .git:
-            return await runDiffStat(command: "/usr/bin/git", args: ["diff", "--stat"], in: directory)
-        case .none:
-            return []
-        }
-    }
-
     func fetchFullDiff(in directory: URL) async -> String {
         let vcs = detectVCS(in: directory)
         switch vcs {
@@ -41,9 +29,93 @@ actor DiffService {
         }
     }
 
-    private func runDiffStat(command: String, args: [String], in directory: URL) async -> [FileChange] {
-        let output = await runCommand(command, args: args, in: directory)
-        return parseDiffStat(output)
+    /// Extract file changes directly from unified diff output (no truncation).
+    func parseChanges(from diff: String) -> [FileChange] {
+        var changes: [FileChange] = []
+        let lines = diff.components(separatedBy: "\n")
+
+        var currentPath: String?
+        var insertions = 0
+        var deletions = 0
+        var isNewFile = false
+        var isDeletedFile = false
+
+        for line in lines {
+            if line.hasPrefix("diff --git") {
+                // Flush previous file
+                if let path = currentPath {
+                    let status = fileStatus(
+                        isNew: isNewFile,
+                        isDeleted: isDeletedFile,
+                        insertions: insertions,
+                        deletions: deletions
+                    )
+                    changes.append(FileChange(
+                        id: path,
+                        path: path,
+                        insertions: insertions,
+                        deletions: deletions,
+                        status: status
+                    ))
+                }
+
+                // Parse path from "diff --git a/path b/path"
+                currentPath = extractPath(from: line)
+                insertions = 0
+                deletions = 0
+                isNewFile = false
+                isDeletedFile = false
+            } else if line.hasPrefix("new file") {
+                isNewFile = true
+            } else if line.hasPrefix("deleted file") {
+                isDeletedFile = true
+            } else if line.hasPrefix("+"), !line.hasPrefix("+++") {
+                insertions += 1
+            } else if line.hasPrefix("-"), !line.hasPrefix("---") {
+                deletions += 1
+            }
+        }
+
+        // Flush last file
+        if let path = currentPath {
+            let status = fileStatus(
+                isNew: isNewFile,
+                isDeleted: isDeletedFile,
+                insertions: insertions,
+                deletions: deletions
+            )
+            changes.append(FileChange(
+                id: path,
+                path: path,
+                insertions: insertions,
+                deletions: deletions,
+                status: status
+            ))
+        }
+
+        return changes
+    }
+
+    private func extractPath(from diffLine: String) -> String {
+        // "diff --git a/some/path b/some/path" → "some/path"
+        let parts = diffLine.components(separatedBy: " b/")
+        if parts.count >= 2 {
+            return parts.last!
+        }
+        return diffLine
+    }
+
+    private func fileStatus(
+        isNew: Bool,
+        isDeleted: Bool,
+        insertions: Int,
+        deletions: Int
+    ) -> FileChange.ChangeStatus {
+        if isNew { return .added }
+        if isDeleted { return .deleted }
+        if deletions == 0, insertions > 0 { return .added }
+        if insertions == 0, deletions > 0 { return .deleted }
+        return .modified
     }
 
     private func runCommand(_ command: String, args: [String], in directory: URL) async -> String {
@@ -64,47 +136,5 @@ actor DiffService {
         } catch {
             return ""
         }
-    }
-
-    func parseDiffStat(_ output: String) -> [FileChange] {
-        var changes: [FileChange] = []
-        let lines = output.components(separatedBy: "\n")
-
-        for line in lines {
-            // Match lines like: " src/file.ts | 5 ++--" or " src/file.ts | 5 +++--"
-            let trimmed = line.trimmingCharacters(in: .whitespaces)
-            guard trimmed.contains("|") else { continue }
-
-            let parts = trimmed.components(separatedBy: "|")
-            guard parts.count == 2 else { continue }
-
-            let path = parts[0].trimmingCharacters(in: .whitespaces)
-            let statsStr = parts[1].trimmingCharacters(in: .whitespaces)
-
-            // Skip the summary line (e.g. "3 files changed, 10 insertions(+)")
-            guard !statsStr.contains("changed") else { continue }
-
-            let insertions = statsStr.filter { $0 == "+" }.count
-            let deletions = statsStr.filter { $0 == "-" }.count
-
-            let status: FileChange.ChangeStatus
-            if deletions == 0, insertions > 0 {
-                status = .added
-            } else if insertions == 0, deletions > 0 {
-                status = .deleted
-            } else {
-                status = .modified
-            }
-
-            changes.append(FileChange(
-                id: path,
-                path: path,
-                insertions: insertions,
-                deletions: deletions,
-                status: status
-            ))
-        }
-
-        return changes
     }
 }
