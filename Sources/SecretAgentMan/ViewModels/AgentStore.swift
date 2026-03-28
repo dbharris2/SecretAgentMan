@@ -45,6 +45,12 @@ final class AgentStore {
         save()
     }
 
+    func renameAgent(id: UUID, name: String) {
+        guard let index = agents.firstIndex(where: { $0.id == id }) else { return }
+        agents[index].name = name
+        save()
+    }
+
     func updateState(id: UUID, state: AgentState) {
         guard let index = agents.firstIndex(where: { $0.id == id }) else { return }
         agents[index].state = state
