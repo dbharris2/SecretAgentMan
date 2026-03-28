@@ -4,6 +4,7 @@ import SwiftUI
 struct SecretAgentManApp: App {
     @State private var store = AgentStore()
     @State private var terminalManager = TerminalManager()
+    @State private var shellManager = ShellManager()
     @State private var diffService = DiffService()
     @State private var fileChanges: [FileChange] = []
     @State private var fullDiff: String = ""
@@ -20,20 +21,21 @@ struct SecretAgentManApp: App {
                     EmptyStateView()
                 }
             } detail: {
-                ZStack {
-                    TerminalPanelView(
-                        selectedAgentId: store.selectedAgentId,
-                        store: store,
-                        terminalManager: terminalManager
-                    )
-                    .opacity(store.selectedAgent != nil ? 1 : 0)
-
-                    if store.selectedAgent == nil {
-                        ContentUnavailableView(
-                            "No Agent",
-                            systemImage: "terminal",
-                            description: Text("Select an agent to start chatting")
+                GeometryReader { geo in
+                    VSplitView {
+                        TerminalPanelView(
+                            selectedAgentId: store.selectedAgentId,
+                            store: store,
+                            terminalManager: terminalManager
                         )
+                        .frame(minHeight: 200, idealHeight: geo.size.height * 0.7)
+
+                        ShellPanelView(
+                            selectedAgentId: store.selectedAgentId,
+                            store: store,
+                            shellManager: shellManager
+                        )
+                        .frame(minHeight: 100, idealHeight: geo.size.height * 0.3)
                     }
                 }
             }
@@ -74,6 +76,7 @@ struct SecretAgentManApp: App {
 
     private func removeAgent(_ id: UUID) {
         terminalManager.removeTerminal(for: id)
+        shellManager.removeTerminal(for: id)
         store.removeAgent(id: id)
     }
 

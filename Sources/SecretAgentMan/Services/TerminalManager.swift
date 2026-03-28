@@ -44,7 +44,7 @@ final class TerminalManager {
         }
 
         let terminal = MonitoredTerminalView(frame: .zero)
-        terminal.font = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
+        terminal.font = Self.terminalFont()
         applyTheme(to: terminal)
 
         let delegate = TerminalDelegate(agentId: agent.id, onStateChange: onStateChange)
@@ -83,17 +83,8 @@ final class TerminalManager {
         for (agentId, terminal) in terminals {
             guard terminal.process?.running == true else { continue }
 
-            let newState: AgentState
-            let idle = terminal.idleSeconds > idleThreshold
-
-            if idle {
-                terminal.userSubmitted = false
-                newState = .awaitingInput
-            } else if terminal.userSubmitted {
-                newState = .active
-            } else {
-                newState = .active
-            }
+            // Status detection temporarily simplified
+            let newState: AgentState = .active
 
             if lastStates[agentId] != newState {
                 lastStates[agentId] = newState
@@ -119,6 +110,28 @@ final class TerminalManager {
         var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
         color.getRed(&r, green: &g, blue: &b, alpha: &a)
         return SwiftTerm.Color(red: UInt16(r * 65535), green: UInt16(g * 65535), blue: UInt16(b * 65535))
+    }
+
+    /// Read terminal font from Ghostty config, falling back to system monospace.
+    static func terminalFont() -> NSFont {
+        if let config = try? String(
+            contentsOfFile: NSHomeDirectory() + "/.config/ghostty/config",
+            encoding: .utf8
+        ) {
+            for line in config.components(separatedBy: "\n") {
+                let trimmed = line.trimmingCharacters(in: .whitespaces)
+                if trimmed.hasPrefix("font-family") {
+                    let parts = trimmed.split(separator: "=", maxSplits: 1)
+                    if parts.count == 2 {
+                        let fontName = parts[1].trimmingCharacters(in: .whitespaces)
+                        if let font = NSFont(name: fontName, size: 13) {
+                            return font
+                        }
+                    }
+                }
+            }
+        }
+        return NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
     }
 
     private func applyThemeToAll() {
