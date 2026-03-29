@@ -22,3 +22,4 @@
 --disable redundantSelf
 --disable trailingCommas
 --disable wrapMultilineStatementBraces
+--disable swiftTestingTestCaseNames
