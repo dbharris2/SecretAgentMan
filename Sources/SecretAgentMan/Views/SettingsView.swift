@@ -2,6 +2,7 @@ import SwiftUI
 
 struct SettingsView: View {
     let terminalManager: TerminalManager
+    let shellManager: ShellManager
 
     @AppStorage("terminalTheme") private var selectedTheme = "Catppuccin Mocha"
     @AppStorage("pluginDirectory") private var pluginDirectory = ""
@@ -78,6 +79,7 @@ struct SettingsView: View {
         }
         .onChange(of: selectedTheme) {
             terminalManager.themeName = selectedTheme
+            shellManager.themeName = selectedTheme
         }
         .onAppear {
             allThemes = GhosttyThemeLoader.availableThemes()

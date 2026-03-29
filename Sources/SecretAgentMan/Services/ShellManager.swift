@@ -6,8 +6,14 @@ import SwiftTerm
 @MainActor
 final class ShellManager {
     private var terminals: [UUID: LocalProcessTerminalView] = [:]
-    private var themeName: String {
-        UserDefaults.standard.string(forKey: "terminalTheme") ?? "Catppuccin Mocha"
+    var themeName: String = UserDefaults.standard.string(forKey: "terminalTheme") ?? "Catppuccin Mocha" {
+        didSet { applyThemeToAll() }
+    }
+
+    private func applyThemeToAll() {
+        for terminal in terminals.values {
+            applyTheme(to: terminal)
+        }
     }
 
     func terminal(for agent: Agent) -> LocalProcessTerminalView {

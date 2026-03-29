@@ -78,7 +78,7 @@ struct SecretAgentManApp: App {
         .defaultSize(width: 1200, height: 800)
 
         Settings {
-            SettingsView(terminalManager: terminalManager)
+            SettingsView(terminalManager: terminalManager, shellManager: shellManager)
         }
         .commands {
             CommandMenu("Agents") {
