@@ -5,6 +5,7 @@ struct ChangesView: View {
     let fullDiff: String
 
     @State private var selectedFile: String?
+    @AppStorage("diffViewMode") private var diffMode: String = "unified"
 
     private var visibleDiff: String {
         guard let selected = selectedFile else { return fullDiff }
@@ -14,11 +15,31 @@ struct ChangesView: View {
     var body: some View {
         ZStack {
             VSplitView {
-                fileList
-                    .frame(minHeight: 80, idealHeight: 120)
+                VStack(spacing: 0) {
+                    fileList
 
-                DiffView(diffText: visibleDiff)
-                    .frame(minHeight: 200)
+                    HStack {
+                        Spacer()
+                        Picker("", selection: $diffMode) {
+                            Image(systemName: "list.bullet").tag("unified")
+                            Image(systemName: "rectangle.split.2x1").tag("sideBySide")
+                        }
+                        .pickerStyle(.segmented)
+                        .frame(width: 80)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                    }
+                }
+                .frame(minHeight: 80, idealHeight: 140)
+
+                Group {
+                    if diffMode == "sideBySide" {
+                        SideBySideDiffView(diffText: visibleDiff)
+                    } else {
+                        DiffView(diffText: visibleDiff)
+                    }
+                }
+                .frame(minHeight: 200)
             }
             .opacity(changes.isEmpty ? 0 : 1)
 
