@@ -16,6 +16,9 @@ packages:
   SwiftTerm:
     url: https://github.com/migueldeicaza/SwiftTerm
     from: 1.13.0
+  MarkdownUI:
+    url: https://github.com/gonzalezreal/swift-markdown-ui
+    from: 2.4.0
 
 targets:
   SecretAgentMan:
@@ -37,6 +40,7 @@ targets:
         com.apple.security.network.client: true
     dependencies:
       - package: SwiftTerm
+      - package: MarkdownUI
     scheme:
       testTargets:
         - SecretAgentManTests

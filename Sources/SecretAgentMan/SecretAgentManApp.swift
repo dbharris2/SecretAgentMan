@@ -11,13 +11,34 @@ struct SecretAgentManApp: App {
     @State private var diffTimer: Timer?
     @State private var branchNames: [String: String] = [:]
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
+    @State private var activityMode: ActivityMode = .agents
+    @State private var selectedPlanURL: URL?
 
     var body: some Scene {
         WindowGroup("Secret Agent Man") {
             NavigationSplitView(columnVisibility: $columnVisibility) {
-                SidebarView(store: store, branchNames: branchNames, onRemoveAgent: removeAgent)
+                ActivitySidebarView(
+                    mode: $activityMode,
+                    store: store,
+                    branchNames: branchNames,
+                    onRemoveAgent: removeAgent,
+                    selectedPlanURL: $selectedPlanURL
+                )
             } content: {
-                ChangesView(changes: fileChanges, fullDiff: fullDiff)
+                switch activityMode {
+                case .agents:
+                    ChangesView(changes: fileChanges, fullDiff: fullDiff)
+                case .plans:
+                    if let url = selectedPlanURL {
+                        PlanDetailView(url: url)
+                    } else {
+                        ContentUnavailableView(
+                            "No Plan Selected",
+                            systemImage: "doc.text",
+                            description: Text("Select a plan from the sidebar")
+                        )
+                    }
+                }
             } detail: {
                 GeometryReader { geo in
                     VSplitView {
@@ -64,6 +85,7 @@ struct SecretAgentManApp: App {
                 let orderedAgents = store.agentsByFolder.flatMap(\.agents)
                 ForEach(Array(orderedAgents.prefix(9).enumerated()), id: \.element.id) { index, agent in
                     Button(agent.name) {
+                        activityMode = .agents
                         store.selectedAgentId = agent.id
                     }
                     .keyboardShortcut(KeyEquivalent(Character("\(index + 1)")), modifiers: .command)
@@ -88,7 +110,6 @@ struct SecretAgentManApp: App {
     }
 
     private func refreshBranchNames() {
-        // Deduplicate by folder path
         let folders = Set(store.agents.map { $0.folder })
         for folder in folders {
             Task {
