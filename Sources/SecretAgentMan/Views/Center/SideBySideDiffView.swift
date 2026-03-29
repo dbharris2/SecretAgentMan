@@ -2,12 +2,20 @@ import SwiftUI
 
 struct SideBySideDiffView: View {
     let diffText: String
+    @AppStorage("terminalTheme") private var themeName = "Catppuccin Mocha"
+
+    private var theme: GhosttyTheme? {
+        GhosttyThemeLoader.load(named: themeName)
+    }
 
     private var rows: [DiffRow] {
         parseSideBySide(diffText)
     }
 
     var body: some View {
+        let bg = theme?.background
+        let fg = theme?.foreground
+
         ScrollView(.vertical) {
             LazyVStack(alignment: .leading, spacing: 0) {
                 ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
@@ -15,7 +23,7 @@ struct SideBySideDiffView: View {
                     case let .fileHeader(text):
                         Text(text)
                             .font(.system(size: 12, weight: .bold, design: .monospaced))
-                            .foregroundStyle(.white)
+                            .foregroundStyle(Color(nsColor: fg ?? .white))
                             .padding(.horizontal, 8)
                             .padding(.top, 12)
                             .padding(.bottom, 2)
@@ -33,21 +41,23 @@ struct SideBySideDiffView: View {
 
                     case let .pair(left, right):
                         HStack(spacing: 0) {
-                            sideCell(left)
+                            sideCell(left, fg: fg)
                             Divider()
-                            sideCell(right)
+                            sideCell(right, fg: fg)
                         }
                     }
                 }
             }
             .padding(.vertical, 4)
         }
-        .background(Color(nsColor: NSColor(red: 0.11, green: 0.11, blue: 0.13, alpha: 1)))
+        .background(Color(nsColor: bg ?? NSColor(red: 0.11, green: 0.11, blue: 0.13, alpha: 1)))
         .textSelection(.enabled)
     }
 
     @ViewBuilder
-    private func sideCell(_ cell: SideCell) -> some View {
+    private func sideCell(_ cell: SideCell, fg: NSColor?) -> some View {
+        let contextColor = Color(nsColor: fg ?? .labelColor).opacity(0.6)
+
         let bgColor = switch cell.kind {
         case .added: Color.green.opacity(0.1)
         case .removed: Color.red.opacity(0.1)
@@ -57,7 +67,7 @@ struct SideBySideDiffView: View {
         let fgColor = switch cell.kind {
         case .added: Color(nsColor: .systemGreen)
         case .removed: Color(nsColor: .systemRed)
-        case .context: Color(nsColor: .labelColor).opacity(0.6)
+        case .context: contextColor
         case .empty: Color.clear
         }
 
@@ -127,7 +137,6 @@ private func parseSideBySide(_ diff: String) -> [DiffRow] {
             addedBuffer.append(String(line.dropFirst()))
         } else {
             flushBuffers()
-            // Context line — strip leading space
             let text = line.hasPrefix(" ") ? String(line.dropFirst()) : line
             let cell = SideCell(text: text, kind: .context)
             rows.append(.pair(cell, cell))

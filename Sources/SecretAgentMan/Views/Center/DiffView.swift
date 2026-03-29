@@ -2,29 +2,38 @@ import SwiftUI
 
 struct DiffView: View {
     let diffText: String
+    @AppStorage("terminalTheme") private var themeName = "Catppuccin Mocha"
+
+    private var theme: GhosttyTheme? {
+        GhosttyThemeLoader.load(named: themeName)
+    }
 
     var body: some View {
+        let bg = theme?.background
+        let fg = theme?.foreground
+
         ScrollView(.vertical) {
             LazyVStack(alignment: .leading, spacing: 0) {
                 ForEach(Array(diffText.components(separatedBy: "\n").enumerated()), id: \.offset) { _, line in
-                    diffLine(line)
+                    diffLine(line, fg: fg)
                 }
             }
             .padding(.vertical, 4)
         }
-        .background(Color(nsColor: NSColor(red: 0.11, green: 0.11, blue: 0.13, alpha: 1)))
+        .background(Color(nsColor: bg ?? NSColor(red: 0.11, green: 0.11, blue: 0.13, alpha: 1)))
         .textSelection(.enabled)
     }
 
     @ViewBuilder
-    private func diffLine(_ line: String) -> some View {
+    private func diffLine(_ line: String, fg: NSColor?) -> some View {
         let kind = classify(line)
+        let contextColor = Color(nsColor: fg ?? .labelColor).opacity(0.6)
 
         switch kind {
         case .fileHeader:
             Text(line)
                 .font(.system(size: 12, weight: .bold, design: .monospaced))
-                .foregroundStyle(.white)
+                .foregroundStyle(Color(nsColor: fg ?? .white))
                 .padding(.horizontal, 8)
                 .padding(.top, 12)
                 .padding(.bottom, 2)
@@ -59,13 +68,13 @@ struct DiffView: View {
         case .meta:
             Text(line)
                 .font(.system(size: 11, design: .monospaced))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(contextColor)
                 .padding(.horizontal, 8)
 
         case .context:
             Text(line.isEmpty ? " " : line)
                 .font(.system(size: 12, design: .monospaced))
-                .foregroundStyle(Color(nsColor: .labelColor).opacity(0.6))
+                .foregroundStyle(contextColor)
                 .padding(.horizontal, 8)
         }
     }
