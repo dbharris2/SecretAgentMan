@@ -1,12 +1,11 @@
 @testable import SecretAgentMan
 import Testing
 
-@Suite("DiffService")
 struct DiffServiceTests {
     let service = DiffService()
 
-    @Test("parses file changes from unified diff")
-    func parsesUnifiedDiff() async {
+    @Test
+    func parsesFileChangesFromUnifiedDiff() async {
         let diff = """
         diff --git a/src/app/layout.tsx b/src/app/layout.tsx
         index abc1234..def5678 100644
@@ -40,8 +39,8 @@ struct DiffServiceTests {
         #expect(changes[1].status == .added)
     }
 
-    @Test("returns empty for no diff")
-    func emptyDiff() async {
+    @Test
+    func returnsEmptyForNoDiff() async {
         let changes = await service.parseChanges(from: "")
         #expect(changes.isEmpty)
     }
