@@ -18,70 +18,95 @@ struct SecretAgentManApp: App {
     @State private var selectedPlanURL: URL?
     @AppStorage("shellPanelVisible") private var isShellPanelVisible = false
     @AppStorage("shellPanelHeight") private var shellPanelHeight: Double = 200
+    @State private var isAgentPanelVisible = true
+    @AppStorage("agentPanelWidth") private var agentPanelWidth: Double = 500
 
     var body: some Scene {
         WindowGroup("Secret Agent Man") {
             VStack(spacing: 0) {
-                NavigationSplitView(columnVisibility: $columnVisibility) {
-                    ActivitySidebarView(
-                        mode: $activityMode,
-                        store: store,
-                        branchNames: branchNames,
-                        prInfos: prInfos,
-                        onRemoveAgent: removeAgent,
-                        selectedPlanURL: $selectedPlanURL
-                    )
-                } content: {
-                    ZStack(alignment: .bottom) {
-                        switch activityMode {
-                        case .agents:
-                            ChangesView(changes: fileChanges, fullDiff: fullDiff)
-                        case .plans:
-                            if let url = selectedPlanURL {
-                                PlanDetailView(url: url)
-                            } else {
-                                ContentUnavailableView(
-                                    "No Plan Selected",
-                                    systemImage: "doc.text",
-                                    description: Text("Select a plan from the sidebar")
-                                )
-                            }
-                        }
-
-                        if isShellPanelVisible {
-                            VStack(spacing: 0) {
-                                Rectangle()
-                                    .fill(Color.accentColor.opacity(0.6))
-                                    .frame(height: 3)
-                                    .contentShape(Rectangle().size(width: 1000, height: 12))
-                                    .gesture(
-                                        DragGesture()
-                                            .onChanged { value in
-                                                shellPanelHeight = max(100, shellPanelHeight - value.translation.height)
-                                            }
+                HStack(spacing: 0) {
+                    NavigationSplitView(columnVisibility: $columnVisibility) {
+                        ActivitySidebarView(
+                            mode: $activityMode,
+                            store: store,
+                            branchNames: branchNames,
+                            prInfos: prInfos,
+                            onRemoveAgent: removeAgent,
+                            selectedPlanURL: $selectedPlanURL
+                        )
+                    } detail: {
+                        ZStack(alignment: .bottom) {
+                            switch activityMode {
+                            case .agents:
+                                ChangesView(changes: fileChanges, fullDiff: fullDiff)
+                            case .plans:
+                                if let url = selectedPlanURL {
+                                    PlanDetailView(url: url)
+                                } else {
+                                    ContentUnavailableView(
+                                        "No Plan Selected",
+                                        systemImage: "doc.text",
+                                        description: Text("Select a plan from the sidebar")
                                     )
-                                    .onHover { hovering in
-                                        if hovering {
-                                            NSCursor.resizeUpDown.push()
-                                        } else {
-                                            NSCursor.pop()
-                                        }
-                                    }
-                                ShellPanelView(
-                                    selectedAgentId: store.selectedAgentId,
-                                    store: store,
-                                    shellManager: shellManager
-                                )
+                                }
                             }
-                            .frame(height: shellPanelHeight)
+
+                            if isShellPanelVisible {
+                                VStack(spacing: 0) {
+                                    Rectangle()
+                                        .fill(Color.accentColor.opacity(0.6))
+                                        .frame(height: 3)
+                                        .contentShape(Rectangle().size(width: 1000, height: 12))
+                                        .gesture(
+                                            DragGesture()
+                                                .onChanged { value in
+                                                    shellPanelHeight = max(100, shellPanelHeight - value.translation.height)
+                                                }
+                                        )
+                                        .onHover { hovering in
+                                            if hovering {
+                                                NSCursor.resizeUpDown.push()
+                                            } else {
+                                                NSCursor.pop()
+                                            }
+                                        }
+                                    ShellPanelView(
+                                        selectedAgentId: store.selectedAgentId,
+                                        store: store,
+                                        shellManager: shellManager
+                                    )
+                                }
+                                .frame(height: shellPanelHeight)
+                            }
                         }
                     }
-                } detail: {
-                    TerminalPanelView(
-                        selectedAgentId: store.selectedAgentId,
-                        store: store,
-                        terminalManager: terminalManager
-                    )
+
+                    if isAgentPanelVisible {
+                        Rectangle()
+                            .fill(Color.accentColor.opacity(0.6))
+                            .frame(width: 3)
+                            .contentShape(Rectangle().size(width: 12, height: 1000))
+                            .gesture(
+                                DragGesture()
+                                    .onChanged { value in
+                                        agentPanelWidth = max(300, agentPanelWidth - value.translation.width)
+                                    }
+                            )
+                            .onHover { hovering in
+                                if hovering {
+                                    NSCursor.resizeLeftRight.push()
+                                } else {
+                                    NSCursor.pop()
+                                }
+                            }
+
+                        TerminalPanelView(
+                            selectedAgentId: store.selectedAgentId,
+                            store: store,
+                            terminalManager: terminalManager
+                        )
+                        .frame(width: agentPanelWidth)
+                    }
                 }
                 .navigationSplitViewStyle(.balanced)
                 .frame(minWidth: 900, minHeight: 600)
@@ -126,7 +151,8 @@ struct SecretAgentManApp: App {
                     mode: $activityMode,
                     store: store,
                     branchNames: branchNames,
-                    isShellPanelVisible: $isShellPanelVisible
+                    isShellPanelVisible: $isShellPanelVisible,
+                    isAgentPanelVisible: $isAgentPanelVisible
                 )
             } // VStack
         }

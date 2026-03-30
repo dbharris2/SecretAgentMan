@@ -5,6 +5,7 @@ struct StatusBarView: View {
     @Bindable var store: AgentStore
     var branchNames: [String: String]
     @Binding var isShellPanelVisible: Bool
+    @Binding var isAgentPanelVisible: Bool
 
     @State private var showingMCPPopover = false
     @State private var showingPluginsPopover = false
@@ -82,7 +83,7 @@ struct StatusBarView: View {
 
             Spacer()
 
-            // Right: terminal toggle + agent info
+            // Right: panel toggles + agent info
             Button {
                 isShellPanelVisible.toggle()
             } label: {
@@ -92,6 +93,16 @@ struct StatusBarView: View {
             }
             .buttonStyle(.plain)
             .help("Toggle Terminal (Cmd+J)")
+
+            Button {
+                isAgentPanelVisible.toggle()
+            } label: {
+                Image(systemName: "sparkle")
+                    .font(.system(size: 11))
+                    .foregroundStyle(isAgentPanelVisible ? Color.accentColor : .secondary)
+            }
+            .buttonStyle(.plain)
+            .help("Toggle Agent Panel")
 
             Divider()
                 .frame(height: 16)
