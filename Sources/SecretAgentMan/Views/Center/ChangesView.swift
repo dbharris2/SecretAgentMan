@@ -55,7 +55,7 @@ struct ChangesView: View {
 
     private var fileList: some View {
         List(selection: $selectedFile) {
-            Section("Changed Files (\(changes.count))") {
+            Section {
                 ForEach(changes) { change in
                     HStack(spacing: 8) {
                         Text(change.status.label)
@@ -85,6 +85,15 @@ struct ChangesView: View {
                     }
                     .tag(change.path)
                     .padding(.vertical, 2)
+                }
+            } header: {
+                HStack {
+                    Text("Changed Files (\(changes.count))")
+                    Spacer()
+                    Text("+\(changes.reduce(0) { $0 + $1.insertions })")
+                        .foregroundStyle(.green)
+                    Text("-\(changes.reduce(0) { $0 + $1.deletions })")
+                        .foregroundStyle(.red)
                 }
             }
         }
