@@ -8,7 +8,7 @@ A macOS app for managing multiple Claude Code agent sessions with a Slack-like i
 - **Embedded terminal** — full interactive Claude Code TUI via SwiftTerm
 - **Split shell** — a second terminal below Claude for running git/jj commands in the agent's directory
 - **Colored diff view** — unified and side-by-side diff views with per-file filtering
-- **Ghostty theme support** — loads any of 300+ themes from Ghostty's bundled collection
+- **Ghostty theme support** — 460+ terminal themes bundled with the app (no Ghostty installation required)
 - **Plans panel** — browse and read Claude Code plans with full markdown rendering
 - **VCS integration** — shows jj commit descriptions or git branch names per folder
 - **Session persistence** — agents and sessions survive app restarts via `claude --resume`
@@ -19,7 +19,6 @@ A macOS app for managing multiple Claude Code agent sessions with a Slack-like i
 
 - macOS 14.0+
 - [Claude Code](https://claude.ai/download) CLI installed
-- [Ghostty](https://ghostty.org) installed (for terminal themes)
 
 ## Setup
 
