@@ -3,7 +3,7 @@ import SwiftTerm
 
 /// Shared terminal theme application logic used by both TerminalManager and ShellManager.
 enum TerminalTheming {
-    static func applyTheme(_ theme: GhosttyTheme, to terminal: LocalProcessTerminalView) {
+    @MainActor static func applyTheme(_ theme: GhosttyTheme, to terminal: LocalProcessTerminalView) {
         terminal.nativeBackgroundColor = theme.background
         terminal.nativeForegroundColor = theme.foreground
         terminal.caretColor = theme.cursorColor
