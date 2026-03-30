@@ -7,11 +7,21 @@ struct SidebarView: View {
     @State private var showingNewAgent = false
     @State private var renamingAgentId: UUID?
     @State private var renameText = ""
+    @State private var collapsedFolders: Set<String> = []
 
     var body: some View {
         List(selection: $store.selectedAgentId) {
             ForEach(store.agentsByFolder, id: \.folder) { group in
-                Section {
+                Section(isExpanded: Binding(
+                    get: { !collapsedFolders.contains(group.folder) },
+                    set: { isExpanded in
+                        if isExpanded {
+                            collapsedFolders.remove(group.folder)
+                        } else {
+                            collapsedFolders.insert(group.folder)
+                        }
+                    }
+                )) {
                     ForEach(group.agents) { agent in
                         AgentRowView(agent: agent, isSelected: store.selectedAgentId == agent.id)
                             .tag(agent.id)
@@ -27,8 +37,9 @@ struct SidebarView: View {
                             }
                     }
                 } header: {
+                    let isExpanded = !collapsedFolders.contains(group.folder)
                     HStack(alignment: .top, spacing: 6) {
-                        Image(systemName: "folder.fill")
+                        Image(systemName: isExpanded ? "folder" : "folder.fill")
                             .font(.system(size: 11))
                             .foregroundStyle(.secondary)
                             .padding(.top, 2)
