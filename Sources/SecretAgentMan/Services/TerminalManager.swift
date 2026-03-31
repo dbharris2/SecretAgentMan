@@ -156,7 +156,7 @@ final class TerminalManager {
                 }
             }
         }
-        return NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
+        return NSFont(name: "Monaco", size: 13) ?? NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
     }
 
     private func applyThemeToAll() {
