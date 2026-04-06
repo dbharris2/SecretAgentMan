@@ -15,6 +15,12 @@ struct SecretAgentManApp: App {
     @State private var prInfos: [String: PRInfo] = [:]
     @State private var prService = PRService()
     @State private var eventBus = AgentEventBus()
+    @State private var githubPRService = GitHubPRService()
+    @State private var githubPRSections: [GitHubPRService.PRSection: [GitHubPRService.GitHubPR]] = [:]
+    @State private var githubPRTimer: Timer?
+    @State private var selectedGitHubPR: GitHubPRService.GitHubPR?
+    @State private var selectedPRDiff: String = ""
+    @State private var selectedPRChanges: [FileChange] = []
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
     @State private var activityMode: ActivityMode = .agents
     @State private var selectedPlanURL: URL?
@@ -36,7 +42,11 @@ struct SecretAgentManApp: App {
                             branchNames: branchNames,
                             prInfos: prInfos,
                             onRemoveAgent: removeAgent,
-                            selectedPlanURL: $selectedPlanURL
+                            selectedPlanURL: $selectedPlanURL,
+                            prSections: githubPRSections,
+                            onReviewPR: reviewPR,
+                            onSelectPR: selectPR,
+                            selectedPRId: selectedGitHubPR?.id
                         )
                     } detail: {
                         ZStack(alignment: .bottom) {
@@ -52,6 +62,31 @@ struct SecretAgentManApp: App {
                                         systemImage: "doc.text",
                                         description: Text("Select a plan from the sidebar")
                                     )
+                                }
+                            case .prs:
+                                if let pr = selectedGitHubPR {
+                                    if selectedPRChanges.isEmpty, !selectedPRDiff.isEmpty {
+                                        ChangesView(changes: selectedPRChanges, fullDiff: selectedPRDiff)
+                                    } else if selectedPRChanges.isEmpty {
+                                        VStack(spacing: 8) {
+                                            ProgressView()
+                                            Text("Loading diff for #\(pr.number)...")
+                                                .font(.system(size: 13))
+                                                .foregroundStyle(.secondary)
+                                        }
+                                    } else {
+                                        ChangesView(changes: selectedPRChanges, fullDiff: selectedPRDiff)
+                                    }
+                                } else {
+                                    VStack(spacing: 8) {
+                                        Image("PRIcon")
+                                            .resizable()
+                                            .frame(width: 32, height: 32)
+                                            .foregroundStyle(.secondary)
+                                        Text("Select a PR from the sidebar")
+                                            .font(.system(size: 13))
+                                            .foregroundStyle(.secondary)
+                                    }
                                 }
                             }
 
@@ -137,6 +172,7 @@ struct SecretAgentManApp: App {
                 .onAppear {
                     setupFileWatcher()
                     startPRPolling()
+                    startGitHubPRPolling()
                     terminalManager.onStateChange = { id, state in
                         store.updateState(id: id, state: state)
                         if state == .awaitingInput {
@@ -173,6 +209,7 @@ struct SecretAgentManApp: App {
                     fileWatcher.unwatchAll()
                     sessionWatcher.unwatchAll()
                     prTimer?.invalidate()
+                    githubPRTimer?.invalidate()
                 }
                 .onChange(of: store.agents.map(\.folder)) { oldFolders, newFolders in
                     let oldSet = Set(oldFolders)
@@ -463,5 +500,83 @@ struct SecretAgentManApp: App {
                 fileChanges = changes
             }
         }
+    }
+
+    private func startGitHubPRPolling() {
+        refreshGitHubPRs()
+        githubPRTimer = Timer.scheduledTimer(withTimeInterval: 300, repeats: true) { _ in
+            Task { @MainActor in
+                refreshGitHubPRs()
+            }
+        }
+    }
+
+    private func refreshGitHubPRs() {
+        Task {
+            let sections = await githubPRService.fetchAllPRs()
+            await MainActor.run {
+                githubPRSections = sections
+            }
+        }
+    }
+
+    private func selectPR(_ pr: GitHubPRService.GitHubPR?) {
+        selectedGitHubPR = pr
+        selectedPRDiff = ""
+        selectedPRChanges = []
+        guard let pr else { return }
+        Task {
+            let diff = await githubPRService.fetchPRDiff(repo: pr.repository, number: pr.number)
+            let changes = await diffService.parseChanges(from: diff)
+            await MainActor.run {
+                if selectedGitHubPR?.id == pr.id {
+                    selectedPRDiff = diff
+                    selectedPRChanges = changes
+                }
+            }
+        }
+    }
+
+    private func reviewPR(_ pr: GitHubPRService.GitHubPR) {
+        // Find an existing agent for this repo, or use the selected agent
+        let repoFolder = store.agents.first { agent in
+            agent.folderPath.contains(pr.repository.components(separatedBy: "/").last ?? "")
+        }
+
+        let targetAgent: Agent
+        if let existing = repoFolder {
+            targetAgent = existing
+        } else if let selected = store.selectedAgent {
+            targetAgent = selected
+        } else {
+            return
+        }
+
+        let prompt = """
+        Review PR #\(pr.number) at \(pr.url.absoluteString)
+
+        Run `gh pr diff \(pr.number) --repo \(pr.repository)` to see the full diff.
+        Run `gh pr view \(pr.number) --repo \(pr.repository)` for the PR description.
+
+        Provide a thorough code review covering:
+        - Correctness and potential bugs
+        - Edge cases
+        - Code style and readability
+        - Performance concerns
+        - Any suggestions for improvement
+
+        Do NOT post comments to GitHub. Just provide your analysis here.
+        """
+
+        store.addPendingPrompt(PendingPrompt(
+            agentId: targetAgent.id,
+            source: .reviewPR,
+            summary: "Diff review: \(pr.repository) #\(pr.number)",
+            fullPrompt: prompt
+        ))
+
+        // Switch to the target agent
+        activityMode = .agents
+        store.selectedAgentId = targetAgent.id
     }
 }

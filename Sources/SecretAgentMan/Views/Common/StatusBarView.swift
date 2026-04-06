@@ -40,6 +40,7 @@ struct StatusBarView: View {
             HStack(spacing: 2) {
                 activityButton(icon: "person.2", targetMode: .agents, label: "Agents")
                 activityButton(icon: "doc.text", targetMode: .plans, label: "Plans")
+                activityImageButton(image: "PRIcon", targetMode: .prs, label: "Pull Requests")
             }
 
             Divider()
@@ -181,6 +182,19 @@ struct StatusBarView: View {
             Image(systemName: icon)
                 .font(.system(size: 11))
                 .frame(width: 24, height: 20)
+                .foregroundStyle(mode == targetMode ? Color.accentColor : .secondary)
+        }
+        .buttonStyle(.plain)
+        .help(label)
+    }
+
+    private func activityImageButton(image: String, targetMode: ActivityMode, label: String) -> some View {
+        Button {
+            mode = targetMode
+        } label: {
+            Image(image)
+                .resizable()
+                .frame(width: 12, height: 12)
                 .foregroundStyle(mode == targetMode ? Color.accentColor : .secondary)
         }
         .buttonStyle(.plain)

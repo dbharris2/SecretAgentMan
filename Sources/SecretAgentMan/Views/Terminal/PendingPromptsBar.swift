@@ -18,9 +18,9 @@ struct PendingPromptsBar: View {
                 ForEach(prompts) { prompt in
                     VStack(spacing: 0) {
                         HStack(spacing: 8) {
-                            Image(systemName: prompt.source == .ciFailed ? "xmark.circle.fill" : "bubble.left.fill")
+                            Image(systemName: iconForSource(prompt.source))
                                 .font(.system(size: 12))
-                                .foregroundStyle(prompt.source == .ciFailed ? .red : .orange)
+                                .foregroundStyle(colorForSource(prompt.source))
 
                             VStack(alignment: .leading, spacing: 1) {
                                 Text(prompt.source.rawValue)
@@ -85,6 +85,24 @@ struct PendingPromptsBar: View {
                 }
             }
             .background(.bar)
+        }
+    }
+
+    private func iconForSource(_ source: PendingPrompt.PromptSource) -> String {
+        switch source {
+        case .ciFailed: "xmark.circle.fill"
+        case .changesRequested: "bubble.left.fill"
+        case .approvedWithComments: "checkmark.bubble.fill"
+        case .reviewPR: "eye.fill"
+        }
+    }
+
+    private func colorForSource(_ source: PendingPrompt.PromptSource) -> Color {
+        switch source {
+        case .ciFailed: .red
+        case .changesRequested: .orange
+        case .approvedWithComments: .green
+        case .reviewPR: .blue
         }
     }
 }
