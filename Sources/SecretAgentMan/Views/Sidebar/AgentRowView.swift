@@ -6,44 +6,48 @@ struct AgentRowView: View {
     var pendingPromptCount: Int = 0
     var branchName: String?
     var prInfo: PRInfo?
+    @State private var isHovered = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            HStack(spacing: 8) {
-                Image("ClaudeIcon")
-                    .resizable()
-                    .frame(width: 16, height: 16)
+        HStack(spacing: 8) {
+            Image("ClaudeIcon")
+                .resizable()
+                .frame(width: 24, height: 24)
 
+            VStack(alignment: .leading, spacing: 2) {
                 Text(agent.name)
                     .font(.system(size: 13, weight: isSelected ? .semibold : .regular))
                     .lineLimit(1)
 
-                Spacer()
-
-                if pendingPromptCount > 0 {
-                    Text(verbatim: "\(pendingPromptCount)")
-                        .font(.system(size: 10, weight: .bold))
-                        .foregroundStyle(.white)
-                        .frame(minWidth: 16, minHeight: 16)
-                        .background(.red)
-                        .clipShape(Circle())
+                if let branch = branchName {
+                    BranchInfoView(branchName: branch)
                 }
 
-                StatusBadge(state: agent.state)
+                if let pr = prInfo {
+                    PRMetadataView(prInfo: pr)
+                }
             }
 
-            if let branch = branchName {
-                BranchInfoView(branchName: branch)
-                    .padding(.leading, 24)
+            Spacer()
+
+            if pendingPromptCount > 0 {
+                Text(verbatim: "\(pendingPromptCount)")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(.white)
+                    .frame(minWidth: 16, minHeight: 16)
+                    .background(.red)
+                    .clipShape(Circle())
             }
 
-            if let pr = prInfo {
-                PRMetadataView(prInfo: pr)
-                    .padding(.leading, 24)
-            }
+            StatusBadge(state: agent.state)
         }
-        .padding(.vertical, 3)
-        .padding(.horizontal, 8)
+        .padding(.top, 6)
+        .padding(.bottom, 4)
         .contentShape(Rectangle())
+        .background(
+            RoundedRectangle(cornerRadius: 4)
+                .fill(isHovered && !isSelected ? Color.secondary.opacity(0.1) : Color.clear)
+        )
+        .onHover { isHovered = $0 }
     }
 }
