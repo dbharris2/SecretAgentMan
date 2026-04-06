@@ -24,18 +24,22 @@ struct SidebarView: View {
                     }
                 )) {
                     ForEach(group.agents) { agent in
-                        AgentRowView(agent: agent, isSelected: store.selectedAgentId == agent.id)
-                            .tag(agent.id)
-                            .contextMenu {
-                                Button("Rename...") {
-                                    renameText = agent.name
-                                    renamingAgentId = agent.id
-                                }
-                                Divider()
-                                Button("Remove", role: .destructive) {
-                                    onRemoveAgent(agent.id)
-                                }
+                        AgentRowView(
+                            agent: agent,
+                            isSelected: store.selectedAgentId == agent.id,
+                            pendingPromptCount: store.pendingPrompts(for: agent.id).count
+                        )
+                        .tag(agent.id)
+                        .contextMenu {
+                            Button("Rename...") {
+                                renameText = agent.name
+                                renamingAgentId = agent.id
                             }
+                            Divider()
+                            Button("Remove", role: .destructive) {
+                                onRemoveAgent(agent.id)
+                            }
+                        }
                     }
                 } header: {
                     let isExpanded = !collapsedFolders.contains(group.folder)

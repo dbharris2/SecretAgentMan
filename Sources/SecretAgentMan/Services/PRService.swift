@@ -100,6 +100,25 @@ actor PRService {
             return PRReviewer(login: login, avatarURL: avatarURL)
         }
 
+        // Extract review comments with non-empty bodies, excluding bots
+        let reviewComments = reviews.compactMap { review -> PRReviewComment? in
+            guard let author = (review["author"] as? [String: Any])?["login"] as? String,
+                  let body = review["body"] as? String,
+                  !body.isEmpty,
+                  let stateStr = review["state"] as? String,
+                  let state = PRReviewState(rawValue: stateStr),
+                  author != authorLogin
+            else { return nil }
+            return PRReviewComment(author: author, body: body, state: state)
+        }
+
+        // Extract names of failed checks
+        let failedChecks = checks.compactMap { check -> String? in
+            let conclusion = check["conclusion"] as? String ?? ""
+            guard conclusion == "FAILURE" || conclusion == "ERROR" else { return nil }
+            return check["name"] as? String
+        }
+
         return PRInfo(
             number: number,
             url: url,
@@ -109,7 +128,9 @@ actor PRService {
             deletions: deletions,
             changedFiles: changedFiles,
             commentCount: comments.count,
-            reviewers: reviewers
+            reviewers: reviewers,
+            reviewComments: reviewComments,
+            failedChecks: failedChecks
         )
     }
 

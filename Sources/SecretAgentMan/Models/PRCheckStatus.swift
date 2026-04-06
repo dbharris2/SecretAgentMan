@@ -30,6 +30,22 @@ struct PRInfo: Equatable {
     let changedFiles: Int
     let commentCount: Int
     let reviewers: [PRReviewer]
+    let reviewComments: [PRReviewComment]
+    let failedChecks: [String]
+}
+
+struct PRReviewComment: Equatable {
+    let author: String
+    let body: String
+    let state: PRReviewState
+}
+
+enum PRReviewState: String, Equatable {
+    case approved = "APPROVED"
+    case changesRequested = "CHANGES_REQUESTED"
+    case commented = "COMMENTED"
+    case dismissed = "DISMISSED"
+    case pending = "PENDING"
 }
 
 struct PRReviewer: Equatable, Hashable {

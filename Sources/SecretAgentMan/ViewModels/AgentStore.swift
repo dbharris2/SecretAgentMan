@@ -6,6 +6,23 @@ import SwiftUI
 final class AgentStore {
     var agents: [Agent] = []
     var selectedAgentId: UUID?
+    var pendingPrompts: [PendingPrompt] = []
+
+    func addPendingPrompt(_ prompt: PendingPrompt) {
+        pendingPrompts.append(prompt)
+    }
+
+    func removePendingPrompt(id: UUID) {
+        pendingPrompts.removeAll { $0.id == id }
+    }
+
+    func pendingPrompts(for agentId: UUID) -> [PendingPrompt] {
+        pendingPrompts.filter { $0.agentId == agentId }
+    }
+
+    func removePendingPrompts(for agentId: UUID, source: PendingPrompt.PromptSource) {
+        pendingPrompts.removeAll { $0.agentId == agentId && $0.source == source }
+    }
 
     private static let saveURL: URL = {
         let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
