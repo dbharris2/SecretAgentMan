@@ -164,7 +164,8 @@ struct SecretAgentManApp: App {
                     store: store,
                     branchNames: branchNames,
                     isShellPanelVisible: $isShellPanelVisible,
-                    isAgentPanelVisible: $isAgentPanelVisible
+                    isAgentPanelVisible: $isAgentPanelVisible,
+                    shellManager: shellManager
                 )
             } // VStack
         }

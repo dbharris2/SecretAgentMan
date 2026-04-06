@@ -41,6 +41,12 @@ final class ShellManager {
         return terminal
     }
 
+    func sendCommand(_ command: String, for agent: Agent) {
+        let terminal = terminal(for: agent)
+        let bytes = Array((command + "\n").utf8)
+        terminal.send(source: terminal, data: ArraySlice(bytes))
+    }
+
     func removeTerminal(for agentId: UUID) {
         if let terminal = terminals[agentId] {
             terminal.terminate()

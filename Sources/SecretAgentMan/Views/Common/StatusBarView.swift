@@ -6,9 +6,11 @@ struct StatusBarView: View {
     var branchNames: [String: String]
     @Binding var isShellPanelVisible: Bool
     @Binding var isAgentPanelVisible: Bool
+    var shellManager: ShellManager
 
     @State private var showingMCPPopover = false
     @State private var showingPluginsPopover = false
+    @State private var showingScriptsPopover = false
 
     private var selectedAgent: Agent? {
         store.selectedAgent
@@ -23,7 +25,16 @@ struct StatusBarView: View {
         MCPConfigLoader.loadPluginNames()
     }
 
+    private var scripts: [ProjectScript] {
+        guard let agent = selectedAgent else { return [] }
+        return ScriptDetector.detectScripts(in: agent.folder)
+    }
+
     var body: some View {
+        let mcpServers = mcpServers
+        let plugins = plugins
+        let scripts = scripts
+
         HStack(spacing: 8) {
             // Left: navigation icons
             HStack(spacing: 2) {
@@ -78,6 +89,27 @@ struct StatusBarView: View {
                         items: plugins,
                         emptyMessage: "No plugins installed"
                     )
+                }
+
+                // Scripts
+                Button {
+                    showingScriptsPopover.toggle()
+                } label: {
+                    HStack(spacing: 3) {
+                        Image(systemName: "play.rectangle")
+                            .font(.system(size: 10))
+                        Text(verbatim: "\(scripts.count) Scripts")
+                            .font(.system(size: 11))
+                    }
+                    .foregroundStyle(scripts.isEmpty ? .secondary : .primary)
+                }
+                .buttonStyle(.plain)
+                .help("Project Scripts")
+                .popover(isPresented: $showingScriptsPopover) {
+                    ScriptRunnerPopover(scripts: scripts) { script in
+                        showingScriptsPopover = false
+                        runScript(script)
+                    }
                 }
             }
 
@@ -136,6 +168,12 @@ struct StatusBarView: View {
         .background(.bar)
     }
 
+    private func runScript(_ script: ProjectScript) {
+        guard let agent = selectedAgent else { return }
+        shellManager.sendCommand(script.command, for: agent)
+        isShellPanelVisible = true
+    }
+
     private func activityButton(icon: String, targetMode: ActivityMode, label: String) -> some View {
         Button {
             mode = targetMode
@@ -161,17 +199,27 @@ struct StatusBarView: View {
                     .foregroundStyle(.secondary)
             } else {
                 ForEach(items, id: \.self) { item in
-                    HStack(spacing: 6) {
-                        Circle()
-                            .fill(.green)
-                            .frame(width: 6, height: 6)
-                        Text(item)
-                            .font(.system(size: 12))
-                    }
+                    PopoverRow(label: item)
                 }
             }
         }
         .padding(10)
         .frame(minWidth: 180)
+    }
+}
+
+private struct PopoverRow: View {
+    let label: String
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Circle()
+                .fill(.green)
+                .frame(width: 6, height: 6)
+            Text(label)
+                .font(.system(size: 12))
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .hoverHighlight()
     }
 }
