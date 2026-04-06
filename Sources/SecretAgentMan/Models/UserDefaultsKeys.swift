@@ -6,4 +6,6 @@ enum UserDefaultsKeys {
     static let pluginDirectory = "pluginDirectory"
     static let diffViewMode = "diffViewMode"
     static let defaultAgentFolder = "defaultAgentFolder"
+    static let autoFixCIFailures = "autoFixCIFailures"
+    static let autoAnalyzeReviews = "autoAnalyzeReviews"
 }

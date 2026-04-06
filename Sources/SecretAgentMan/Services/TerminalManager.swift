@@ -107,6 +107,17 @@ final class TerminalManager {
         terminals[agentId] != nil
     }
 
+    func sendInput(to agentId: UUID, text: String) {
+        guard let terminal = terminals[agentId] else { return }
+        // Use bracketed paste mode so multi-line text is treated as a
+        // single input, not multiple Enter presses
+        let bracketStart: [UInt8] = [0x1B, 0x5B, 0x32, 0x30, 0x30, 0x7E] // \e[200~
+        let bracketEnd: [UInt8] = [0x1B, 0x5B, 0x32, 0x30, 0x31, 0x7E] // \e[201~
+        let content = Array(text.utf8)
+        let newline: [UInt8] = [0x0A] // \n to submit
+        terminal.send(bracketStart + content + bracketEnd + newline)
+    }
+
     private func applyTheme(to terminal: MonitoredTerminalView) {
         guard let theme = currentTheme else { return }
         TerminalTheming.applyTheme(theme, to: terminal)
