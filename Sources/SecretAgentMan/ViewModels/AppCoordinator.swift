@@ -198,6 +198,12 @@ final class AppCoordinator {
         fileWatcher.onVCSMetadataChanged = { [self] changedFolder in
             refreshBranchName(for: changedFolder)
             eventBus.publish(.branchChanged(folder: changedFolder))
+            // jj new, jj commit, git commit etc. change VCS metadata without
+            // touching working copy files — refresh diffs for the selected agent
+            if let selected = store.selectedAgent,
+               selected.folder.standardizedFileURL == changedFolder {
+                refreshDiffs()
+            }
         }
         for folder in Set(store.agents.map(\.folder)) {
             fileWatcher.watch(directory: folder)
