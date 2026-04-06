@@ -19,7 +19,11 @@ struct PlanListView: View {
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
             }
-            .padding(.vertical, 2)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.top, 6)
+            .padding(.bottom, 4)
+            .contentShape(Rectangle())
+            .hoverHighlight()
             .tag(plan.url)
             .contextMenu {
                 Button("Delete", role: .destructive) {

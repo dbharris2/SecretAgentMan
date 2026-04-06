@@ -74,21 +74,3 @@ private struct ScriptRow: View {
         .buttonStyle(.plain)
     }
 }
-
-struct HoverHighlight: ViewModifier {
-    @State private var isHovered = false
-
-    func body(content: Content) -> some View {
-        content
-            .padding(.vertical, 2)
-            .padding(.horizontal, 4)
-            .background(isHovered ? Color.primary.opacity(0.1) : .clear, in: RoundedRectangle(cornerRadius: 4))
-            .onHover { isHovered = $0 }
-    }
-}
-
-extension View {
-    func hoverHighlight() -> some View {
-        modifier(HoverHighlight())
-    }
-}

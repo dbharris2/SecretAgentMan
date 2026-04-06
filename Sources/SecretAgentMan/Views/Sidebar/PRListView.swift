@@ -102,8 +102,6 @@ struct PRRowView: View {
     let showReviewButton: Bool
     let onReview: (GitHubPRService.GitHubPR) -> Void
 
-    @State private var isHovered = false
-
     private var stateColor: Color {
         if pr.reviewDecision == "APPROVED" { return .green }
         if pr.reviewDecision == "CHANGES_REQUESTED" { return .red }
@@ -218,10 +216,6 @@ struct PRRowView: View {
         }
         .padding(.top, 6)
         .padding(.bottom, 4)
-        .background(
-            RoundedRectangle(cornerRadius: 4)
-                .fill(isSelected ? Color.accentColor.opacity(0.2) : isHovered ? Color.secondary.opacity(0.1) : Color.clear)
-        )
-        .onHover { isHovered = $0 }
+        .hoverHighlight(isSelected: isSelected)
     }
 }

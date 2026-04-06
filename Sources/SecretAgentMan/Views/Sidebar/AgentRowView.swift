@@ -6,7 +6,6 @@ struct AgentRowView: View {
     var pendingPromptCount: Int = 0
     var branchName: String?
     var prInfo: PRInfo?
-    @State private var isHovered = false
 
     var body: some View {
         HStack(spacing: 8) {
@@ -44,10 +43,6 @@ struct AgentRowView: View {
         .padding(.top, 6)
         .padding(.bottom, 4)
         .contentShape(Rectangle())
-        .background(
-            RoundedRectangle(cornerRadius: 4)
-                .fill(isHovered && !isSelected ? Color.secondary.opacity(0.1) : Color.clear)
-        )
-        .onHover { isHovered = $0 }
+        .hoverHighlight()
     }
 }

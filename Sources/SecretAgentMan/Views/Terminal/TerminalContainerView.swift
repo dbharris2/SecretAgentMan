@@ -46,9 +46,7 @@ struct TerminalContainerView: NSViewRepresentable {
 
         Self.embed(terminal, in: container)
 
-        DispatchQueue.main.async {
-            container.window?.makeFirstResponder(terminal)
-        }
+        // Don't steal focus from the sidebar — let the user click the terminal to focus it
     }
 
     private static func embed(_ terminal: LocalProcessTerminalView, in container: NSView) {
