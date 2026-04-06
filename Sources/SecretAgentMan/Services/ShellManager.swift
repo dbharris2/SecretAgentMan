@@ -26,18 +26,24 @@ final class ShellManager {
 
         applyTheme(to: terminal)
 
+        terminals[agent.id] = terminal
+
+        // IMPORTANT: Launch process on next run loop tick, NOT synchronously.
+        // Same fix as TerminalManager — synchronous startProcess inside
+        // updateNSView causes a main thread feedback loop (beachball).
         let shell = Self.userShell()
         let env = ProcessInfo.processInfo.environment.map { "\($0.key)=\($0.value)" }
+        let folder = agent.folder.path
+        DispatchQueue.main.async {
+            terminal.startProcess(
+                executable: shell,
+                args: [],
+                environment: env,
+                execName: (shell as NSString).lastPathComponent,
+                currentDirectory: folder
+            )
+        }
 
-        terminal.startProcess(
-            executable: shell,
-            args: [],
-            environment: env,
-            execName: (shell as NSString).lastPathComponent,
-            currentDirectory: agent.folder.path
-        )
-
-        terminals[agent.id] = terminal
         return terminal
     }
 
