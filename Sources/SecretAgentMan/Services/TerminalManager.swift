@@ -56,20 +56,28 @@ final class TerminalManager {
             self.onStateChange?(agentId, .awaitingInput)
         }
 
-        processManager.startAgent(
-            terminal: terminal,
-            folder: agent.folder,
-            initialPrompt: agent.hasLaunched ? nil : agent.initialPrompt,
-            sessionId: agent.sessionId,
-            hasLaunched: agent.hasLaunched
-        )
-
-        lastStates[agent.id] = .active
-        onStateChange(agent.id, .active)
-        self.onStateChange?(agent.id, .active)
-        onLaunched?(agent.id)
-
-        terminal.startIdleTimer()
+        // IMPORTANT: Launch process on next run loop tick, NOT synchronously.
+        // startProcess triggers immediate data callbacks that cause SwiftUI
+        // re-renders, which re-enter updateNSView, creating a main thread
+        // feedback loop (beachball). The async dispatch breaks the cycle.
+        let pm = processManager
+        let folder = agent.folder
+        let prompt = agent.hasLaunched ? nil : agent.initialPrompt
+        let sessionId = agent.sessionId
+        let hasLaunched = agent.hasLaunched
+        DispatchQueue.main.async { [weak self] in
+            pm.startAgent(
+                terminal: terminal,
+                folder: folder,
+                initialPrompt: prompt,
+                sessionId: sessionId,
+                hasLaunched: hasLaunched
+            )
+            self?.lastStates[agentId] = .active
+            self?.onStateChange?(agentId, .active)
+            self?.onLaunched?(agentId)
+            terminal.startIdleTimer()
+        }
 
         return terminal
     }
