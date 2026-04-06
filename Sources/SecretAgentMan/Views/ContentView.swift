@@ -88,6 +88,13 @@ struct ContentView: View {
             .onChange(of: coordinator.store.agents.map(\.folder)) { oldFolders, newFolders in
                 coordinator.handleAgentFoldersChanged(old: oldFolders, new: newFolders)
             }
+            .onChange(of: isShellPanelVisible) {
+                if isShellPanelVisible, let id = coordinator.store.selectedAgentId {
+                    DispatchQueue.main.async {
+                        coordinator.shellManager.focusTerminal(for: id)
+                    }
+                }
+            }
 
             Divider()
 

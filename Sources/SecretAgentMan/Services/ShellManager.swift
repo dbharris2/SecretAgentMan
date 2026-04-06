@@ -53,6 +53,11 @@ final class ShellManager {
         terminal.send(source: terminal, data: ArraySlice(bytes))
     }
 
+    func focusTerminal(for agentId: UUID) {
+        guard let terminal = terminals[agentId] else { return }
+        terminal.window?.makeFirstResponder(terminal)
+    }
+
     func removeTerminal(for agentId: UUID) {
         if let terminal = terminals[agentId] {
             terminal.terminate()
