@@ -25,8 +25,15 @@ struct ActivitySidebarView: View {
                     case .prs:
                         PRListView(
                             sections: coordinator.githubPRSections,
-                            onReview: coordinator.reviewPR,
-                            onSelect: coordinator.selectPR,
+                            actions: PRActions(
+                                review: coordinator.reviewPR,
+                                markReady: coordinator.markPRReady,
+                                close: coordinator.closePR,
+                                convertToDraft: coordinator.convertPRToDraft,
+                                addReviewers: coordinator.addReviewers,
+                                select: coordinator.selectPR
+                            ),
+                            reviewerGroups: coordinator.reviewerGroupStore.groups,
                             selectedPRId: coordinator.selectedGitHubPR?.id
                         )
                     }

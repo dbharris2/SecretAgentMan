@@ -1,9 +1,18 @@
 import SwiftUI
 
+struct PRActions {
+    let review: (GitHubPRService.GitHubPR) -> Void
+    let markReady: (GitHubPRService.GitHubPR) -> Void
+    let close: (GitHubPRService.GitHubPR) -> Void
+    let convertToDraft: (GitHubPRService.GitHubPR) -> Void
+    let addReviewers: (GitHubPRService.GitHubPR, ReviewerGroup) -> Void
+    let select: (GitHubPRService.GitHubPR?) -> Void
+}
+
 struct PRListView: View {
     let sections: [GitHubPRService.PRSection: [GitHubPRService.GitHubPR]]
-    let onReview: (GitHubPRService.GitHubPR) -> Void
-    let onSelect: (GitHubPRService.GitHubPR?) -> Void
+    let actions: PRActions
+    var reviewerGroups: [ReviewerGroup] = []
     var selectedPRId: String?
     @State private var collapsedSections: Set<GitHubPRService.PRSection> = []
 
@@ -26,14 +35,14 @@ struct PRListView: View {
                                 pr: pr,
                                 isSelected: selectedPRId == pr.id,
                                 showReviewButton: item.section == .needsMyReview,
-                                onReview: onReview
+                                onReview: actions.review
                             )
                             .contentShape(Rectangle())
                             .onTapGesture {
                                 if selectedPRId == pr.id {
-                                    onSelect(nil)
+                                    actions.select(nil)
                                 } else {
-                                    onSelect(pr)
+                                    actions.select(pr)
                                 }
                             }
                             .contextMenu {
@@ -43,6 +52,33 @@ struct PRListView: View {
                                 Button("Copy URL") {
                                     NSPasteboard.general.clearContents()
                                     NSPasteboard.general.setString(pr.url.absoluteString, forType: .string)
+                                }
+                                if pr.isDraft || item.section.isAuthored {
+                                    Divider()
+                                }
+                                if pr.isDraft {
+                                    Button("Mark as Ready for Review") {
+                                        actions.markReady(pr)
+                                    }
+                                }
+                                if item.section.isAuthored, !pr.isDraft {
+                                    Button("Convert to Draft") {
+                                        actions.convertToDraft(pr)
+                                    }
+                                }
+                                if item.section.isAuthored, !reviewerGroups.isEmpty {
+                                    Menu("Add Reviewers") {
+                                        ForEach(reviewerGroups) { group in
+                                            Button("\(group.name) (\(group.reviewers.joined(separator: ", ")))") {
+                                                actions.addReviewers(pr, group)
+                                            }
+                                        }
+                                    }
+                                }
+                                if item.section.isAuthored {
+                                    Button("Close PR", role: .destructive) {
+                                        actions.close(pr)
+                                    }
                                 }
                             }
                         }

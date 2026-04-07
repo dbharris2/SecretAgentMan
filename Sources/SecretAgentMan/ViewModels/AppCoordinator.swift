@@ -11,6 +11,7 @@ final class AppCoordinator {
     let prService = PRService()
     let githubPRService = GitHubPRService()
     let eventBus = AgentEventBus()
+    let reviewerGroupStore = ReviewerGroupStore()
 
     // MARK: - Cached Data
 
@@ -143,6 +144,34 @@ final class AppCoordinator {
             if selectedGitHubPR?.id == pr.id {
                 selectedPRDiff = diff
                 selectedPRChanges = changes
+            }
+        }
+    }
+
+    func addReviewers(_ pr: GitHubPRService.GitHubPR, group: ReviewerGroup) {
+        performPRAction {
+            await self.githubPRService.addReviewers(
+                repo: pr.repository, number: pr.number, reviewers: group.reviewers
+            )
+        }
+    }
+
+    func closePR(_ pr: GitHubPRService.GitHubPR) {
+        performPRAction { await self.githubPRService.closePR(repo: pr.repository, number: pr.number) }
+    }
+
+    func markPRReady(_ pr: GitHubPRService.GitHubPR) {
+        performPRAction { await self.githubPRService.markPRReady(repo: pr.repository, number: pr.number) }
+    }
+
+    func convertPRToDraft(_ pr: GitHubPRService.GitHubPR) {
+        performPRAction { await self.githubPRService.convertToDraft(repo: pr.repository, number: pr.number) }
+    }
+
+    private func performPRAction(_ action: @escaping () async -> Bool) {
+        Task {
+            if await action() {
+                refreshGitHubPRs()
             }
         }
     }

@@ -15,7 +15,8 @@ struct SecretAgentManApp: App {
         Settings {
             SettingsView(
                 terminalManager: coordinator.terminalManager,
-                shellManager: coordinator.shellManager
+                shellManager: coordinator.shellManager,
+                reviewerGroupStore: coordinator.reviewerGroupStore
             )
         }
         .commands {
