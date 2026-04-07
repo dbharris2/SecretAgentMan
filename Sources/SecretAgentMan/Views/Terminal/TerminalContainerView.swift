@@ -4,16 +4,19 @@ import SwiftUI
 /// A reusable NSViewRepresentable container that swaps terminal views when
 /// the selected agent changes. Used by both the agent terminal and shell panels.
 struct TerminalContainerView: NSViewRepresentable {
+    var label: String = "unknown"
     let selectedAgentId: UUID?
     let store: AgentStore
     let terminalProvider: (Agent) -> LocalProcessTerminalView
 
     func makeNSView(context: Context) -> NSView {
+        context.coordinator.label = label
         let container = NSView(frame: .zero)
         if let agentId = selectedAgentId, let agent = store.agents.first(where: { $0.id == agentId }) {
             let terminal = terminalProvider(agent)
             Self.embed(terminal, in: container)
             context.coordinator.currentAgentId = agentId
+            context.coordinator.currentTerminal = terminal
         }
         return container
     }
@@ -45,8 +48,6 @@ struct TerminalContainerView: NSViewRepresentable {
         context.coordinator.currentTerminal = terminal
 
         Self.embed(terminal, in: container)
-
-        // Don't steal focus from the sidebar — let the user click the terminal to focus it
     }
 
     private static func embed(_ terminal: LocalProcessTerminalView, in container: NSView) {
@@ -68,5 +69,6 @@ struct TerminalContainerView: NSViewRepresentable {
     final class Coordinator {
         var currentAgentId: UUID?
         weak var currentTerminal: LocalProcessTerminalView?
+        var label: String = "unknown"
     }
 }

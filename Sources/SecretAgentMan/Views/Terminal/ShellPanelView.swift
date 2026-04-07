@@ -8,6 +8,7 @@ struct ShellPanelView: View {
 
     var body: some View {
         TerminalContainerView(
+            label: "shell",
             selectedAgentId: selectedAgentId,
             store: store,
             terminalProvider: { agent in
