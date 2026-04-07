@@ -7,7 +7,7 @@ actor DiffService {
         case none
     }
 
-    func detectVCS(in directory: URL) -> VCSType {
+    nonisolated func detectVCS(in directory: URL) -> VCSType {
         let fm = FileManager.default
         if fm.fileExists(atPath: directory.appendingPathComponent(".jj").path) {
             return .jj
@@ -17,7 +17,7 @@ actor DiffService {
         return .none
     }
 
-    func fetchBranchName(in directory: URL) async -> String? {
+    nonisolated func fetchBranchName(in directory: URL) async -> String? {
         let vcs = detectVCS(in: directory)
         let raw: String
         switch vcs {
@@ -42,13 +42,13 @@ actor DiffService {
     }
 
     /// Get the "owner/repo" name from git remote (local, no API call). Suitable for caching.
-    func fetchRepoName(in directory: URL) async -> String? {
+    nonisolated func fetchRepoName(in directory: URL) async -> String? {
         let remoteRaw = await runCommand("/usr/bin/git", args: ["remote", "get-url", "origin"], in: directory)
         return Self.parseRepoFromRemote(remoteRaw.trimmingCharacters(in: .whitespacesAndNewlines))
     }
 
     /// Get the actual branch/bookmark name for PR matching (distinct from display name for jj repos).
-    func fetchBookmark(in directory: URL) async -> String? {
+    nonisolated func fetchBookmark(in directory: URL) async -> String? {
         let vcs = detectVCS(in: directory)
         switch vcs {
         case .jj:
@@ -86,7 +86,7 @@ actor DiffService {
         return "\(parts[0])/\(parts[1])"
     }
 
-    func fetchFullDiff(in directory: URL) async -> String {
+    nonisolated func fetchFullDiff(in directory: URL) async -> String {
         let vcs = detectVCS(in: directory)
         switch vcs {
         case .jj:
@@ -99,7 +99,7 @@ actor DiffService {
     }
 
     /// Extract file changes directly from unified diff output (no truncation).
-    func parseChanges(from diff: String) -> [FileChange] {
+    nonisolated func parseChanges(from diff: String) -> [FileChange] {
         var changes: [FileChange] = []
         let lines = diff.components(separatedBy: "\n")
 
@@ -165,7 +165,7 @@ actor DiffService {
         return changes
     }
 
-    private func extractPath(from diffLine: String) -> String {
+    private nonisolated func extractPath(from diffLine: String) -> String {
         // "diff --git a/some/path b/some/path" → "some/path"
         let parts = diffLine.components(separatedBy: " b/")
         if parts.count >= 2 {
@@ -174,7 +174,7 @@ actor DiffService {
         return diffLine
     }
 
-    private func fileStatus(
+    private nonisolated func fileStatus(
         isNew: Bool,
         isDeleted: Bool,
         insertions: Int,
@@ -187,7 +187,7 @@ actor DiffService {
         return .modified
     }
 
-    private func runCommand(_ command: String, args: [String], in directory: URL) async -> String {
+    private nonisolated func runCommand(_ command: String, args: [String], in directory: URL) async -> String {
         let process = Process()
         let pipe = Pipe()
 

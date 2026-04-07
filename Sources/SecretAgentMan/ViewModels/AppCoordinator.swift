@@ -118,6 +118,8 @@ final class AppCoordinator {
 
     // MARK: - Diff
 
+    private var diffGeneration = 0
+
     func refreshDiffs() {
         guard let agent = store.selectedAgent else {
             fileChanges = []
@@ -125,12 +127,20 @@ final class AppCoordinator {
             return
         }
 
+        let generation = diffGeneration
+        let agentId = agent.id
         Task {
             let diff = await diffService.fetchFullDiff(in: agent.folder)
             let changes = await diffService.parseChanges(from: diff)
+            guard generation == diffGeneration, store.selectedAgentId == agentId else { return }
             fullDiff = diff
             fileChanges = changes
         }
+    }
+
+    func invalidateDiffs() {
+        diffGeneration += 1
+        refreshDiffs()
     }
 
     // MARK: - GitHub PRs
