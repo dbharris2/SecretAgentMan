@@ -9,6 +9,7 @@ final class AgentStore {
     var pendingPrompts: [PendingPrompt] = []
 
     func addPendingPrompt(_ prompt: PendingPrompt) {
+        guard !pendingPrompts.contains(where: { $0.agentId == prompt.agentId && $0.source == prompt.source }) else { return }
         pendingPrompts.append(prompt)
     }
 
