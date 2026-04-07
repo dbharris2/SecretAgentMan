@@ -33,9 +33,7 @@ struct PRListView: View {
                         ForEach(item.prs) { pr in
                             PRRowView(
                                 pr: pr,
-                                isSelected: selectedPRId == pr.id,
-                                showReviewButton: item.section == .needsMyReview,
-                                onReview: actions.review
+                                isSelected: selectedPRId == pr.id
                             )
                             .contentShape(Rectangle())
                             .onTapGesture {
@@ -52,6 +50,10 @@ struct PRListView: View {
                                 Button("Copy URL") {
                                     NSPasteboard.general.clearContents()
                                     NSPasteboard.general.setString(pr.url.absoluteString, forType: .string)
+                                }
+                                Divider()
+                                Button("Review with Agent") {
+                                    actions.review(pr)
                                 }
                                 if pr.isDraft || item.section.isAuthored {
                                     Divider()
@@ -135,8 +137,6 @@ struct PRListView: View {
 struct PRRowView: View {
     let pr: GitHubPRService.GitHubPR
     var isSelected: Bool = false
-    let showReviewButton: Bool
-    let onReview: (GitHubPRService.GitHubPR) -> Void
 
     private var stateColor: Color {
         if pr.reviewDecision == "APPROVED" { return .green }
@@ -235,17 +235,6 @@ struct PRRowView: View {
                             .font(.system(size: 11))
                             .foregroundStyle(pr.checkStatus.color)
                             .help(pr.checkStatus.label)
-                    }
-                }
-
-                if showReviewButton {
-                    HStack {
-                        Spacer()
-                        Button("Review") {
-                            onReview(pr)
-                        }
-                        .controlSize(.small)
-                        .buttonStyle(.borderedProminent)
                     }
                 }
             }
