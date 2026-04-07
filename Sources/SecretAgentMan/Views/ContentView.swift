@@ -74,7 +74,7 @@ struct ContentView: View {
                 }
             }
             .onChange(of: coordinator.store.selectedAgentId) {
-                coordinator.refreshDiffs()
+                coordinator.invalidateDiffs()
                 if let id = coordinator.store.selectedAgentId {
                     UserDefaults.standard.set(id.uuidString, forKey: "selectedAgentId")
                 }
