@@ -60,14 +60,22 @@ actor GitHubPRService {
         async let authored = fetchPRs(
             query: "is:pr is:open author:@me"
         )
+        async let reviewedByMe = fetchPRs(
+            query: "is:pr is:open reviewed-by:@me -author:@me"
+        )
 
         let reviewPRs = await needsReview
         let authoredPRs = await authored
+        let reviewedPRs = await reviewedByMe
 
         var sections: [PRSection: [GitHubPR]] = [:]
 
         // Needs my review: requested but I haven't approved or requested changes
         sections[.needsMyReview] = reviewPRs
+
+        // Reviewed: PRs I've reviewed that aren't currently requesting my review again
+        let needsReviewIds = Set(reviewPRs.map(\.id))
+        sections[.reviewed] = reviewedPRs.filter { !needsReviewIds.contains($0.id) }
 
         // Authored PRs split by state
         var returned: [GitHubPR] = []
