@@ -8,7 +8,7 @@ struct ScriptRunnerPopover: View {
         let dict = Dictionary(grouping: scripts) { $0.source }
         return ProjectScript.ScriptSource.allCases.compactMap { source in
             guard let items = dict[source], !items.isEmpty else { return nil }
-            return (source: source, scripts: items)
+            return (source: source, scripts: items.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending })
         }
     }
 

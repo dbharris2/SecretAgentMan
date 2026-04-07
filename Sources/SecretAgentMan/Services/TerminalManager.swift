@@ -107,6 +107,16 @@ final class TerminalManager {
         terminals[agentId] != nil
     }
 
+    func typeText(to agentId: UUID, text: String) {
+        guard let terminal = terminals[agentId] else { return }
+        terminal.send(Array(text.utf8))
+    }
+
+    func focusTerminal(for agentId: UUID) {
+        guard let terminal = terminals[agentId] else { return }
+        terminal.window?.makeFirstResponder(terminal)
+    }
+
     func sendInput(to agentId: UUID, text: String) {
         guard let terminal = terminals[agentId] else { return }
         // Use bracketed paste mode so multi-line text is treated as a

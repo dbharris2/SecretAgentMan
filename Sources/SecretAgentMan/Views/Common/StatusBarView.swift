@@ -7,6 +7,7 @@ struct StatusBarView: View {
     @State private var showingMCPPopover = false
     @State private var showingPluginsPopover = false
     @State private var showingScriptsPopover = false
+    @State private var showingSkillsPopover = false
 
     private var selectedAgent: Agent? {
         coordinator.store.selectedAgent
@@ -26,11 +27,17 @@ struct StatusBarView: View {
         return ScriptDetector.detectScripts(in: agent.folder)
     }
 
+    private var skills: [SkillInfo] {
+        guard let agent = selectedAgent else { return [] }
+        return MCPConfigLoader.loadSkills(in: agent.folder)
+    }
+
     var body: some View {
         @Bindable var coordinator = coordinator
         let mcpServers = mcpServers
         let plugins = plugins
         let scripts = scripts
+        let skills = skills
 
         HStack(spacing: 8) {
             // Left: navigation icons
@@ -84,6 +91,26 @@ struct StatusBarView: View {
                         items: plugins,
                         emptyMessage: "No plugins installed"
                     )
+                }
+
+                Button {
+                    showingSkillsPopover.toggle()
+                } label: {
+                    HStack(spacing: 3) {
+                        Image(systemName: "sparkles")
+                            .font(.system(size: 10))
+                        Text(verbatim: "\(skills.count) Skills")
+                            .font(.system(size: 11))
+                    }
+                    .foregroundStyle(skills.isEmpty ? .secondary : .primary)
+                }
+                .buttonStyle(.plain)
+                .help("Skills")
+                .popover(isPresented: $showingSkillsPopover) {
+                    SkillsPopover(skills: skills) { skill in
+                        showingSkillsPopover = false
+                        sendSkill(skill)
+                    }
                 }
 
                 Button {
@@ -159,6 +186,12 @@ struct StatusBarView: View {
         .padding(.horizontal, 10)
         .frame(height: 26)
         .background(.bar)
+    }
+
+    private func sendSkill(_ skill: SkillInfo) {
+        guard let agentId = coordinator.store.selectedAgentId else { return }
+        coordinator.terminalManager.typeText(to: agentId, text: "/\(skill.name) ")
+        coordinator.terminalManager.focusTerminal(for: agentId)
     }
 
     private func runScript(_ script: ProjectScript) {
