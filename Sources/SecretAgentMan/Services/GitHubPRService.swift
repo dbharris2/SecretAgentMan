@@ -42,6 +42,13 @@ actor GitHubPRService {
         case waitingForReview = "Waiting for review"
         case reviewed = "Reviewed"
         case drafts = "Drafts"
+
+        var isAuthored: Bool {
+            switch self {
+            case .returnedToMe, .approved, .waitingForReview, .drafts: true
+            case .needsMyReview, .reviewed: false
+            }
+        }
     }
 
     func fetchAllPRs() async -> [PRSection: [GitHubPR]] {
@@ -212,6 +219,41 @@ actor GitHubPRService {
                 reviewers: reviewers,
                 checkStatus: checkStatus
             )
+        }
+    }
+
+    func addReviewers(repo: String, number: Int, reviewers: [String]) -> Bool {
+        guard !reviewers.isEmpty else { return false }
+        let reviewerArgs = reviewers.flatMap { ["--add-reviewer", $0] }
+        return runPRCommand(["edit", "\(number)", "--repo", repo] + reviewerArgs)
+    }
+
+    func closePR(repo: String, number: Int) -> Bool {
+        runPRCommand(["close", "\(number)", "--repo", repo])
+    }
+
+    func convertToDraft(repo: String, number: Int) -> Bool {
+        runPRCommand(["ready", "\(number)", "--repo", repo, "--undo"])
+    }
+
+    func markPRReady(repo: String, number: Int) -> Bool {
+        runPRCommand(["ready", "\(number)", "--repo", repo])
+    }
+
+    private func runPRCommand(_ subArgs: [String]) -> Bool {
+        guard let ghPath = Self.ghPath else { return false }
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: ghPath)
+        process.arguments = ["pr"] + subArgs
+        process.standardOutput = Pipe()
+        process.standardError = Pipe()
+        do {
+            try process.run()
+            process.waitUntilExit()
+            return process.terminationStatus == 0
+        } catch {
+            Self.logger.error("gh pr \(subArgs.first ?? "") failed: \(error)")
+            return false
         }
     }
 

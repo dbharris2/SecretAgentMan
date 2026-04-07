@@ -3,6 +3,22 @@ import SwiftUI
 struct SettingsView: View {
     let terminalManager: TerminalManager
     let shellManager: ShellManager
+    let reviewerGroupStore: ReviewerGroupStore
+
+    var body: some View {
+        TabView {
+            GeneralSettingsView(terminalManager: terminalManager, shellManager: shellManager)
+                .tabItem { Label("General", systemImage: "gear") }
+            ReviewerGroupsSettingsView(store: reviewerGroupStore)
+                .tabItem { Label("Reviewers", systemImage: "person.2") }
+        }
+        .frame(width: 450, height: 500)
+    }
+}
+
+struct GeneralSettingsView: View {
+    let terminalManager: TerminalManager
+    let shellManager: ShellManager
 
     @AppStorage(UserDefaultsKeys.terminalTheme) private var selectedTheme = "Catppuccin Mocha"
     @AppStorage(UserDefaultsKeys.pluginDirectory) private var pluginDirectory = ""
@@ -97,7 +113,6 @@ struct SettingsView: View {
             .clipShape(RoundedRectangle(cornerRadius: 6))
         }
         .padding(20)
-        .frame(width: 450, height: 500)
         .onChange(of: listSelection) {
             if let theme = listSelection {
                 selectedTheme = theme
@@ -183,5 +198,113 @@ struct ThemePreview: View {
                         .strokeBorder(Color.primary.opacity(0.2), lineWidth: 0.5)
                 }
             }
+    }
+}
+
+struct ReviewerGroupsSettingsView: View {
+    @Bindable var store: ReviewerGroupStore
+    @State private var selectedGroupId: UUID?
+    @State private var newReviewerText = ""
+
+    private var selectedGroup: ReviewerGroup? {
+        store.groups.first { $0.id == selectedGroupId }
+    }
+
+    var body: some View {
+        HSplitView {
+            // Group list
+            VStack(alignment: .leading, spacing: 0) {
+                List(store.groups, selection: $selectedGroupId) { group in
+                    Text(group.name)
+                }
+                .listStyle(.inset)
+
+                Divider()
+
+                HStack(spacing: 4) {
+                    Button(action: addGroup) {
+                        Image(systemName: "plus")
+                    }
+                    Button(action: removeSelectedGroup) {
+                        Image(systemName: "minus")
+                    }
+                    .disabled(selectedGroupId == nil)
+                }
+                .padding(6)
+            }
+            .frame(minWidth: 140, idealWidth: 160)
+
+            // Group detail
+            if let index = store.groups.firstIndex(where: { $0.id == selectedGroupId }) {
+                VStack(alignment: .leading, spacing: 12) {
+                    TextField("Group Name", text: $store.groups[index].name)
+                        .textFieldStyle(.roundedBorder)
+                        .font(.headline)
+                        .onChange(of: store.groups[index].name) { store.save() }
+
+                    Text("Reviewers")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+
+                    List {
+                        ForEach(store.groups[index].reviewers, id: \.self) { reviewer in
+                            HStack {
+                                Text(reviewer)
+                                Spacer()
+                                Button {
+                                    store.groups[index].reviewers.removeAll { $0 == reviewer }
+                                    store.save()
+                                } label: {
+                                    Image(systemName: "xmark.circle.fill")
+                                        .foregroundStyle(.secondary)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                    }
+                    .listStyle(.inset)
+
+                    HStack {
+                        TextField("GitHub username", text: $newReviewerText)
+                            .textFieldStyle(.roundedBorder)
+                            .onSubmit { addReviewer(at: index) }
+                        Button("Add") { addReviewer(at: index) }
+                            .disabled(newReviewerText.trimmingCharacters(in: .whitespaces).isEmpty)
+                    }
+                }
+                .padding(12)
+            } else {
+                VStack {
+                    Spacer()
+                    Text("Select or create a reviewer group")
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                }
+                .frame(maxWidth: .infinity)
+            }
+        }
+        .padding(12)
+    }
+
+    private func addGroup() {
+        let group = ReviewerGroup(name: "New Group")
+        store.groups.append(group)
+        selectedGroupId = group.id
+        store.save()
+    }
+
+    private func removeSelectedGroup() {
+        guard let id = selectedGroupId else { return }
+        store.groups.removeAll { $0.id == id }
+        selectedGroupId = store.groups.first?.id
+        store.save()
+    }
+
+    private func addReviewer(at index: Int) {
+        let username = newReviewerText.trimmingCharacters(in: .whitespaces)
+        guard !username.isEmpty, !store.groups[index].reviewers.contains(username) else { return }
+        store.groups[index].reviewers.append(username)
+        newReviewerText = ""
+        store.save()
     }
 }
