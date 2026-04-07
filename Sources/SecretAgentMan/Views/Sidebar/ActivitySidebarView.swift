@@ -33,6 +33,9 @@ struct ActivitySidebarView: View {
                                 addReviewers: coordinator.addReviewers,
                                 select: coordinator.selectPR
                             ),
+                            isLoading: coordinator.isLoadingPRs,
+                            rateLimit: coordinator.githubRateLimit,
+                            lastPollTime: coordinator.lastPRPollTime,
                             reviewerGroups: coordinator.reviewerGroupStore.groups,
                             selectedPRId: coordinator.selectedGitHubPR?.id
                         )

@@ -12,6 +12,9 @@ struct PRActions {
 struct PRListView: View {
     let sections: [GitHubPRService.PRSection: [GitHubPRService.GitHubPR]]
     let actions: PRActions
+    var isLoading = false
+    var rateLimit: GitHubPRService.RateLimit?
+    var lastPollTime: Date?
     var reviewerGroups: [ReviewerGroup] = []
     var selectedPRId: String?
     @State private var collapsedSections: Set<GitHubPRService.PRSection> = []
@@ -24,6 +27,71 @@ struct PRListView: View {
     }
 
     var body: some View {
+        VStack(spacing: 0) {
+            if isLoading {
+                VStack {
+                    Spacer()
+                    ProgressView()
+                        .controlSize(.small)
+                    Text("Loading PRs…")
+                        .scaledFont(size: 12)
+                        .foregroundStyle(.secondary)
+                        .padding(.top, 4)
+                    Spacer()
+                }
+                .frame(maxWidth: .infinity)
+            } else if orderedSections.isEmpty {
+                VStack {
+                    Spacer()
+                    Text("No open PRs")
+                        .scaledFont(size: 12)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                }
+                .frame(maxWidth: .infinity)
+            } else {
+                prList
+            }
+
+            if let rateLimit {
+                rateLimitBar(rateLimit)
+            }
+        }
+    }
+
+    private func rateLimitBar(_ limit: GitHubPRService.RateLimit) -> some View {
+        let fraction = limit.limit > 0 ? Double(limit.used) / Double(limit.limit) : 0
+        let color: Color = fraction > 0.8 ? .red : fraction > 0.5 ? .orange : .green
+
+        return HStack(spacing: 6) {
+            Circle()
+                .fill(color)
+                .frame(width: 6, height: 6)
+            Text("GitHub API: \(limit.used)/\(limit.limit) used")
+                .scaledFont(size: 10)
+                .foregroundStyle(.secondary)
+            Spacer()
+            if let lastPollTime {
+                TimelineView(.periodic(from: .now, by: 1)) { _ in
+                    Text(Self.relativeTime(lastPollTime))
+                        .scaledFont(size: 10)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 4)
+        .background(.bar)
+    }
+
+    private static func relativeTime(_ date: Date) -> String {
+        let seconds = Int(Date().timeIntervalSince(date))
+        if seconds < 5 { return "just now" }
+        if seconds < 60 { return "\(seconds)s ago" }
+        return "\(seconds / 60)m ago"
+    }
+
+    private var prList: some View {
         List {
             ForEach(orderedSections, id: \.section) { item in
                 let isExpanded = !collapsedSections.contains(item.section)

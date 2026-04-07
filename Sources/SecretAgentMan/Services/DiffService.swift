@@ -41,6 +41,51 @@ actor DiffService {
         return trimmed
     }
 
+    /// Get the "owner/repo" name from git remote (local, no API call). Suitable for caching.
+    func fetchRepoName(in directory: URL) async -> String? {
+        let remoteRaw = await runCommand("/usr/bin/git", args: ["remote", "get-url", "origin"], in: directory)
+        return Self.parseRepoFromRemote(remoteRaw.trimmingCharacters(in: .whitespacesAndNewlines))
+    }
+
+    /// Get the actual branch/bookmark name for PR matching (distinct from display name for jj repos).
+    func fetchBookmark(in directory: URL) async -> String? {
+        let vcs = detectVCS(in: directory)
+        switch vcs {
+        case .jj:
+            let raw = await runCommand(
+                "/opt/homebrew/bin/jj",
+                args: ["log", "-r", "@", "--no-graph", "-T", "bookmarks"],
+                in: directory
+            )
+            let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.components(separatedBy: " ").first { !$0.isEmpty }?
+                .trimmingCharacters(in: CharacterSet(charactersIn: "*"))
+        case .git:
+            let raw = await runCommand("/usr/bin/git", args: ["branch", "--show-current"], in: directory)
+            let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.isEmpty ? nil : trimmed
+        case .none:
+            return nil
+        }
+    }
+
+    /// Parse "owner/repo" from a git remote URL (SSH or HTTPS).
+    static func parseRepoFromRemote(_ remote: String) -> String? {
+        // git@github.com:owner/repo.git or https://github.com/owner/repo.git
+        var path = remote
+        if path.contains("github.com:") {
+            path = path.components(separatedBy: "github.com:").last ?? ""
+        } else if path.contains("github.com/") {
+            path = path.components(separatedBy: "github.com/").last ?? ""
+        } else {
+            return nil
+        }
+        path = path.replacingOccurrences(of: ".git", with: "")
+        let parts = path.split(separator: "/")
+        guard parts.count >= 2 else { return nil }
+        return "\(parts[0])/\(parts[1])"
+    }
+
     func fetchFullDiff(in directory: URL) async -> String {
         let vcs = detectVCS(in: directory)
         switch vcs {
