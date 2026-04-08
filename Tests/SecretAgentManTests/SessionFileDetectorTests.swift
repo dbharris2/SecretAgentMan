@@ -75,6 +75,32 @@ struct SessionFileDetectorTests {
         #expect(result == nil)
     }
 
+    @Test
+    func availableClaudeSessionsReturnsAllSessionsNewestFirst() throws {
+        let tmpDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: tmpDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        let old = tmpDir.appendingPathComponent("old-session.jsonl")
+        let new = tmpDir.appendingPathComponent("new-session.jsonl")
+        try Data().write(to: old)
+        Thread.sleep(forTimeInterval: 0.1)
+        try Data().write(to: new)
+
+        let agent = Agent(
+            name: "Claude",
+            folder: URL(fileURLWithPath: "/tmp/project"),
+            provider: .claude
+        )
+        let sessions = SessionFileDetector.availableSessions(
+            for: agent,
+            inClaudeDirectory: tmpDir
+        )
+
+        #expect(sessions.map(\.id) == ["new-session", "old-session"])
+    }
+
     // MARK: - sessionFileExists
 
     @Test
@@ -140,6 +166,37 @@ struct SessionFileDetectorTests {
 
         let result = SessionFileDetector.latestCodexSessionId(for: folder, inDirectory: rootDir)
         #expect(result == "new-session")
+    }
+
+    @Test
+    func availableCodexSessionsReturnsAllMatchingSessionsNewestFirst() throws {
+        let rootDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+        let dayDir = rootDir.appendingPathComponent("2026/04/07", isDirectory: true)
+        try FileManager.default.createDirectory(at: dayDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: rootDir) }
+
+        let folder = URL(fileURLWithPath: "/tmp/project-a")
+        let old = dayDir.appendingPathComponent("old.jsonl")
+        let new = dayDir.appendingPathComponent("new.jsonl")
+        let other = dayDir.appendingPathComponent("other.jsonl")
+
+        try #"{"type":"session_meta","payload":{"id":"old-session","cwd":"/tmp/project-a"}}"#
+            .write(to: old, atomically: true, encoding: .utf8)
+        Thread.sleep(forTimeInterval: 0.1)
+        try #"{"type":"session_meta","payload":{"id":"new-session","cwd":"/tmp/project-a"}}"#
+            .write(to: new, atomically: true, encoding: .utf8)
+        try #"{"type":"session_meta","payload":{"id":"other-session","cwd":"/tmp/project-b"}}"#
+            .write(to: other, atomically: true, encoding: .utf8)
+
+        let agent = Agent(
+            name: "Codex",
+            folder: folder,
+            provider: .codex
+        )
+        let sessions = SessionFileDetector.availableSessions(for: agent, inCodexDirectory: rootDir)
+
+        #expect(sessions.map(\.id) == ["new-session", "old-session"])
     }
 
     @Test

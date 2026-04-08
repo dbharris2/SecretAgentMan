@@ -19,6 +19,18 @@ struct AgentProcessManagerTests {
     }
 
     @Test
+    func claudeLaunchConfigurationUsesResumeForExistingSession() {
+        let config = AgentProcessManager.buildLaunchConfiguration(
+            provider: .claude,
+            folder: URL(fileURLWithPath: "/tmp/project"),
+            sessionId: "claude-session",
+            hasLaunched: true
+        )
+
+        #expect(config.args.starts(with: ["--enable-auto-mode", "--resume", "claude-session"]))
+    }
+
+    @Test
     func codexLaunchConfigurationUsesResumeForExistingSession() {
         let config = AgentProcessManager.buildLaunchConfiguration(
             provider: .codex,

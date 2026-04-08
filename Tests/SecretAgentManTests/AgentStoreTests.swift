@@ -91,4 +91,47 @@ struct AgentStoreTests {
 
         #expect(store.selectedAgentId == selectedAgent.id)
     }
+
+    @Test
+    func addAgentBasedOnResumeCreatesSelectedAgentThatLaunchesInResumeMode() {
+        let store = AgentStore(loadFromDisk: false)
+        let source = Agent(
+            name: "Existing",
+            folder: URL(fileURLWithPath: "/tmp/project"),
+            provider: .codex,
+            sessionId: "source-session"
+        )
+        store.agents = [source]
+        store.selectAgent(id: source.id)
+
+        let created = store.addAgent(basedOn: source, sessionChoice: .resume(sessionId: "resume-session"))
+
+        #expect(created.folder == source.folder)
+        #expect(created.provider == source.provider)
+        #expect(created.sessionId == "resume-session")
+        #expect(created.hasLaunched)
+        #expect(store.selectedAgentId == created.id)
+    }
+
+    @Test
+    func addAgentBasedOnNewSessionCreatesFreshSelectedAgent() throws {
+        let store = AgentStore(loadFromDisk: false)
+        let source = Agent(
+            name: "Existing",
+            folder: URL(fileURLWithPath: "/tmp/project"),
+            provider: .claude,
+            sessionId: "source-session"
+        )
+        store.agents = [source]
+
+        let created = store.addAgent(basedOn: source, sessionChoice: .newSession)
+
+        let sessionId = try #require(created.sessionId)
+        #expect(created.folder == source.folder)
+        #expect(created.provider == source.provider)
+        #expect(created.id != source.id)
+        #expect(!created.hasLaunched)
+        #expect(!sessionId.isEmpty)
+        #expect(store.selectedAgentId == created.id)
+    }
 }

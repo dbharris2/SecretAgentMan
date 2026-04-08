@@ -8,6 +8,7 @@ struct StatusBarView: View {
     @State private var showingPluginsPopover = false
     @State private var showingScriptsPopover = false
     @State private var showingSkillsPopover = false
+    @State private var showingSessionPopover = false
 
     private var selectedAgent: Agent? {
         coordinator.store.selectedAgent
@@ -33,12 +34,18 @@ struct StatusBarView: View {
         return MCPConfigLoader.loadSkills(in: agent.folder, provider: agent.provider)
     }
 
+    private var sessions: [SessionFileDetector.SessionRecord] {
+        guard let agent = selectedAgent else { return [] }
+        return SessionFileDetector.availableSessions(for: agent)
+    }
+
     var body: some View {
         @Bindable var coordinator = coordinator
         let mcpServers = mcpServers
         let plugins = plugins
         let scripts = scripts
         let skills = skills
+        let sessions = sessions
 
         HStack(spacing: 8) {
             // Left: navigation icons
@@ -184,9 +191,35 @@ struct StatusBarView: View {
                     }
 
                     if let sessionId = agent.sessionId {
-                        Text(verbatim: sessionId)
-                            .scaledFont(size: 10, design: .monospaced)
-                            .foregroundStyle(.secondary)
+                        Button {
+                            showingSessionPopover.toggle()
+                        } label: {
+                            Text(verbatim: sessionId)
+                                .scaledFont(size: 10, design: .monospaced)
+                                .foregroundStyle(.secondary)
+                        }
+                        .buttonStyle(.plain)
+                        .help("Sessions")
+                        .popover(isPresented: $showingSessionPopover) {
+                            SessionPopover(
+                                agent: agent,
+                                sessions: sessions,
+                                onResume: { sessionId in
+                                    showingSessionPopover = false
+                                    _ = coordinator.store.addAgent(
+                                        basedOn: agent,
+                                        sessionChoice: .resume(sessionId: sessionId)
+                                    )
+                                },
+                                onStartNew: {
+                                    showingSessionPopover = false
+                                    _ = coordinator.store.addAgent(
+                                        basedOn: agent,
+                                        sessionChoice: .newSession
+                                    )
+                                }
+                            )
+                        }
                     }
                 }
                 .padding(.trailing, 8)
@@ -258,6 +291,108 @@ struct StatusBarView: View {
         }
         .padding(10)
         .frame(minWidth: 180)
+    }
+}
+
+private struct SessionPopover: View {
+    let agent: Agent
+    let sessions: [SessionFileDetector.SessionRecord]
+    let onResume: (String) -> Void
+    let onStartNew: () -> Void
+
+    private static let formatter: RelativeDateTimeFormatter = {
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .short
+        return formatter
+    }()
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Sessions")
+                .scaledFont(size: 12, weight: .semibold)
+                .foregroundStyle(.secondary)
+
+            Divider()
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(agent.name)
+                    .scaledFont(size: 12, weight: .medium)
+                Text(agent.folderPath)
+                    .scaledFont(size: 11)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+
+            Divider()
+
+            Button {
+                onStartNew()
+            } label: {
+                SessionActionRow(
+                    icon: "plus.circle",
+                    title: "Start New Session",
+                    subtitle: "Create a new agent in \(agent.provider.displayName)"
+                )
+            }
+            .buttonStyle(.plain)
+
+            Divider()
+
+            if sessions.isEmpty {
+                Text("No saved sessions found for this folder")
+                    .scaledFont(size: 12)
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(sessions) { session in
+                    Button {
+                        onResume(session.id)
+                    } label: {
+                        SessionActionRow(
+                            icon: "arrow.clockwise.circle",
+                            title: session.id,
+                            subtitle: sessionSubtitle(for: session)
+                        )
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+        .padding(10)
+        .frame(minWidth: 320)
+    }
+
+    private func sessionSubtitle(for session: SessionFileDetector.SessionRecord) -> String {
+        guard let modifiedAt = session.modifiedAt else { return "Modified date unavailable" }
+        return "Updated \(Self.formatter.localizedString(for: modifiedAt, relativeTo: Date()))"
+    }
+}
+
+private struct SessionActionRow: View {
+    let icon: String
+    let title: String
+    let subtitle: String
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: icon)
+                .scaledFont(size: 12)
+                .foregroundStyle(.secondary)
+                .frame(width: 14)
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text(title)
+                    .scaledFont(size: 12)
+                    .lineLimit(1)
+                Text(subtitle)
+                    .scaledFont(size: 10)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+
+            Spacer()
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .hoverHighlight()
     }
 }
 

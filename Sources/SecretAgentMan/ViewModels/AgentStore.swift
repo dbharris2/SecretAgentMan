@@ -4,6 +4,11 @@ import SwiftUI
 @MainActor
 @Observable
 final class AgentStore {
+    enum SessionLaunchChoice: Equatable {
+        case resume(sessionId: String)
+        case newSession
+    }
+
     var agents: [Agent] = []
     var selectedAgentId: UUID?
     var pendingPrompts: [PendingPrompt] = []
@@ -78,6 +83,39 @@ final class AgentStore {
             provider: provider,
             sessionId: UUID().uuidString,
             initialPrompt: initialPrompt
+        )
+        agents.append(agent)
+        selectAgent(id: agent.id)
+        save()
+        return agent
+    }
+
+    @discardableResult
+    func addAgent(
+        basedOn source: Agent,
+        sessionChoice: SessionLaunchChoice
+    ) -> Agent {
+        let nameSuffix: String
+        let sessionId: String?
+        let hasLaunched: Bool
+
+        switch sessionChoice {
+        case let .resume(existingSessionId):
+            nameSuffix = "Resume \(existingSessionId.prefix(8))"
+            sessionId = existingSessionId
+            hasLaunched = true
+        case .newSession:
+            nameSuffix = "New Session"
+            sessionId = UUID().uuidString
+            hasLaunched = false
+        }
+
+        let agent = Agent(
+            name: "\(source.name) (\(nameSuffix))",
+            folder: source.folder,
+            provider: source.provider,
+            sessionId: sessionId,
+            hasLaunched: hasLaunched
         )
         agents.append(agent)
         selectAgent(id: agent.id)

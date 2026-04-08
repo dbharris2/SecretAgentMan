@@ -3,6 +3,11 @@ import Foundation
 /// Detects the actual Claude Code session ID by scanning session files
 /// or Codex session ID by scanning provider-specific local state.
 enum SessionFileDetector {
+    struct SessionRecord: Identifiable, Equatable {
+        let id: String
+        let modifiedAt: Date?
+    }
+
     /// Convert an agent's folder URL to the Claude project directory path.
     static func claudeProjectDir(for folder: URL) -> URL {
         let home = URL(fileURLWithPath: NSHomeDirectory())
@@ -41,36 +46,31 @@ enum SessionFileDetector {
     /// Find the most recently modified .jsonl session file for an agent folder.
     /// Returns the session ID (filename without extension) or nil.
     static func latestSessionId(for agent: Agent) -> String? {
+        availableSessions(for: agent).first?.id
+    }
+
+    static func availableSessions(for agent: Agent) -> [SessionRecord] {
         switch agent.provider {
         case .claude:
-            latestSessionId(inDirectory: claudeProjectDir(for: agent.folder))
+            sessions(inDirectory: claudeProjectDir(for: agent.folder))
         case .codex:
-            latestCodexSessionId(for: agent.folder)
+            codexSessions(for: agent.folder)
         }
+    }
+
+    static func availableSessions(for agent: Agent, inClaudeDirectory dir: URL) -> [SessionRecord] {
+        guard agent.provider == .claude else { return [] }
+        return sessions(inDirectory: dir)
+    }
+
+    static func availableSessions(for agent: Agent, inCodexDirectory dir: URL) -> [SessionRecord] {
+        guard agent.provider == .codex else { return [] }
+        return codexSessions(for: agent.folder, inDirectory: dir)
     }
 
     /// Find the most recently modified .jsonl session file in a directory.
     static func latestSessionId(inDirectory dir: URL) -> String? {
-        let fm = FileManager.default
-
-        guard let entries = try? fm.contentsOfDirectory(
-            at: dir,
-            includingPropertiesForKeys: [.contentModificationDateKey],
-            options: .skipsHiddenFiles
-        ) else { return nil }
-
-        let sessions = entries.filter { $0.pathExtension == "jsonl" }
-
-        let newest = sessions
-            .compactMap { url -> (String, Date)? in
-                guard let attrs = try? fm.attributesOfItem(atPath: url.path),
-                      let modified = attrs[.modificationDate] as? Date
-                else { return nil }
-                return (url.deletingPathExtension().lastPathComponent, modified)
-            }
-            .max(by: { $0.1 < $1.1 })
-
-        return newest?.0
+        sessions(inDirectory: dir).first?.id
     }
 
     static func latestCodexSessionId(for folder: URL) -> String? {
@@ -78,11 +78,7 @@ enum SessionFileDetector {
     }
 
     static func latestCodexSessionId(for folder: URL, inDirectory dir: URL) -> String? {
-        let sessions = codexSessionFiles(for: folder, inDirectory: dir)
-        let newest = sessions.max { lhs, rhs in
-            (lhs.modified ?? .distantPast) < (rhs.modified ?? .distantPast)
-        }
-        return newest?.id
+        codexSessions(for: folder, inDirectory: dir).first?.id
     }
 
     static func codexSessionFileExists(_ sessionId: String, inDirectory dir: URL) -> Bool {
@@ -122,18 +118,40 @@ enum SessionFileDetector {
         return nil
     }
 
-    private static func codexSessionFiles(for folder: URL) -> [(id: String, modified: Date?)] {
-        codexSessionFiles(for: folder, inDirectory: codexSessionsDir())
+    private static func sessions(inDirectory dir: URL) -> [SessionRecord] {
+        let fm = FileManager.default
+
+        guard let entries = try? fm.contentsOfDirectory(
+            at: dir,
+            includingPropertiesForKeys: [.contentModificationDateKey],
+            options: .skipsHiddenFiles
+        ) else { return [] }
+
+        return entries
+            .filter { $0.pathExtension == "jsonl" }
+            .map { url in
+                let modified = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))
+                    .flatMap(\.contentModificationDate)
+                return SessionRecord(
+                    id: url.deletingPathExtension().lastPathComponent,
+                    modifiedAt: modified
+                )
+            }
+            .sorted { ($0.modifiedAt ?? .distantPast) > ($1.modifiedAt ?? .distantPast) }
     }
 
-    private static func codexSessionFiles(for folder: URL, inDirectory dir: URL) -> [(id: String, modified: Date?)] {
+    private static func codexSessions(for folder: URL) -> [SessionRecord] {
+        codexSessions(for: folder, inDirectory: codexSessionsDir())
+    }
+
+    private static func codexSessions(for folder: URL, inDirectory dir: URL) -> [SessionRecord] {
         guard let enumerator = FileManager.default.enumerator(
             at: dir,
             includingPropertiesForKeys: [.contentModificationDateKey, .isRegularFileKey],
             options: [.skipsHiddenFiles]
         ) else { return [] }
 
-        var matches: [(String, Date?)] = []
+        var matches: [SessionRecord] = []
         for case let url as URL in enumerator {
             guard url.pathExtension == "jsonl",
                   let meta = parseCodexSessionMeta(at: url),
@@ -141,14 +159,16 @@ enum SessionFileDetector {
             else { continue }
 
             let modified = (try? url.resourceValues(forKeys: [.contentModificationDateKey])).flatMap(\.contentModificationDate)
-            matches.append((meta.id, modified))
+            matches.append(SessionRecord(id: meta.id, modifiedAt: modified))
         }
-        return matches
+        return matches.sorted { ($0.modifiedAt ?? .distantPast) > ($1.modifiedAt ?? .distantPast) }
     }
 
     private static func parseCodexSessionMeta(at url: URL) -> (id: String, cwd: String)? {
+        // Session meta lines can be very large (15KB+) due to embedded base_instructions.
+        // Read enough to capture the full first line.
         guard let handle = try? FileHandle(forReadingFrom: url),
-              let data = try? handle.read(upToCount: 4096),
+              let data = try? handle.read(upToCount: 32768),
               let firstLine = String(data: data, encoding: .utf8)?
               .components(separatedBy: .newlines)
               .first
