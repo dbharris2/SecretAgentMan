@@ -12,14 +12,24 @@ final class AppCoordinator {
     let shellManager: ShellManager
     let eventBus: AgentEventBus
     let reviewerGroupStore = ReviewerGroupStore()
+    @ObservationIgnored private let userDefaults: UserDefaults
 
     // MARK: - UI State
 
-    var activeSidebarPanel: SidebarPanel?
+    var activeSidebarPanel: SidebarPanel? {
+        didSet {
+            persistActiveSidebarPanel()
+        }
+    }
+
     var isAgentPanelVisible = true
 
-    init() {
-        let agentSessions = AgentSessionCoordinator()
+    init(
+        loadStateFromDisk: Bool = true,
+        userDefaults: UserDefaults = .standard
+    ) {
+        let store = AgentStore(loadFromDisk: loadStateFromDisk, userDefaults: userDefaults)
+        let agentSessions = AgentSessionCoordinator(store: store)
         let repositoryMonitor = RepositoryMonitor(store: agentSessions.store)
         let prStore = PRStore(
             store: agentSessions.store,
@@ -34,10 +44,12 @@ final class AppCoordinator {
         self.repositoryMonitor = repositoryMonitor
         self.prStore = prStore
         self.usageMonitor = usageMonitor
-        store = agentSessions.store
+        self.store = agentSessions.store
         terminalManager = agentSessions.terminalManager
         shellManager = agentSessions.shellManager
         eventBus = agentSessions.eventBus
+        self.userDefaults = userDefaults
+        activeSidebarPanel = Self.restoreActiveSidebarPanel(from: userDefaults)
 
         repositoryMonitor.onDiffChanged = { [weak self] folder in
             self?.eventBus.publish(.diffChanged(folder: folder))
@@ -109,5 +121,20 @@ final class AppCoordinator {
 
     func reviewPR(_ pr: GitHubPRService.GitHubPR) {
         prStore.reviewPR(pr)
+    }
+
+    private static func restoreActiveSidebarPanel(from userDefaults: UserDefaults) -> SidebarPanel? {
+        guard let rawValue = userDefaults.string(forKey: UserDefaultsKeys.activeSidebarPanel) else {
+            return nil
+        }
+        return SidebarPanel(rawValue: rawValue)
+    }
+
+    private func persistActiveSidebarPanel() {
+        if let activeSidebarPanel {
+            userDefaults.set(activeSidebarPanel.rawValue, forKey: UserDefaultsKeys.activeSidebarPanel)
+        } else {
+            userDefaults.removeObject(forKey: UserDefaultsKeys.activeSidebarPanel)
+        }
     }
 }
