@@ -37,7 +37,9 @@ struct StatusBarView: View {
 
     private var sessions: [SessionFileDetector.SessionRecord] {
         guard let agent = selectedAgent else { return [] }
+        let openSessionIds = coordinator.store.openSessionIds(for: agent)
         return SessionFileDetector.availableSessions(for: agent)
+            .filter { !openSessionIds.contains($0.id) }
     }
 
     var body: some View {

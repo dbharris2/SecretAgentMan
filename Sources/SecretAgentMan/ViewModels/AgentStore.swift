@@ -62,6 +62,17 @@ final class AgentStore {
         agents.first { $0.id == selectedAgentId }
     }
 
+    func openSessionIds(for source: Agent) -> Set<String> {
+        Set(
+            agents.compactMap { agent in
+                guard agent.provider == source.provider,
+                      agent.folder.standardizedFileURL == source.folder.standardizedFileURL
+                else { return nil }
+                return agent.sessionId
+            }
+        )
+    }
+
     func selectAgent(id: UUID?) {
         guard selectedAgentId != id else { return }
         selectedAgentId = id

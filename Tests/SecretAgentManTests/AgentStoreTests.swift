@@ -134,4 +134,45 @@ struct AgentStoreTests {
         #expect(!sessionId.isEmpty)
         #expect(store.selectedAgentId == created.id)
     }
+
+    @Test
+    func openSessionIdsIncludesOnlyMatchingProviderAndFolder() {
+        let store = AgentStore(loadFromDisk: false)
+        let folder = URL(fileURLWithPath: "/tmp/project")
+        let source = Agent(
+            name: "Source",
+            folder: folder,
+            provider: .codex,
+            sessionId: "source-session"
+        )
+        let sameFolderAndProvider = Agent(
+            name: "Match",
+            folder: folder,
+            provider: .codex,
+            sessionId: "open-session"
+        )
+        let otherProvider = Agent(
+            name: "Other Provider",
+            folder: folder,
+            provider: .claude,
+            sessionId: "claude-session"
+        )
+        let otherFolder = Agent(
+            name: "Other Folder",
+            folder: URL(fileURLWithPath: "/tmp/other"),
+            provider: .codex,
+            sessionId: "other-folder-session"
+        )
+        let nilSession = Agent(
+            name: "No Session",
+            folder: folder,
+            provider: .codex,
+            sessionId: nil
+        )
+        store.agents = [source, sameFolderAndProvider, otherProvider, otherFolder, nilSession]
+
+        let openSessionIds = store.openSessionIds(for: source)
+
+        #expect(openSessionIds == ["source-session", "open-session"])
+    }
 }
