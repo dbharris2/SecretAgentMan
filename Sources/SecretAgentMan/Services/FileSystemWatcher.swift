@@ -21,6 +21,11 @@ final class FileSystemWatcher {
     private var streams: [URL: FSEventStreamRef] = [:]
     private var contexts: [URL: FileSystemWatcherContext] = [:]
     private var watchCounts: [URL: Int] = [:]
+
+    var watchedDirectories: Set<URL> {
+        Set(watchCounts.keys)
+    }
+
     private var debounceTasks: [URL: Task<Void, Never>] = [:]
     private let debounceInterval: UInt64 = 300_000_000 // 300ms in nanoseconds
 

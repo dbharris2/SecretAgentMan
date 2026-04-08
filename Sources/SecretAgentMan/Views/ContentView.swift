@@ -17,10 +17,10 @@ struct ContentView: View {
                     ZStack(alignment: .bottom) {
                         if coordinator.activeSidebarPanel == .plans, let url = selectedPlanURL {
                             PlanDetailView(url: url)
-                        } else if coordinator.activeSidebarPanel == .prs, let pr = coordinator.selectedGitHubPR {
-                            if coordinator.selectedPRChanges.isEmpty, !coordinator.selectedPRDiff.isEmpty {
-                                ChangesView(changes: coordinator.selectedPRChanges, fullDiff: coordinator.selectedPRDiff)
-                            } else if coordinator.selectedPRChanges.isEmpty {
+                        } else if coordinator.activeSidebarPanel == .prs, let pr = coordinator.prMonitor.selectedGitHubPR {
+                            if coordinator.prMonitor.selectedPRChanges.isEmpty, !coordinator.prMonitor.selectedPRDiff.isEmpty {
+                                ChangesView(changes: coordinator.prMonitor.selectedPRChanges, fullDiff: coordinator.prMonitor.selectedPRDiff)
+                            } else if coordinator.prMonitor.selectedPRChanges.isEmpty {
                                 VStack(spacing: 8) {
                                     ProgressView()
                                     Text("Loading diff for #\(pr.number)...")
@@ -28,10 +28,10 @@ struct ContentView: View {
                                         .foregroundStyle(.secondary)
                                 }
                             } else {
-                                ChangesView(changes: coordinator.selectedPRChanges, fullDiff: coordinator.selectedPRDiff)
+                                ChangesView(changes: coordinator.prMonitor.selectedPRChanges, fullDiff: coordinator.prMonitor.selectedPRDiff)
                             }
                         } else {
-                            ChangesView(changes: coordinator.fileChanges, fullDiff: coordinator.fullDiff)
+                            ChangesView(changes: coordinator.repositoryMonitor.fileChanges, fullDiff: coordinator.repositoryMonitor.fullDiff)
                         }
 
                         if isShellPanelVisible {
@@ -85,8 +85,8 @@ struct ContentView: View {
             .onDisappear {
                 coordinator.stop()
             }
-            .onChange(of: coordinator.store.agents.map(\.folder)) { oldFolders, newFolders in
-                coordinator.handleAgentFoldersChanged(old: oldFolders, new: newFolders)
+            .onChange(of: coordinator.store.agents.map(\.folder)) { _, _ in
+                coordinator.syncWatchedAgents()
             }
             .onChange(of: isShellPanelVisible) {
                 if isShellPanelVisible, let id = coordinator.store.selectedAgentId {

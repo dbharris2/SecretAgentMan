@@ -24,7 +24,7 @@ struct ActivitySidebarView: View {
                         PlanListView(selectedPlanURL: $selectedPlanURL)
                     case .prs:
                         PRListView(
-                            sections: coordinator.githubPRSections,
+                            sections: coordinator.prMonitor.githubPRSections,
                             actions: PRActions(
                                 review: coordinator.reviewPR,
                                 markReady: coordinator.markPRReady,
@@ -33,11 +33,11 @@ struct ActivitySidebarView: View {
                                 addReviewers: coordinator.addReviewers,
                                 select: coordinator.selectPR
                             ),
-                            isLoading: coordinator.isLoadingPRs,
-                            rateLimit: coordinator.githubRateLimit,
-                            lastPollTime: coordinator.lastPRPollTime,
+                            isLoading: coordinator.prMonitor.isLoadingPRs,
+                            rateLimit: coordinator.prMonitor.githubRateLimit,
+                            lastPollTime: coordinator.prMonitor.lastPRPollTime,
                             reviewerGroups: coordinator.reviewerGroupStore.groups,
-                            selectedPRId: coordinator.selectedGitHubPR?.id
+                            selectedPRId: coordinator.prMonitor.selectedGitHubPR?.id
                         )
                     }
                 }

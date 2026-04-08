@@ -172,7 +172,7 @@ struct StatusBarView: View {
                             .foregroundStyle(.secondary)
                     }
 
-                    if let branch = coordinator.branchNames[agent.folderPath] {
+                    if let branch = coordinator.repositoryMonitor.branchNames[agent.folderPath] {
                         HStack(spacing: 3) {
                             Image(systemName: "arrow.triangle.branch")
                                 .scaledFont(size: 10)

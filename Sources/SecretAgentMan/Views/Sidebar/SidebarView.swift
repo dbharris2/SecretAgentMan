@@ -19,8 +19,8 @@ struct SidebarView: View {
                     agent: agent,
                     isSelected: coordinator.store.selectedAgentId == agent.id,
                     pendingPromptCount: coordinator.store.pendingPrompts(for: agent.id).count,
-                    branchName: coordinator.branchNames[agent.folderPath],
-                    prInfo: coordinator.prInfos[agent.folderPath]
+                    branchName: coordinator.repositoryMonitor.branchNames[agent.folderPath],
+                    prInfo: coordinator.prMonitor.prInfos[agent.folderPath]
                 )
                 .tag(agent.id)
                 .contextMenu {

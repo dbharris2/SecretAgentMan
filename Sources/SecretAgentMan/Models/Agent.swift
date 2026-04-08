@@ -16,7 +16,7 @@ struct Agent: Identifiable, Hashable, Codable {
     }
 
     var folderPath: String {
-        folder.path.replacingOccurrences(of: NSHomeDirectory(), with: "~")
+        folder.tildeAbbreviatedPath
     }
 
     init(
