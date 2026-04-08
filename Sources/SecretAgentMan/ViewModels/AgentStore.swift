@@ -32,8 +32,13 @@ final class AgentStore {
         return dir.appendingPathComponent("agents.json")
     }()
 
-    init() {
-        load()
+    private let persistsToFile: Bool
+
+    init(loadFromDisk: Bool = true) {
+        self.persistsToFile = loadFromDisk
+        if loadFromDisk {
+            load()
+        }
     }
 
     var selectedAgent: Agent? {
@@ -116,6 +121,7 @@ final class AgentStore {
     // MARK: - Persistence
 
     private func save() {
+        guard persistsToFile else { return }
         do {
             let data = try JSONEncoder().encode(agents)
             try data.write(to: Self.saveURL, options: .atomic)
