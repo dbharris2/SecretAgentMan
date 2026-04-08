@@ -9,6 +9,7 @@ struct StatusBarView: View {
     @State private var showingScriptsPopover = false
     @State private var showingSkillsPopover = false
     @State private var showingSessionPopover = false
+    @State private var showingUsagePopover = false
 
     private var selectedAgent: Agent? {
         coordinator.store.selectedAgent
@@ -159,15 +160,20 @@ struct StatusBarView: View {
 
             if let agent = selectedAgent {
                 HStack(spacing: 8) {
-                    if let branch = coordinator.repositoryMonitor.branchNames[agent.folderPath] {
-                        HStack(spacing: 3) {
-                            Image(systemName: "arrow.triangle.branch")
-                                .scaledFont(size: 10)
-                            Text(branch)
-                                .scaledFont(size: 11)
+                    if let limits = coordinator.usageMonitor.rateLimits[agent.provider] {
+                        popoverButton(isPresented: $showingUsagePopover, help: "API Usage") {
+                            HStack(spacing: 3) {
+                                Circle()
+                                    .fill(usageColor(for: limits.shortWindow.usedPercent))
+                                    .frame(width: 6, height: 6)
+                                Text(verbatim: "\(Int(limits.shortWindow.usedPercent))%")
+                                    .scaledFont(size: 11)
+                            }
+                            .foregroundStyle(.secondary)
                         }
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
+                        .popover(isPresented: $showingUsagePopover) {
+                            UsagePopover(limits: limits, provider: agent.provider)
+                        }
                     }
 
                     if let sessionId = agent.sessionId {
@@ -293,6 +299,12 @@ struct StatusBarView: View {
         }
         .padding(10)
         .frame(minWidth: 180)
+    }
+
+    private func usageColor(for percent: Double) -> Color {
+        if percent > 80 { return .red }
+        if percent > 50 { return .orange }
+        return .green
     }
 
     @ViewBuilder
@@ -434,5 +446,77 @@ private struct PopoverRow: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .hoverHighlight()
+    }
+}
+
+private struct UsagePopover: View {
+    let limits: AgentRateLimits
+    let provider: AgentProvider
+
+    private static let timeFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "h:mm a"
+        return f
+    }()
+
+    private static let dateTimeFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "MMM d, h:mm a"
+        return f
+    }()
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("API Usage — \(provider.displayName)")
+                .scaledFont(size: 12, weight: .semibold)
+                .foregroundStyle(.secondary)
+
+            Divider()
+
+            usageRow(limits.shortWindow)
+            usageRow(limits.longWindow)
+        }
+        .padding(10)
+        .frame(minWidth: 200)
+    }
+
+    private func usageRow(_ window: WindowUsage) -> some View {
+        let percent = window.usedPercent
+        let color: Color = percent > 80 ? .red : percent > 50 ? .orange : .green
+
+        return VStack(alignment: .leading, spacing: 3) {
+            HStack {
+                Text("\(window.windowLabel) window")
+                    .scaledFont(size: 11, weight: .medium)
+                Spacer()
+                Text(verbatim: "\(Int(percent))%")
+                    .scaledFont(size: 11, weight: .medium)
+                    .foregroundStyle(color)
+            }
+
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    RoundedRectangle(cornerRadius: 2)
+                        .fill(Color.secondary.opacity(0.2))
+                        .frame(height: 4)
+                    RoundedRectangle(cornerRadius: 2)
+                        .fill(color)
+                        .frame(width: geo.size.width * min(percent / 100, 1.0), height: 4)
+                }
+            }
+            .frame(height: 4)
+
+            if let resetsAt = window.resetsAt {
+                let formatter =
+                    if Calendar.current.isDate(resetsAt, inSameDayAs: Date()) {
+                        Self.timeFormatter
+                    } else {
+                        Self.dateTimeFormatter
+                    }
+                Text("Resets at \(formatter.string(from: resetsAt))")
+                    .scaledFont(size: 10)
+                    .foregroundStyle(.secondary)
+            }
+        }
     }
 }

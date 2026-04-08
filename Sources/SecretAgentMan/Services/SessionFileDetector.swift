@@ -98,6 +98,11 @@ enum SessionFileDetector {
         return (id, cwd)
     }
 
+    /// Returns the file URL for a Codex session with the given ID, or nil if not found.
+    static func codexSessionFileURL(for sessionId: String) -> URL? {
+        codexSessionFile(for: sessionId, inDirectory: codexSessionsDir())
+    }
+
     private static func codexSessionFile(for sessionId: String) -> URL? {
         codexSessionFile(for: sessionId, inDirectory: codexSessionsDir())
     }

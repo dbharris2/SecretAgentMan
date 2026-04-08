@@ -75,6 +75,7 @@ struct ContentView: View {
             }
             .onChange(of: coordinator.store.selectedAgentId) {
                 coordinator.invalidateDiffs()
+                coordinator.usageMonitor.refreshSelectedAgent()
             }
             .onAppear {
                 coordinator.start()

@@ -5,6 +5,7 @@ final class AppCoordinator {
     let agentSessions: AgentSessionCoordinator
     let repositoryMonitor: RepositoryMonitor
     let prStore: PRStore
+    let usageMonitor: UsageMonitor
 
     let store: AgentStore
     let terminalManager: TerminalManager
@@ -27,9 +28,12 @@ final class AppCoordinator {
             repositoryMonitor: repositoryMonitor
         )
 
+        let usageMonitor = UsageMonitor(store: agentSessions.store)
+
         self.agentSessions = agentSessions
         self.repositoryMonitor = repositoryMonitor
         self.prStore = prStore
+        self.usageMonitor = usageMonitor
         store = agentSessions.store
         terminalManager = agentSessions.terminalManager
         shellManager = agentSessions.shellManager
@@ -52,12 +56,14 @@ final class AppCoordinator {
         agentSessions.start()
         repositoryMonitor.start()
         prStore.start()
+        usageMonitor.start()
     }
 
     func stop() {
         repositoryMonitor.stop()
         agentSessions.stop()
         prStore.stop()
+        usageMonitor.stop()
     }
 
     // MARK: - Agent Actions
@@ -69,6 +75,8 @@ final class AppCoordinator {
     func syncWatchedAgents() {
         repositoryMonitor.syncWatchedFolders()
         agentSessions.syncSessionWatches()
+        usageMonitor.syncWatches()
+        usageMonitor.refreshSelectedAgent()
     }
 
     func sendPrompt(_ prompt: PendingPrompt) {
