@@ -17,10 +17,10 @@ struct ContentView: View {
                     ZStack(alignment: .bottom) {
                         if coordinator.activeSidebarPanel == .plans, let url = selectedPlanURL {
                             PlanDetailView(url: url)
-                        } else if coordinator.activeSidebarPanel == .prs, let pr = coordinator.prMonitor.selectedGitHubPR {
-                            if coordinator.prMonitor.selectedPRChanges.isEmpty, !coordinator.prMonitor.selectedPRDiff.isEmpty {
-                                ChangesView(changes: coordinator.prMonitor.selectedPRChanges, fullDiff: coordinator.prMonitor.selectedPRDiff)
-                            } else if coordinator.prMonitor.selectedPRChanges.isEmpty {
+                        } else if coordinator.activeSidebarPanel == .prs, let pr = coordinator.prStore.selectedGitHubPR {
+                            if coordinator.prStore.selectedPRChanges.isEmpty, !coordinator.prStore.selectedPRDiff.isEmpty {
+                                ChangesView(changes: coordinator.prStore.selectedPRChanges, fullDiff: coordinator.prStore.selectedPRDiff)
+                            } else if coordinator.prStore.selectedPRChanges.isEmpty {
                                 VStack(spacing: 8) {
                                     ProgressView()
                                     Text("Loading diff for #\(pr.number)...")
@@ -28,7 +28,7 @@ struct ContentView: View {
                                         .foregroundStyle(.secondary)
                                 }
                             } else {
-                                ChangesView(changes: coordinator.prMonitor.selectedPRChanges, fullDiff: coordinator.prMonitor.selectedPRDiff)
+                                ChangesView(changes: coordinator.prStore.selectedPRChanges, fullDiff: coordinator.prStore.selectedPRDiff)
                             }
                         } else {
                             ChangesView(changes: coordinator.repositoryMonitor.fileChanges, fullDiff: coordinator.repositoryMonitor.fullDiff)

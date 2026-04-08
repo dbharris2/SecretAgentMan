@@ -4,7 +4,7 @@ import SwiftUI
 final class AppCoordinator {
     let agentSessions: AgentSessionCoordinator
     let repositoryMonitor: RepositoryMonitor
-    let prMonitor: PRMonitor
+    let prStore: PRStore
 
     let store: AgentStore
     let terminalManager: TerminalManager
@@ -20,7 +20,7 @@ final class AppCoordinator {
     init() {
         let agentSessions = AgentSessionCoordinator()
         let repositoryMonitor = RepositoryMonitor(store: agentSessions.store)
-        let prMonitor = PRMonitor(
+        let prStore = PRStore(
             store: agentSessions.store,
             terminalManager: agentSessions.terminalManager,
             eventBus: agentSessions.eventBus,
@@ -29,7 +29,7 @@ final class AppCoordinator {
 
         self.agentSessions = agentSessions
         self.repositoryMonitor = repositoryMonitor
-        self.prMonitor = prMonitor
+        self.prStore = prStore
         store = agentSessions.store
         terminalManager = agentSessions.terminalManager
         shellManager = agentSessions.shellManager
@@ -42,7 +42,7 @@ final class AppCoordinator {
             self?.eventBus.publish(.branchChanged(folder: folder))
         }
         repositoryMonitor.onBranchMetadataChanged = { [weak self] _ in
-            self?.prMonitor.refreshCorePRData()
+            self?.prStore.refresh()
         }
     }
 
@@ -51,13 +51,13 @@ final class AppCoordinator {
     func start() {
         agentSessions.start()
         repositoryMonitor.start()
-        prMonitor.start()
+        prStore.start()
     }
 
     func stop() {
         repositoryMonitor.stop()
         agentSessions.stop()
-        prMonitor.stop()
+        prStore.stop()
     }
 
     // MARK: - Agent Actions
@@ -80,26 +80,26 @@ final class AppCoordinator {
     }
 
     func selectPR(_ pr: GitHubPRService.GitHubPR?) {
-        prMonitor.selectPR(pr)
+        prStore.selectPR(pr)
     }
 
     func addReviewers(_ pr: GitHubPRService.GitHubPR, group: ReviewerGroup) {
-        prMonitor.addReviewers(pr, group: group)
+        prStore.addReviewers(pr, group: group)
     }
 
     func closePR(_ pr: GitHubPRService.GitHubPR) {
-        prMonitor.closePR(pr)
+        prStore.closePR(pr)
     }
 
     func markPRReady(_ pr: GitHubPRService.GitHubPR) {
-        prMonitor.markPRReady(pr)
+        prStore.markPRReady(pr)
     }
 
     func convertPRToDraft(_ pr: GitHubPRService.GitHubPR) {
-        prMonitor.convertPRToDraft(pr)
+        prStore.convertPRToDraft(pr)
     }
 
     func reviewPR(_ pr: GitHubPRService.GitHubPR) {
-        prMonitor.reviewPR(pr)
+        prStore.reviewPR(pr)
     }
 }

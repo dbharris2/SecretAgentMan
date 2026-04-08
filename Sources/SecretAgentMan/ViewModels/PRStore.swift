@@ -3,7 +3,7 @@ import SwiftUI
 
 @MainActor
 @Observable
-final class PRMonitor {
+final class PRStore {
     let githubPRService: GitHubPRService
 
     var prInfos: [String: PRInfo] = [:]
@@ -38,10 +38,10 @@ final class PRMonitor {
     }
 
     func start() {
-        refreshCorePRData()
+        refresh()
         prTimer = Timer.scheduledTimer(withTimeInterval: 30.0, repeats: true) { [weak self] _ in
             Task { @MainActor in
-                self?.refreshCorePRData()
+                self?.refresh()
             }
         }
     }
@@ -50,7 +50,7 @@ final class PRMonitor {
         prTimer?.invalidate()
     }
 
-    func refreshCorePRData() {
+    func refresh() {
         Task {
             let folders = Set(store.agents.map(\.folder))
 
@@ -71,46 +71,8 @@ final class PRMonitor {
                 githubRateLimit = await githubPRService.fetchRateLimit()
             }
 
-            var prByRepoBranch: [String: GitHubPRService.GitHubPR] = [:]
-            let authoredSections: [GitHubPRService.PRSection] = [.returnedToMe, .approved, .waitingForReview, .drafts]
-            for section in authoredSections {
-                for pr in prSections[section] ?? [] {
-                    prByRepoBranch["\(pr.repository)/\(pr.headRefName)"] = pr
-                }
-            }
-
-            for folder in folders {
-                let key = Self.folderKey(folder)
-                guard let repo = repoNames[key],
-                      let bookmark = repositoryMonitor.bookmark(for: folder)
-                else { continue }
-
-                let lookupKey = "\(repo)/\(bookmark)"
-                let oldInfo = prInfos[key]
-
-                if let pr = prByRepoBranch[lookupKey] {
-                    let newInfo = GitHubPRService.prInfo(from: pr)
-                    let merged = PRInfo(
-                        number: newInfo.number,
-                        url: newInfo.url,
-                        state: newInfo.state,
-                        checkStatus: newInfo.checkStatus,
-                        additions: newInfo.additions,
-                        deletions: newInfo.deletions,
-                        changedFiles: newInfo.changedFiles,
-                        commentCount: newInfo.commentCount,
-                        reviewers: newInfo.reviewers,
-                        reviewComments: oldInfo?.reviewComments ?? [],
-                        failedChecks: oldInfo?.failedChecks ?? []
-                    )
-                    if oldInfo != merged {
-                        prInfos[key] = merged
-                        detectPRTransitions(folder: folder, old: oldInfo, new: merged, pr: pr)
-                    }
-                } else if oldInfo != nil {
-                    prInfos.removeValue(forKey: key)
-                }
-            }
+            let currentInfos = matchPRsToFolders(prSections: prSections, folders: folders)
+            applyMatchedPRInfos(currentInfos)
         }
     }
 
@@ -189,10 +151,73 @@ final class PRMonitor {
         ))
     }
 
+    private struct MatchedPR {
+        let folder: URL
+        let pr: GitHubPRService.GitHubPR
+        let info: PRInfo
+    }
+
+    private func matchPRsToFolders(
+        prSections: [GitHubPRService.PRSection: [GitHubPRService.GitHubPR]],
+        folders: Set<URL>
+    ) -> [String: MatchedPR?] {
+        var prByRepoBranch: [String: GitHubPRService.GitHubPR] = [:]
+        let authoredSections: [GitHubPRService.PRSection] = [.returnedToMe, .approved, .waitingForReview, .drafts]
+        for section in authoredSections {
+            for pr in prSections[section] ?? [] {
+                prByRepoBranch["\(pr.repository)/\(pr.headRefName)"] = pr
+            }
+        }
+
+        var result: [String: MatchedPR?] = [:]
+        for folder in folders {
+            let key = Self.folderKey(folder)
+            guard let repo = repoNames[key],
+                  let bookmark = repositoryMonitor.bookmark(for: folder)
+            else { continue }
+
+            if let pr = prByRepoBranch["\(repo)/\(bookmark)"] {
+                result[key] = MatchedPR(folder: folder, pr: pr, info: GitHubPRService.prInfo(from: pr))
+            } else {
+                result[key] = nil // folder was checked but has no matching PR
+            }
+        }
+        return result
+    }
+
+    private func applyMatchedPRInfos(_ checkedFolders: [String: MatchedPR?]) {
+        // Remove prInfos for folders that were checked but have no PR
+        for (key, matched) in checkedFolders where matched == nil {
+            prInfos.removeValue(forKey: key)
+        }
+
+        for case let (key, matched?) in checkedFolders {
+            let oldInfo = prInfos[key]
+            let merged = PRInfo(
+                number: matched.info.number,
+                url: matched.info.url,
+                state: matched.info.state,
+                checkStatus: matched.info.checkStatus,
+                additions: matched.info.additions,
+                deletions: matched.info.deletions,
+                changedFiles: matched.info.changedFiles,
+                commentCount: matched.info.commentCount,
+                reviewers: matched.info.reviewers,
+                reviewComments: oldInfo?.reviewComments ?? [],
+                failedChecks: oldInfo?.failedChecks ?? []
+            )
+
+            if oldInfo != merged {
+                prInfos[key] = merged
+                detectPRTransitions(folder: matched.folder, old: oldInfo, new: merged, pr: matched.pr)
+            }
+        }
+    }
+
     private func performPRAction(_ action: @escaping () async -> Bool) {
         Task {
             if await action() {
-                refreshCorePRData()
+                refresh()
             }
         }
     }
