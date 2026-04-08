@@ -5,6 +5,7 @@ import SwiftUI
 @Observable
 final class PRStore {
     let githubPRService: GitHubPRService
+    let automationPolicy: PRAutomationPolicy
 
     var prInfos: [String: PRInfo] = [:]
     var githubPRSections: [GitHubPRService.PRSection: [GitHubPRService.GitHubPR]] = [:]
@@ -28,13 +29,15 @@ final class PRStore {
         terminalManager: TerminalManager,
         eventBus: AgentEventBus,
         repositoryMonitor: RepositoryMonitor,
-        githubPRService: GitHubPRService = GitHubPRService()
+        githubPRService: GitHubPRService = GitHubPRService(),
+        automationPolicy: PRAutomationPolicy = PRAutomationPolicy()
     ) {
         self.store = store
         self.terminalManager = terminalManager
         self.eventBus = eventBus
         self.repositoryMonitor = repositoryMonitor
         self.githubPRService = githubPRService
+        self.automationPolicy = automationPolicy
     }
 
     func start() {
@@ -222,7 +225,6 @@ final class PRStore {
         }
     }
 
-    // swiftlint:disable:next function_body_length
     private func detectPRTransitions(
         folder: URL,
         old: PRInfo?,
@@ -232,128 +234,81 @@ final class PRStore {
         let agents = store.agents.filter { $0.folder.standardizedFileURL == folder.standardizedFileURL }
         guard !agents.isEmpty else { return }
 
-        let autoFixCI = Self.userDefault(forKey: UserDefaultsKeys.autoFixCIFailures, default: true)
-        let autoAnalyzeReviews = Self.userDefault(forKey: UserDefaultsKeys.autoAnalyzeReviews, default: true)
+        let settings = automationSettings()
+        let initialPlan = automationPolicy.initialPlan(old: old, new: new, settings: settings)
+        applyPromptRemovals(initialPlan.removedPromptSources, to: agents)
 
-        let needsDeepFetch = (autoFixCI && new.checkStatus == .fail && old?.checkStatus != .fail)
-            || (autoAnalyzeReviews && new.state == .changesRequested && old?.state != .changesRequested)
-            || (autoAnalyzeReviews && new.state == .approved && old?.state != .approved)
-
-        guard needsDeepFetch else {
-            if new.checkStatus == .pass, old?.checkStatus == .fail {
-                for agent in agents {
-                    store.removePendingPrompts(for: agent.id, source: .ciFailed)
-                }
-            }
-            if new.state == .approved, old?.state == .changesRequested {
-                for agent in agents {
-                    store.removePendingPrompts(for: agent.id, source: .changesRequested)
-                }
-            }
-            return
-        }
+        guard initialPlan.needsDeepFetch else { return }
 
         Task {
             let deep = await githubPRService.fetchDeepPRInfo(repo: pr.repository, number: pr.number)
+            let details = PRAutomationPolicy.DeepDetails(
+                reviewComments: deep.reviewComments,
+                failedChecks: deep.failedChecks,
+                detailedCheckStatus: deep.detailedCheckStatus
+            )
 
             let key = Self.folderKey(folder)
             if var info = prInfos[key] {
-                info = PRInfo(
-                    number: info.number,
-                    url: info.url,
-                    state: info.state,
-                    checkStatus: deep.detailedCheckStatus,
-                    additions: info.additions,
-                    deletions: info.deletions,
-                    changedFiles: info.changedFiles,
-                    commentCount: info.commentCount,
-                    reviewers: info.reviewers,
-                    reviewComments: deep.reviewComments,
-                    failedChecks: deep.failedChecks
-                )
+                info = automationPolicy.mergedInfo(current: info, details: details)
                 prInfos[key] = info
             }
 
-            if autoFixCI, new.checkStatus == .fail, old?.checkStatus != .fail {
-                eventBus.publish(.checksFailed(folder: folder))
-                let checkNames = deep.failedChecks.joined(separator: ", ")
-                let prompt = """
-                CI checks failed on PR #\(new.number). Failed checks: \(checkNames)
+            let deepPlan = automationPolicy.deepPlan(old: old, new: new, details: details, settings: settings)
+            applyPromptRemovals(deepPlan.removedPromptSources, to: agents)
+            publishEvents(deepPlan.events, folder: folder)
+            applyPromptRequests(deepPlan.prompts, to: agents)
+        }
+    }
 
-                Please investigate and fix the failures.
-                """
-                for agent in agents {
-                    let pending = PendingPrompt(
-                        agentId: agent.id,
-                        source: .ciFailed,
-                        summary: "Failed: \(checkNames)",
-                        fullPrompt: prompt
-                    )
-                    if agent.state == .awaitingInput {
-                        terminalManager.sendInput(to: agent.id, text: prompt)
-                    } else {
-                        store.addPendingPrompt(pending)
-                    }
-                }
+    private func automationSettings() -> PRAutomationPolicy.Settings {
+        PRAutomationPolicy.Settings(
+            autoFixCI: Self.userDefault(forKey: UserDefaultsKeys.autoFixCIFailures, default: true),
+            autoAnalyzeReviews: Self.userDefault(forKey: UserDefaultsKeys.autoAnalyzeReviews, default: true)
+        )
+    }
+
+    private func applyPromptRemovals(
+        _ sources: [PendingPrompt.PromptSource],
+        to agents: [Agent]
+    ) {
+        for source in sources {
+            for agent in agents {
+                store.removePendingPrompts(for: agent.id, source: source)
             }
+        }
+    }
 
-            if autoAnalyzeReviews, new.state == .changesRequested, old?.state != .changesRequested {
+    private func publishEvents(_ events: [PRAutomationPolicy.EventKind], folder: URL) {
+        for event in events {
+            switch event {
+            case .changesRequested:
                 eventBus.publish(.changesRequested(folder: folder))
-                let comments = deep.reviewComments
-                    .filter { $0.state == .changesRequested }
-                    .map { "**\($0.author):** \($0.body)" }
-                    .joined(separator: "\n\n")
-                let prompt = """
-                PR #\(new.number) received review feedback requesting changes:
-
-                \(comments)
-
-                Summarize the feedback and suggest how you would address each point.
-                Do NOT make any changes — just analyze and explain your approach.
-                """
-                for agent in agents {
-                    store.addPendingPrompt(PendingPrompt(
-                        agentId: agent.id,
-                        source: .changesRequested,
-                        summary: "\(deep.reviewComments.count) review comment(s)",
-                        fullPrompt: prompt
-                    ))
-                }
+            case .checksFailed:
+                eventBus.publish(.checksFailed(folder: folder))
+            case .approvedWithComments:
+                eventBus.publish(.approvedWithComments(folder: folder))
             }
+        }
+    }
 
-            if new.state == .approved, old?.state == .changesRequested {
-                for agent in agents {
-                    store.removePendingPrompts(for: agent.id, source: .changesRequested)
+    private func applyPromptRequests(
+        _ prompts: [PRAutomationPolicy.PromptRequest],
+        to agents: [Agent]
+    ) {
+        for prompt in prompts {
+            for agent in agents {
+                if prompt.sendDirectlyToAwaitingAgents, agent.state == .awaitingInput {
+                    terminalManager.sendInput(to: agent.id, text: prompt.fullPrompt)
+                    continue
                 }
-            }
 
-            if autoAnalyzeReviews, new.state == .approved {
-                let approvalComments = deep.reviewComments
-                    .filter { $0.state == .approved && !$0.body.isEmpty }
-                guard !approvalComments.isEmpty else { return }
-                let oldCommentCount = old?.reviewComments.count(where: { $0.state == .approved }) ?? 0
-                if approvalComments.count > oldCommentCount {
-                    eventBus.publish(.approvedWithComments(folder: folder))
-                    let comments = approvalComments
-                        .map { "**\($0.author):** \($0.body)" }
-                        .joined(separator: "\n\n")
-                    let prompt = """
-                    PR #\(new.number) was approved with comments:
-
-                    \(comments)
-
-                    Summarize the comments. If any suggest changes, explain how you would address them.
-                    Do NOT make any changes — just analyze.
-                    """
-                    for agent in agents {
-                        store.addPendingPrompt(PendingPrompt(
-                            agentId: agent.id,
-                            source: .approvedWithComments,
-                            summary: "\(approvalComments.count) comment(s) on approval",
-                            fullPrompt: prompt
-                        ))
-                    }
-                }
+                store.addPendingPrompt(PendingPrompt(
+                    agentId: agent.id,
+                    source: prompt.source,
+                    summary: prompt.summary,
+                    fullPrompt: prompt.fullPrompt
+                ))
             }
         }
     }
