@@ -62,7 +62,7 @@ final class AgentProcessManager {
         }
     }
 
-    private static func executablePath(for provider: AgentProvider) -> String {
+    nonisolated static func executablePath(for provider: AgentProvider) -> String {
         let candidates: [String] = switch provider {
         case .claude:
             [

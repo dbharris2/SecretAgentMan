@@ -1,3 +1,4 @@
+import Foundation
 @testable import SecretAgentMan
 import Testing
 
@@ -125,5 +126,50 @@ struct DiffServiceTests {
         #expect(changes[0].deletions == 3)
         #expect(changes[0].insertions == 0)
         #expect(changes[0].status == .deleted)
+    }
+
+    @Test
+    func fetchFullDiffReturnsLargeCommandOutput() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+
+        try runGit(["init"], in: root)
+        try runGit(["config", "user.name", "Test User"], in: root)
+        try runGit(["config", "user.email", "test@example.com"], in: root)
+
+        let file = root.appendingPathComponent("file.txt")
+        try String(repeating: "old line\n", count: 5000).write(
+            to: file,
+            atomically: true,
+            encoding: .utf8
+        )
+        try runGit(["add", "file.txt"], in: root)
+        try runGit(["commit", "-m", "initial"], in: root)
+
+        try String(repeating: "new line\n", count: 5000).write(
+            to: file,
+            atomically: true,
+            encoding: .utf8
+        )
+
+        let diff = await service.fetchFullDiff(in: root)
+
+        #expect(diff.contains("diff --git a/file.txt b/file.txt"))
+        #expect(diff.contains("-old line"))
+        #expect(diff.contains("+new line"))
+        #expect(diff.count > 10000)
+    }
+
+    private func runGit(_ args: [String], in directory: URL) throws {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+        process.arguments = args
+        process.currentDirectoryURL = directory
+        let stderr = Pipe()
+        process.standardError = stderr
+        try process.run()
+        process.waitUntilExit()
+        #expect(process.terminationStatus == 0)
     }
 }

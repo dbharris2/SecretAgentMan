@@ -199,8 +199,8 @@ actor DiffService {
 
         do {
             try process.run()
-            process.waitUntilExit()
             let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            process.waitUntilExit()
             return String(data: data, encoding: .utf8) ?? ""
         } catch {
             return ""

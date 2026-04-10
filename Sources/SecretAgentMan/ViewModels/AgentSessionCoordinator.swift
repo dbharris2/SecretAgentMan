@@ -7,6 +7,8 @@ final class AgentSessionCoordinator {
     let terminalManager: TerminalManager
     let shellManager: ShellManager
     let eventBus: AgentEventBus
+    let codexMonitor: CodexAppServerMonitor
+    let claudeMonitor: ClaudeStreamMonitor
 
     private var sessionWatcher = FileSystemWatcher()
 
@@ -14,35 +16,59 @@ final class AgentSessionCoordinator {
         store: AgentStore = AgentStore(),
         terminalManager: TerminalManager = TerminalManager(),
         shellManager: ShellManager = ShellManager(),
-        eventBus: AgentEventBus = AgentEventBus()
+        eventBus: AgentEventBus = AgentEventBus(),
+        codexMonitor: CodexAppServerMonitor = CodexAppServerMonitor(),
+        claudeMonitor: ClaudeStreamMonitor = ClaudeStreamMonitor()
     ) {
         self.store = store
         self.terminalManager = terminalManager
         self.shellManager = shellManager
         self.eventBus = eventBus
+        self.codexMonitor = codexMonitor
+        self.claudeMonitor = claudeMonitor
     }
 
     func start() {
         terminalManager.onStateChange = { [self] id, state in
-            store.updateState(id: id, state: state)
-            if state == .awaitingInput {
-                let autoSendPrompts = store.pendingPrompts(for: id).filter(\.autoSend)
-                if let first = autoSendPrompts.first {
-                    terminalManager.sendInput(to: id, text: first.fullPrompt)
-                    store.removePendingPrompt(id: first.id)
-                }
-                eventBus.publish(.agentIdle(agentId: id))
-            } else if state == .active {
-                eventBus.publish(.agentActive(agentId: id))
-            }
+            handleAgentStateChange(agentId: id, state: state, source: .terminal)
+        }
+
+        codexMonitor.onSessionReady = { [self] id, threadId in
+            store.updateSessionId(id: id, sessionId: threadId)
+            store.markLaunched(id: id)
+            syncSessionWatches()
+        }
+
+        codexMonitor.onStateChange = { [self] id, state in
+            handleAgentStateChange(agentId: id, state: state, source: .codex)
+        }
+
+        claudeMonitor.onSessionReady = { [self] id, sessionId in
+            store.updateSessionId(id: id, sessionId: sessionId)
+            store.markLaunched(id: id)
+            syncSessionWatches()
+        }
+
+        claudeMonitor.onStateChange = { [self] id, state in
+            handleAgentStateChange(agentId: id, state: state, source: .claude)
         }
 
         eventBus.onSendPrompt = { [self] agentId, prompt in
-            terminalManager.sendInput(to: agentId, text: prompt)
+            if let agent = store.agents.first(where: { $0.id == agentId }) {
+                switch agent.provider {
+                case .claude:
+                    claudeMonitor.sendMessage(for: agentId, text: prompt)
+                case .codex:
+                    codexMonitor.sendMessage(for: agentId, text: prompt)
+                }
+            } else {
+                terminalManager.sendInput(to: agentId, text: prompt)
+            }
         }
 
         terminalManager.onLaunched = { [self] id in
             store.markLaunched(id: id)
+            codexMonitor.syncMonitoredAgents(store.agents)
         }
 
         terminalManager.onSessionNotFound = { [self] id in
@@ -63,6 +89,7 @@ final class AgentSessionCoordinator {
                 else { continue }
                 store.updateSessionId(id: agent.id, sessionId: actual)
             }
+            codexMonitor.syncMonitoredAgents(store.agents)
         }
 
         syncSessionWatches()
@@ -70,6 +97,8 @@ final class AgentSessionCoordinator {
 
     func stop() {
         sessionWatcher.unwatchAll()
+        codexMonitor.stopAll()
+        claudeMonitor.stopAll()
     }
 
     func syncSessionWatches() {
@@ -81,15 +110,94 @@ final class AgentSessionCoordinator {
         for added in desired.subtracting(current) {
             sessionWatcher.watch(directory: added)
         }
+        codexMonitor.syncMonitoredAgents(store.agents)
+        claudeMonitor.syncMonitoredAgents(store.agents)
     }
 
     func removeAgent(_ id: UUID) {
         terminalManager.removeTerminal(for: id)
         shellManager.removeTerminal(for: id)
+        codexMonitor.removeObserver(for: id)
+        claudeMonitor.removeObserver(for: id)
         store.removeAgent(id: id)
     }
 
     func sendPrompt(_ prompt: PendingPrompt) {
-        terminalManager.sendInput(to: prompt.agentId, text: prompt.fullPrompt)
+        guard let agent = store.agents.first(where: { $0.id == prompt.agentId }) else { return }
+        switch agent.provider {
+        case .codex:
+            codexMonitor.ensureSession(for: agent)
+            codexMonitor.sendMessage(for: prompt.agentId, text: prompt.fullPrompt)
+        case .claude:
+            claudeMonitor.ensureSession(for: agent)
+            claudeMonitor.sendMessage(for: prompt.agentId, text: prompt.fullPrompt)
+        }
+    }
+
+    func ensureCodexSession(for agentId: UUID) {
+        guard let agent = store.agents.first(where: { $0.id == agentId }),
+              agent.provider == .codex
+        else { return }
+        codexMonitor.ensureSession(for: agent)
+    }
+
+    func ensureClaudeSession(for agentId: UUID) {
+        guard let agent = store.agents.first(where: { $0.id == agentId }),
+              agent.provider == .claude
+        else { return }
+        claudeMonitor.ensureSession(for: agent)
+    }
+
+    private enum StateSource {
+        case terminal
+        case codex
+        case claude
+    }
+
+    private func handleAgentStateChange(agentId: UUID, state: AgentState, source: StateSource) {
+        guard let agent = store.agents.first(where: { $0.id == agentId }) else { return }
+
+        // For Codex agents, terminal state is secondary to the monitor's runtime state.
+        if agent.provider == .codex, source == .terminal {
+            if state == .finished {
+                store.updateState(id: agentId, state: state)
+                return
+            }
+            if state == .active {
+                let runtimeState = codexMonitor.runtimeStates[agentId]
+                if runtimeState == .needsPermission || runtimeState == .awaitingInput
+                    || codexMonitor.pendingApprovalRequests[agentId] != nil
+                    || codexMonitor.pendingUserInputRequests[agentId] != nil {
+                    return
+                }
+                store.updateState(id: agentId, state: .active)
+                eventBus.publish(.agentActive(agentId: agentId))
+            }
+            return
+        }
+
+        // For Claude agents, the stream monitor is authoritative — ignore terminal state.
+        if agent.provider == .claude, source == .terminal {
+            return
+        }
+
+        store.updateState(id: agentId, state: state)
+        // Note: .awaitingResponse (elicitation) deliberately does NOT trigger auto-send
+        // or idle events — the agent is blocked on a specific question, not ready for new work.
+        if state == .awaitingInput {
+            let autoSendPrompts = store.pendingPrompts(for: agentId).filter(\.autoSend)
+            if let first = autoSendPrompts.first {
+                switch agent.provider {
+                case .codex:
+                    codexMonitor.sendMessage(for: agentId, text: first.fullPrompt)
+                case .claude:
+                    claudeMonitor.sendMessage(for: agentId, text: first.fullPrompt)
+                }
+                store.removePendingPrompt(id: first.id)
+            }
+            eventBus.publish(.agentIdle(agentId: agentId))
+        } else if state == .active {
+            eventBus.publish(.agentActive(agentId: agentId))
+        }
     }
 }

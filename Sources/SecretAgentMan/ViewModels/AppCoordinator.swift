@@ -11,6 +11,8 @@ final class AppCoordinator {
     let terminalManager: TerminalManager
     let shellManager: ShellManager
     let eventBus: AgentEventBus
+    let codexMonitor: CodexAppServerMonitor
+    let claudeMonitor: ClaudeStreamMonitor
     let reviewerGroupStore = ReviewerGroupStore()
     @ObservationIgnored private let userDefaults: UserDefaults
 
@@ -48,6 +50,8 @@ final class AppCoordinator {
         terminalManager = agentSessions.terminalManager
         shellManager = agentSessions.shellManager
         eventBus = agentSessions.eventBus
+        codexMonitor = agentSessions.codexMonitor
+        claudeMonitor = agentSessions.claudeMonitor
         self.userDefaults = userDefaults
         activeSidebarPanel = Self.restoreActiveSidebarPanel(from: userDefaults)
 
@@ -93,6 +97,51 @@ final class AppCoordinator {
 
     func sendPrompt(_ prompt: PendingPrompt) {
         agentSessions.sendPrompt(prompt)
+    }
+
+    func ensureCodexSession(for agentId: UUID) {
+        agentSessions.ensureCodexSession(for: agentId)
+    }
+
+    func sendCodexMessage(for agentId: UUID, text: String, imagePaths: [String] = []) {
+        agentSessions.ensureCodexSession(for: agentId)
+        codexMonitor.sendMessage(for: agentId, text: text, imagePaths: imagePaths)
+    }
+
+    func setCodexCollaborationMode(for agentId: UUID, mode: CodexCollaborationMode) {
+        agentSessions.ensureCodexSession(for: agentId)
+        codexMonitor.setCollaborationMode(for: agentId, mode: mode)
+    }
+
+    func triggerCodexUserInputTest(for agentId: UUID) {
+        codexMonitor.debugTriggerUserInput(for: agentId)
+    }
+
+    func answerCodexUserInput(for agentId: UUID, answers: [String: [String]]) {
+        codexMonitor.respondToUserInput(for: agentId, answers: answers)
+    }
+
+    func answerCodexApproval(for agentId: UUID, accept: Bool) {
+        codexMonitor.respondToApproval(for: agentId, accept: accept)
+    }
+
+    // MARK: - Claude Actions
+
+    func ensureClaudeSession(for agentId: UUID) {
+        agentSessions.ensureClaudeSession(for: agentId)
+    }
+
+    func sendClaudeMessage(for agentId: UUID, text: String, images: [(Data, String)] = []) {
+        agentSessions.ensureClaudeSession(for: agentId)
+        claudeMonitor.sendMessage(for: agentId, text: text, images: images)
+    }
+
+    func answerClaudeApproval(for agentId: UUID, accept: Bool) {
+        claudeMonitor.respondToApproval(for: agentId, accept: accept)
+    }
+
+    func answerClaudeElicitation(for agentId: UUID, answer: String) {
+        claudeMonitor.respondToElicitation(for: agentId, answer: answer)
     }
 
     func invalidateDiffs() {

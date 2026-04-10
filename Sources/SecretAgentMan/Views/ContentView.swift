@@ -51,11 +51,16 @@ struct ContentView: View {
                 if coordinator.isAgentPanelVisible {
                     ResizableDivider(size: $agentPanelWidth, minSize: 300, axis: .vertical)
 
-                    TerminalPanelView(
-                        selectedAgentId: coordinator.store.selectedAgentId,
-                        store: coordinator.store,
-                        terminalManager: coordinator.terminalManager
-                    )
+                    Group {
+                        if let agent = coordinator.store.selectedAgent {
+                            switch agent.provider {
+                            case .codex:
+                                CodexSessionPanelView(agent: agent)
+                            case .claude:
+                                ClaudeSessionPanelView(agent: agent)
+                            }
+                        }
+                    }
                     .overlay(alignment: .top) {
                         PendingPromptsBar(
                             store: coordinator.store,

@@ -96,7 +96,7 @@ final class AgentStore {
             name: name,
             folder: folder,
             provider: provider,
-            sessionId: UUID().uuidString,
+            sessionId: provider == .codex ? nil : UUID().uuidString,
             initialPrompt: initialPrompt
         )
         agents.append(agent)
@@ -121,7 +121,7 @@ final class AgentStore {
             hasLaunched = true
         case .newSession:
             nameSuffix = "New Session"
-            sessionId = UUID().uuidString
+            sessionId = source.provider == .codex ? nil : UUID().uuidString
             hasLaunched = false
         }
 
@@ -160,7 +160,7 @@ final class AgentStore {
 
     func resetSession(id: UUID) {
         guard let index = agents.firstIndex(where: { $0.id == id }) else { return }
-        agents[index].sessionId = UUID().uuidString
+        agents[index].sessionId = agents[index].provider == .codex ? nil : UUID().uuidString
         agents[index].hasLaunched = false
         save()
     }

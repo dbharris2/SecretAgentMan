@@ -136,6 +136,24 @@ struct AgentStoreTests {
     }
 
     @Test
+    func addCodexAgentBasedOnNewSessionStartsWithoutSessionId() {
+        let store = AgentStore(loadFromDisk: false)
+        let source = Agent(
+            name: "Existing",
+            folder: URL(fileURLWithPath: "/tmp/project"),
+            provider: .codex,
+            sessionId: "source-session"
+        )
+        store.agents = [source]
+
+        let created = store.addAgent(basedOn: source, sessionChoice: .newSession)
+
+        #expect(created.provider == .codex)
+        #expect(created.sessionId == nil)
+        #expect(!created.hasLaunched)
+    }
+
+    @Test
     func openSessionIdsIncludesOnlyMatchingProviderAndFolder() {
         let store = AgentStore(loadFromDisk: false)
         let folder = URL(fileURLWithPath: "/tmp/project")

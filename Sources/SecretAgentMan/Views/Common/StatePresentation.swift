@@ -3,6 +3,7 @@ import SwiftUI
 enum StatusTone: Equatable {
     case neutral
     case success
+    case info
     case warning
     case danger
     case queued
@@ -14,6 +15,7 @@ extension StatusTone {
         switch self {
         case .neutral: .secondary
         case .success: .green
+        case .info: .blue
         case .warning: .orange
         case .danger: .red
         case .queued: .yellow
@@ -39,7 +41,7 @@ extension AgentState {
         case .idle:
             AgentStatePresentation(label: "Idle", systemImage: "circle", tone: .neutral)
         case .active:
-            AgentStatePresentation(label: "Working", systemImage: "bolt.circle.fill", tone: .warning)
+            AgentStatePresentation(label: "Working", systemImage: "bolt.circle.fill", tone: .info)
         case .needsPermission:
             AgentStatePresentation(
                 label: "Needs Approval",
@@ -48,6 +50,12 @@ extension AgentState {
             )
         case .awaitingInput:
             AgentStatePresentation(label: "Ready", systemImage: "circle.fill", tone: .success)
+        case .awaitingResponse:
+            AgentStatePresentation(
+                label: "Needs Input",
+                systemImage: "questionmark.circle.fill",
+                tone: .warning
+            )
         case .finished:
             AgentStatePresentation(label: "Done", systemImage: "checkmark.circle", tone: .neutral)
         case .error:
