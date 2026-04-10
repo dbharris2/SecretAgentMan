@@ -105,6 +105,36 @@ struct SessionApprovalCard: View {
     }
 }
 
+struct SessionElicitationCard: View {
+    let message: String
+    @Environment(\.appTheme) private var theme
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
+                Image(systemName: "questionmark.circle.fill")
+                    .foregroundStyle(theme.blue)
+                Text("Response Required")
+                    .scaledFont(size: 12, weight: .semibold)
+            }
+
+            if !message.isEmpty {
+                Text(message)
+                    .scaledFont(size: 12)
+                    .textSelection(.enabled)
+            }
+
+            Text("Type your answer in the composer below.")
+                .scaledFont(size: 11)
+                .foregroundStyle(.secondary)
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(theme.blue.opacity(0.1))
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+}
+
 struct SessionQuestionCard: View {
     let title: String
     let detail: String

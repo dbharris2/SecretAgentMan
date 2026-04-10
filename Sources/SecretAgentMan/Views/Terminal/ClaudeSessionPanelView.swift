@@ -28,10 +28,7 @@ struct ClaudeSessionPanelView: View {
     }
 
     private var isThinking: Bool {
-        guard agent.state == .active, streaming == nil else { return false }
-        // Only show thinking if the last message was from the user (we're awaiting a response)
-        guard let last = transcript.last else { return false }
-        return last.role == .user
+        agent.state == .active && streaming == nil
     }
 
     private var slashSuggestions: [ClaudeStreamMonitor.SlashCommand] {
@@ -50,10 +47,15 @@ struct ClaudeSessionPanelView: View {
                 transcript: transcript,
                 streaming: streaming,
                 isThinking: isThinking,
+                hasPendingCard: pendingApproval != nil || pendingElicitation != nil,
                 fontScale: fontScale,
                 emptyStateText: "Claude session is ready. Send a message to start."
             ) {
                 AnyView(Group {
+                    if let pendingElicitation {
+                        SessionElicitationCard(message: pendingElicitation.message)
+                    }
+
                     if let pendingApproval {
                         approvalCard(pendingApproval)
                     }

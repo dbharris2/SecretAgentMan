@@ -5,6 +5,7 @@ struct SessionChatView: View {
     let transcript: [CodexTranscriptItem]
     let streaming: String?
     let isThinking: Bool
+    let hasPendingCard: Bool
     let fontScale: Double
     let emptyStateText: String
 
@@ -18,6 +19,8 @@ struct SessionChatView: View {
 
     var body: some View {
         ScrollViewReader { proxy in
+            let scrollToBottom = { proxy.scrollTo("bottom", anchor: .bottom) }
+
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
                     if transcript.isEmpty, streaming == nil {
@@ -53,18 +56,11 @@ struct SessionChatView: View {
                 }
                 .padding(12)
             }
-            .onAppear {
-                proxy.scrollTo("bottom", anchor: .bottom)
-            }
-            .onChange(of: streaming) { _, _ in
-                proxy.scrollTo("bottom", anchor: .bottom)
-            }
-            .onChange(of: transcript.count) { _, _ in
-                proxy.scrollTo("bottom", anchor: .bottom)
-            }
-            .onChange(of: isThinking) { _, thinking in
-                if thinking { proxy.scrollTo("bottom", anchor: .bottom) }
-            }
+            .onAppear { scrollToBottom() }
+            .onChange(of: streaming) { _, _ in scrollToBottom() }
+            .onChange(of: transcript.count) { _, _ in scrollToBottom() }
+            .onChange(of: isThinking) { _, thinking in if thinking { scrollToBottom() } }
+            .onChange(of: hasPendingCard) { _, has in if has { scrollToBottom() } }
         }
     }
 
