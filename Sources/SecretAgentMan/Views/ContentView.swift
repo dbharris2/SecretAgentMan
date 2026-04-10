@@ -17,6 +17,12 @@ struct ContentView: View {
                     ZStack(alignment: .bottom) {
                         if coordinator.activeSidebarPanel == .plans, let url = selectedPlanURL {
                             PlanDetailView(url: url)
+                        } else if coordinator.activeSidebarPanel == .issues, let issue = coordinator.issueStore.selectedIssue {
+                            IssueDetailView(
+                                issue: issue,
+                                issueBody: coordinator.issueStore.selectedIssueBody,
+                                comments: coordinator.issueStore.selectedIssueComments
+                            )
                         } else if coordinator.activeSidebarPanel == .prs, let pr = coordinator.prStore.selectedGitHubPR {
                             if coordinator.prStore.selectedPRChanges.isEmpty, !coordinator.prStore.selectedPRDiff.isEmpty {
                                 ChangesView(changes: coordinator.prStore.selectedPRChanges, fullDiff: coordinator.prStore.selectedPRDiff)

@@ -17,6 +17,7 @@ struct PendingPrompt: Identifiable {
         case changesRequested = "Changes Requested"
         case approvedWithComments = "Approved with Comments"
         case reviewPR = "Review PR"
+        case workOnIssue = "Work on Issue"
     }
 
     init(
