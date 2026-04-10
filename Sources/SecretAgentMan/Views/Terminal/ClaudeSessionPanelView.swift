@@ -2,8 +2,8 @@ import SwiftUI
 
 struct ClaudeSessionPanelView: View {
     @Environment(AppCoordinator.self) private var coordinator
-
     @Environment(\.fontScale) private var fontScale
+    @Environment(\.appTheme) private var theme
 
     let agent: Agent
 
@@ -64,6 +64,7 @@ struct ClaudeSessionPanelView: View {
 
             composer
         }
+        .background(theme.background)
         .id(agent.id)
         .onAppear {
             coordinator.ensureClaudeSession(for: agent.id)
@@ -102,7 +103,7 @@ struct ClaudeSessionPanelView: View {
                             .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
-                        .background(index == slashSelectionIndex ? Color.accentColor.opacity(0.2) : .clear)
+                        .background(index == slashSelectionIndex ? theme.accent.opacity(0.2) : .clear)
                         .id(command.name)
                     }
                 }
@@ -114,7 +115,7 @@ struct ClaudeSessionPanelView: View {
             }
         }
         .frame(maxHeight: 200)
-        .background(.bar)
+        .background(theme.surface)
     }
 
     // MARK: - Composer
@@ -125,7 +126,7 @@ struct ClaudeSessionPanelView: View {
             pendingImages: $pendingImages,
             fontScale: fontScale,
             statusText: pendingElicitation != nil ? "Answering question..." : composerStatusText,
-            statusColor: pendingElicitation != nil ? .orange : .secondary,
+            statusColor: pendingElicitation != nil ? theme.yellow : .secondary,
             sendDisabled: draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
             onSend: sendDraft,
             onKeyPress: handleComposerKeyPress,

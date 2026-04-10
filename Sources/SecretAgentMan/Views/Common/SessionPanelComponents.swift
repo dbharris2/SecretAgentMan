@@ -26,6 +26,7 @@ struct SessionTranscriptBubble: View {
     let label: String
     let text: String
     let fontScale: Double
+    @Environment(\.appTheme) private var theme
 
     private var isUser: Bool {
         role == .user
@@ -46,7 +47,7 @@ struct SessionTranscriptBubble: View {
 
                 SessionMarkdownText(text: text, fontScale: fontScale)
                     .padding(12)
-                    .background(SessionPanelTheme.backgroundColor(for: role))
+                    .background(SessionPanelTheme.backgroundColor(for: role, in: theme))
                     .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
             }
         } else {
@@ -68,6 +69,7 @@ struct SessionApprovalCard: View {
     let unsupportedText: String
     let onApprove: () -> Void
     let onDecline: () -> Void
+    @Environment(\.appTheme) private var theme
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -98,7 +100,7 @@ struct SessionApprovalCard: View {
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.yellow.opacity(0.12))
+        .background(theme.yellow.opacity(0.12))
         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 }
@@ -108,6 +110,7 @@ struct SessionQuestionCard: View {
     let detail: String
     let options: [CodexUserInputOption]
     let onSelect: (CodexUserInputOption) -> Void
+    @Environment(\.appTheme) private var theme
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -135,7 +138,7 @@ struct SessionQuestionCard: View {
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.blue.opacity(0.1))
+        .background(theme.blue.opacity(0.1))
         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 }
@@ -157,6 +160,7 @@ struct SessionComposer<Suggestions: View, TrailingControls: View>: View {
     let onDraftChange: () -> Void
     @ViewBuilder let suggestions: () -> Suggestions
     @ViewBuilder let trailingControls: () -> TrailingControls
+    @Environment(\.appTheme) private var theme
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -165,9 +169,10 @@ struct SessionComposer<Suggestions: View, TrailingControls: View>: View {
             VStack(alignment: .leading, spacing: 8) {
                 TextEditor(text: $draft)
                     .font(.system(size: 13 * fontScale, design: .monospaced))
+                    .scrollContentBackground(.hidden)
                     .frame(minHeight: 80, maxHeight: 140)
                     .padding(8)
-                    .background(Color.black.opacity(0.12))
+                    .background(theme.background)
                     .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
                     .onKeyPress(phases: .down) { keyPress in
                         if keyPress.key == .init("v"), keyPress.modifiers.contains(.command),
@@ -218,7 +223,7 @@ struct SessionComposer<Suggestions: View, TrailingControls: View>: View {
                 }
             }
             .padding(12)
-            .background(.bar)
+            .background(theme.surface)
         }
     }
 
@@ -242,14 +247,14 @@ struct SessionComposer<Suggestions: View, TrailingControls: View>: View {
 }
 
 enum SessionPanelTheme {
-    static func backgroundColor(for role: CodexTranscriptRole) -> Color {
+    static func backgroundColor(for role: CodexTranscriptRole, in theme: AppTheme) -> Color {
         switch role {
         case .user:
-            Color.accentColor.opacity(0.08)
+            theme.accent.opacity(0.08)
         case .assistant:
-            Color.white.opacity(0.04)
+            theme.foreground.opacity(0.04)
         case .system:
-            Color.orange.opacity(0.08)
+            theme.yellow.opacity(0.08)
         }
     }
 

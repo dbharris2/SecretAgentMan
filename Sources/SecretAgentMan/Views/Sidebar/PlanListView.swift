@@ -2,6 +2,7 @@ import SwiftUI
 
 struct PlanListView: View {
     @Environment(AppCoordinator.self) private var coordinator
+    @Environment(\.appTheme) private var theme
     @Binding var selectedPlanURL: URL?
     @State private var plans: [PlanFile] = []
 
@@ -38,6 +39,8 @@ struct PlanListView: View {
                     }
                 }
                 .listStyle(.sidebar)
+                .scrollContentBackground(.hidden)
+                .background(theme.surface)
                 .onAppear { loadPlans() }
                 .onChange(of: coordinator.store.selectedAgent?.provider) {
                     loadPlans()

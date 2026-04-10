@@ -21,21 +21,23 @@ struct VersionBadgeView: View {
         return latest != currentVersion
     }
 
+    @Environment(\.appTheme) private var theme
+
     var body: some View {
         Link(destination: releasesURL) {
             HStack(spacing: 4) {
                 if isDebug {
                     Text("DEBUG")
                         .scaledFont(size: 11, weight: .bold, design: .monospaced)
-                        .foregroundStyle(.yellow)
+                        .foregroundStyle(theme.yellow)
                 } else {
                     Text(verbatim: "v\(currentVersion)")
                         .scaledFont(size: 11)
-                        .foregroundStyle(isOutdated ? .orange : .secondary)
+                        .foregroundStyle(isOutdated ? theme.yellow : .secondary)
                     if isOutdated {
                         Image(systemName: "arrow.up.circle.fill")
                             .scaledFont(size: 10)
-                            .foregroundStyle(.orange)
+                            .foregroundStyle(theme.yellow)
                     }
                 }
             }

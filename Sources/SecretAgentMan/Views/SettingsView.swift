@@ -12,7 +12,7 @@ struct SettingsView: View {
             ReviewerGroupsSettingsView(store: reviewerGroupStore)
                 .tabItem { Label("Reviewers", systemImage: "person.2") }
         }
-        .frame(width: 450, height: 500)
+        .frame(width: 550, height: 650)
     }
 }
 
@@ -98,7 +98,7 @@ struct GeneralSettingsView: View {
 
             Divider()
 
-            Text("Terminal Theme")
+            Text("App Theme")
                 .font(.headline)
 
             HStack(spacing: 12) {
@@ -113,7 +113,7 @@ struct GeneralSettingsView: View {
                 Spacer()
             }
             .padding(10)
-            .background(Color.accentColor.opacity(0.1))
+            .background(Color.accentColor.opacity(0.08))
             .clipShape(RoundedRectangle(cornerRadius: 8))
 
             TextField("Search themes...", text: $searchText)

@@ -4,10 +4,11 @@ struct ResizableDivider: View {
     @Binding var size: Double
     let minSize: Double
     let axis: Axis
+    @Environment(\.appTheme) private var theme
 
     var body: some View {
         Rectangle()
-            .fill(Color.accentColor.opacity(0.6))
+            .fill(theme.accent.opacity(0.6))
             .frame(width: axis == .vertical ? 3 : nil, height: axis == .horizontal ? 3 : nil)
             .contentShape(hitArea)
             .gesture(

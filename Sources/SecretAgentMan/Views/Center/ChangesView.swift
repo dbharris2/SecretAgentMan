@@ -6,6 +6,7 @@ struct ChangesView: View {
 
     @State private var selectedFile: String?
     @AppStorage(UserDefaultsKeys.diffViewMode) private var diffMode: String = "unified"
+    @Environment(\.appTheme) private var theme
 
     private var visibleDiff: String {
         guard let selected = selectedFile else { return fullDiff }
@@ -34,11 +35,12 @@ struct ChangesView: View {
                         .padding(.horizontal, 8)
                         .padding(.vertical, 4)
                     }
+                    .background(theme.surface)
                 }
             } bottom: {
                 VStack(spacing: 0) {
                     Rectangle()
-                        .fill(Color.accentColor.opacity(0.6))
+                        .fill(theme.accent.opacity(0.6))
                         .frame(height: 3)
                     Group {
                         if diffMode == "sideBySide" {
@@ -68,7 +70,7 @@ struct ChangesView: View {
                     HStack(spacing: 8) {
                         Text(change.status.label)
                             .scaledFont(size: 11, weight: .medium, design: .monospaced)
-                            .foregroundStyle(statusColor(change.status))
+                            .foregroundStyle(statusColor(change.status, theme: theme))
                             .frame(width: 14, alignment: .center)
 
                         Text(change.path)
@@ -82,19 +84,19 @@ struct ChangesView: View {
                             if change.insertions > 0 {
                                 Text("+\(change.insertions)")
                                     .scaledFont(size: 11, weight: .medium, design: .monospaced)
-                                    .foregroundStyle(.green)
+                                    .foregroundStyle(theme.green)
                             }
                             if change.deletions > 0 {
                                 Text("-\(change.deletions)")
                                     .scaledFont(size: 11, weight: .medium, design: .monospaced)
-                                    .foregroundStyle(.red)
+                                    .foregroundStyle(theme.red)
                             }
                         }
                     }
                     .padding(.vertical, 2)
                     .listRowBackground(
                         selectedFile == change.path
-                            ? Color.accentColor.opacity(0.2)
+                            ? theme.accent.opacity(0.2)
                             : Color.clear
                     )
                     .contentShape(Rectangle())
@@ -109,15 +111,20 @@ struct ChangesView: View {
             } header: {
                 HStack {
                     Text("Changed Files (\(changes.count))")
+                        .scaledFont(size: 12, weight: .medium)
                     Spacer()
                     Text("+\(changes.reduce(0) { $0 + $1.insertions })")
-                        .foregroundStyle(.green)
+                        .scaledFont(size: 11, weight: .medium, design: .monospaced)
+                        .foregroundStyle(theme.green)
                     Text("-\(changes.reduce(0) { $0 + $1.deletions })")
-                        .foregroundStyle(.red)
+                        .scaledFont(size: 11, weight: .medium, design: .monospaced)
+                        .foregroundStyle(theme.red)
                 }
             }
         }
         .listStyle(.inset)
+        .scrollContentBackground(.hidden)
+        .background(theme.surface)
     }
 
     private func filterDiff(_ diff: String, forFile path: String) -> String {
@@ -137,12 +144,12 @@ struct ChangesView: View {
         return result.joined(separator: "\n")
     }
 
-    private func statusColor(_ status: FileChange.ChangeStatus) -> Color {
+    private func statusColor(_ status: FileChange.ChangeStatus, theme: AppTheme) -> Color {
         switch status {
-        case .added: .green
-        case .modified: .orange
-        case .deleted: .red
-        case .renamed: .blue
+        case .added: theme.green
+        case .modified: theme.yellow
+        case .deleted: theme.red
+        case .renamed: theme.blue
         }
     }
 }

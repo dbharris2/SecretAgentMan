@@ -3,20 +3,13 @@ import SwiftUI
 struct SideBySideDiffView: View {
     let diffText: String
     @Environment(\.fontScale) private var fontScale
-    @AppStorage(UserDefaultsKeys.terminalTheme) private var themeName = "Catppuccin Mocha"
-
-    private var theme: GhosttyTheme? {
-        GhosttyThemeLoader.load(named: themeName)
-    }
+    @Environment(\.appTheme) private var theme
 
     private var rows: [DiffRow] {
         parseSideBySide(diffText)
     }
 
     var body: some View {
-        let bg = theme?.background
-        let fg = theme?.foreground
-
         ScrollView(.vertical) {
             LazyVStack(alignment: .leading, spacing: 0) {
                 ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
@@ -24,51 +17,49 @@ struct SideBySideDiffView: View {
                     case let .fileHeader(text):
                         Text(text)
                             .scaledFont(size: 12, weight: .bold, design: .monospaced)
-                            .foregroundStyle(Color(nsColor: fg ?? .white))
+                            .foregroundStyle(theme.foreground)
                             .padding(.horizontal, 8)
                             .padding(.top, 12)
                             .padding(.bottom, 2)
                             .frame(maxWidth: .infinity, alignment: .leading)
-                            .background(Color.white.opacity(0.08))
+                            .background(theme.foreground.opacity(0.08))
 
                     case let .hunkHeader(text):
                         Text(text)
                             .scaledFont(size: 12, design: .monospaced)
-                            .foregroundStyle(Color(nsColor: .systemCyan))
+                            .foregroundStyle(theme.cyan)
                             .padding(.horizontal, 8)
                             .padding(.vertical, 2)
                             .frame(maxWidth: .infinity, alignment: .leading)
-                            .background(Color.cyan.opacity(0.06))
+                            .background(theme.cyan.opacity(0.06))
 
                     case let .pair(left, right, lang):
                         HStack(spacing: 0) {
-                            sideCell(left, lang: lang, fg: fg)
+                            sideCell(left, lang: lang)
                             Divider()
-                            sideCell(right, lang: lang, fg: fg)
+                            sideCell(right, lang: lang)
                         }
                     }
                 }
             }
             .padding(.vertical, 4)
         }
-        .background(Color(nsColor: bg ?? NSColor(red: 0.11, green: 0.11, blue: 0.13, alpha: 1)))
+        .background(theme.background)
         .textSelection(.enabled)
     }
 
     @ViewBuilder
-    private func sideCell(_ cell: SideCell, lang: String?, fg: NSColor?) -> some View {
-        let contextColor = Color(nsColor: fg ?? .labelColor).opacity(0.6)
-
+    private func sideCell(_ cell: SideCell, lang: String?) -> some View {
         let bgColor = switch cell.kind {
-        case .added: Color.green.opacity(0.1)
-        case .removed: Color.red.opacity(0.1)
+        case .added: theme.green.opacity(0.1)
+        case .removed: theme.red.opacity(0.1)
         case .context, .empty: Color.clear
         }
 
         let fallbackColor = switch cell.kind {
-        case .added: Color(nsColor: .systemGreen)
-        case .removed: Color(nsColor: .systemRed)
-        case .context: contextColor
+        case .added: theme.green
+        case .removed: theme.red
+        case .context: theme.foreground.opacity(0.6)
         case .empty: Color.clear
         }
 

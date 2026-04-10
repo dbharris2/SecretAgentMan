@@ -2,6 +2,7 @@ import SwiftUI
 
 struct ContentView: View {
     @Environment(AppCoordinator.self) private var coordinator
+    @Environment(\.appTheme) private var theme
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
     @State private var selectedPlanURL: URL?
     @AppStorage("shellPanelVisible") private var isShellPanelVisible = false
@@ -78,7 +79,10 @@ struct ContentView: View {
                 }
             }
             .navigationSplitViewStyle(.balanced)
+            .background(theme.background)
             .frame(minWidth: 900, minHeight: 600)
+            .toolbarBackground(theme.surface, for: .windowToolbar)
+            .toolbarColorScheme(theme.isDark ? .dark : .light, for: .windowToolbar)
             .toolbar {
                 ToolbarItem(placement: .automatic) {
                     VersionBadgeView()

@@ -18,6 +18,7 @@ struct PRListView: View {
     var reviewerGroups: [ReviewerGroup] = []
     var selectedPRId: String?
     @State private var collapsedSections: Set<GitHubPRService.PRSection> = []
+    @Environment(\.appTheme) private var theme
 
     private var orderedSections: [(section: GitHubPRService.PRSection, prs: [GitHubPRService.GitHubPR])] {
         GitHubPRService.PRSection.allCases.compactMap { section in
@@ -57,11 +58,12 @@ struct PRListView: View {
                 rateLimitBar(rateLimit)
             }
         }
+        .background(theme.surface)
     }
 
     private func rateLimitBar(_ limit: GitHubPRService.RateLimit) -> some View {
         let fraction = limit.limit > 0 ? Double(limit.used) / Double(limit.limit) : 0
-        let color: Color = fraction > 0.8 ? .red : fraction > 0.5 ? .orange : .green
+        let color: Color = fraction > 0.8 ? theme.red : fraction > 0.5 ? theme.yellow : theme.green
 
         return HStack(spacing: 6) {
             Circle()
@@ -81,7 +83,7 @@ struct PRListView: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 4)
-        .background(.bar)
+        .background(theme.surface)
     }
 
     private static func relativeTime(_ date: Date) -> String {
@@ -187,17 +189,19 @@ struct PRListView: View {
             }
         }
         .listStyle(.sidebar)
+        .scrollContentBackground(.hidden)
+        .background(theme.surface)
         .padding(.top, 8)
     }
 
     private func sectionColor(_ section: GitHubPRService.PRSection) -> Color {
         switch section {
-        case .needsMyReview: .blue
-        case .returnedToMe: .red
-        case .approved: .green
-        case .waitingForReview: .orange
-        case .reviewed: .purple
-        case .drafts: .secondary
+        case .needsMyReview: theme.blue
+        case .returnedToMe: theme.red
+        case .approved: theme.green
+        case .waitingForReview: theme.yellow
+        case .reviewed: theme.magenta
+        case .drafts: theme.foreground.opacity(0.5)
         }
     }
 }
@@ -205,12 +209,13 @@ struct PRListView: View {
 struct PRRowView: View {
     let pr: GitHubPRService.GitHubPR
     var isSelected: Bool = false
+    @Environment(\.appTheme) private var theme
 
     private var stateColor: Color {
-        if pr.reviewDecision == "APPROVED" { return .green }
-        if pr.reviewDecision == "CHANGES_REQUESTED" { return .red }
-        if pr.isDraft { return .secondary }
-        return .orange
+        if pr.reviewDecision == "APPROVED" { return theme.green }
+        if pr.reviewDecision == "CHANGES_REQUESTED" { return theme.red }
+        if pr.isDraft { return theme.foreground.opacity(0.5) }
+        return theme.yellow
     }
 
     private static func relativeDate(_ date: Date) -> String {
@@ -264,10 +269,10 @@ struct PRRowView: View {
 
                     Text(verbatim: "+\(pr.additions)")
                         .scaledFont(size: 10, design: .monospaced)
-                        .foregroundStyle(.green)
+                        .foregroundStyle(theme.green)
                     Text(verbatim: "-\(pr.deletions)")
                         .scaledFont(size: 10, design: .monospaced)
-                        .foregroundStyle(.red)
+                        .foregroundStyle(theme.red)
                     Text(verbatim: "@\(pr.changedFiles)")
                         .scaledFont(size: 10)
                         .foregroundStyle(.secondary)
@@ -302,7 +307,7 @@ struct PRRowView: View {
                         let presentation = pr.checkStatus.presentation
                         Image(systemName: "flask.fill")
                             .scaledFont(size: 11)
-                            .foregroundStyle(presentation.tone.color)
+                            .foregroundStyle(presentation.tone.color(in: theme))
                             .help(presentation.label)
                     }
                 }

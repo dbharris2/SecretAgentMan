@@ -11,15 +11,15 @@ enum StatusTone: Equatable {
 }
 
 extension StatusTone {
-    var color: Color {
+    func color(in theme: AppTheme) -> Color {
         switch self {
-        case .neutral: .secondary
-        case .success: .green
-        case .info: .blue
-        case .warning: .orange
-        case .danger: .red
-        case .queued: .yellow
-        case .merged: .purple
+        case .neutral: theme.foreground.opacity(0.5)
+        case .success: theme.green
+        case .info: theme.blue
+        case .warning: theme.yellow
+        case .danger: theme.red
+        case .queued: theme.yellow.opacity(0.8)
+        case .merged: theme.magenta
         }
     }
 }

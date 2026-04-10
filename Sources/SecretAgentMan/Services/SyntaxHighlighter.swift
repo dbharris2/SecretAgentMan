@@ -10,6 +10,15 @@ enum SyntaxHighlighter {
         return h
     }()
 
+    private nonisolated(unsafe) static var currentThemeName = "atom-one-dark"
+
+    /// Update the Highlightr theme to match the app theme.
+    static func setHighlightrTheme(_ name: String) {
+        guard name != currentThemeName else { return }
+        currentThemeName = name
+        highlightr?.setTheme(to: name)
+    }
+
     private static let extensionMap: [String: String] = [
         "ts": "typescript", "tsx": "typescript",
         "js": "javascript", "jsx": "javascript",

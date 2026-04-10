@@ -6,6 +6,7 @@ struct AgentRowView: View {
     var pendingPromptCount: Int = 0
     var branchName: String?
     var prInfo: PRInfo?
+    @Environment(\.appTheme) private var theme
 
     var body: some View {
         HStack(spacing: 8) {
@@ -34,7 +35,7 @@ struct AgentRowView: View {
                     .scaledFont(size: 10, weight: .bold)
                     .foregroundStyle(.white)
                     .frame(minWidth: 16, minHeight: 16)
-                    .background(.red)
+                    .background(theme.red)
                     .clipShape(Circle())
             }
 

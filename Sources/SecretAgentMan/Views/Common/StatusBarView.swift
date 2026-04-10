@@ -2,6 +2,7 @@ import SwiftUI
 
 struct StatusBarView: View {
     @Environment(AppCoordinator.self) private var coordinator
+    @Environment(\.appTheme) private var theme
     @AppStorage("shellPanelVisible") private var isShellPanelVisible = false
 
     @State private var showingMCPPopover = false
@@ -138,7 +139,7 @@ struct StatusBarView: View {
             } label: {
                 Image(systemName: "terminal")
                     .scaledFont(size: 11)
-                    .foregroundStyle(isShellPanelVisible ? Color.accentColor : .secondary)
+                    .foregroundStyle(isShellPanelVisible ? theme.accent : .secondary)
             }
             .buttonStyle(.plain)
             .help("Toggle Terminal (Cmd+J)")
@@ -150,7 +151,7 @@ struct StatusBarView: View {
                 Image(systemName: "sparkle")
                     .scaledFont(size: 11)
                     .foregroundStyle(
-                        coordinator.isAgentPanelVisible ? Color.accentColor : .secondary
+                        coordinator.isAgentPanelVisible ? theme.accent : .secondary
                     )
             }
             .buttonStyle(.plain)
@@ -216,7 +217,7 @@ struct StatusBarView: View {
         }
         .padding(.horizontal, 10)
         .frame(height: 26)
-        .background(.bar)
+        .background(theme.surface)
     }
 
     private func sendSkill(_ skill: SkillInfo) {
@@ -305,9 +306,9 @@ struct StatusBarView: View {
     }
 
     private func usageColor(for percent: Double) -> Color {
-        if percent > 80 { return .red }
-        if percent > 50 { return .orange }
-        return .green
+        if percent > 80 { return theme.red }
+        if percent > 50 { return theme.yellow }
+        return theme.green
     }
 
     @ViewBuilder
@@ -438,11 +439,12 @@ private struct SessionActionRow: View {
 
 private struct PopoverRow: View {
     let label: String
+    @Environment(\.appTheme) private var theme
 
     var body: some View {
         HStack(spacing: 6) {
             Circle()
-                .fill(.green)
+                .fill(theme.green)
                 .frame(width: 6, height: 6)
             Text(label)
                 .scaledFont(size: 12)
@@ -455,6 +457,7 @@ private struct PopoverRow: View {
 private struct UsagePopover: View {
     let limits: AgentRateLimits
     let provider: AgentProvider
+    @Environment(\.appTheme) private var theme
 
     private static let timeFormatter: DateFormatter = {
         let f = DateFormatter()
@@ -485,7 +488,7 @@ private struct UsagePopover: View {
 
     private func usageRow(_ window: WindowUsage) -> some View {
         let percent = window.usedPercent
-        let color: Color = percent > 80 ? .red : percent > 50 ? .orange : .green
+        let color: Color = percent > 80 ? theme.red : percent > 50 ? theme.yellow : theme.green
 
         return VStack(alignment: .leading, spacing: 3) {
             HStack {

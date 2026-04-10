@@ -2,6 +2,7 @@ import SwiftUI
 
 struct SidebarView: View {
     @Environment(AppCoordinator.self) private var coordinator
+    @Environment(\.appTheme) private var theme
     @Binding var selectedPlanURL: URL?
     @State private var showingNewAgent = false
     @State private var renamingAgentId: UUID?
@@ -42,6 +43,8 @@ struct SidebarView: View {
             }
         }
         .listStyle(.sidebar)
+        .scrollContentBackground(.hidden)
+        .background(theme.surface)
         .frame(minWidth: 200)
         .toolbar {
             ToolbarItem {

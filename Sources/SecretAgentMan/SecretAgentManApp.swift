@@ -3,15 +3,23 @@ import SwiftUI
 @main
 struct SecretAgentManApp: App {
     @State private var coordinator = AppCoordinator()
+    @AppStorage(UserDefaultsKeys.terminalTheme) private var themeName = "Catppuccin Mocha"
 
     var body: some Scene {
+        let appTheme = AppTheme.load(named: themeName)
+
         WindowGroup("Secret Agent Man") {
             ContentView()
                 .environment(coordinator)
                 .environment(\.fontScale, fontScale)
+                .environment(\.appTheme, appTheme)
+                .preferredColorScheme(appTheme.isDark ? .dark : .light)
                 .onChange(of: fontScale) {
                     coordinator.terminalManager.applyFontToAll()
                     coordinator.shellManager.applyFontToAll()
+                }
+                .onChange(of: themeName) {
+                    SyntaxHighlighter.setHighlightrTheme(AppTheme.load(named: themeName).highlightrTheme)
                 }
         }
         .windowStyle(.titleBar)

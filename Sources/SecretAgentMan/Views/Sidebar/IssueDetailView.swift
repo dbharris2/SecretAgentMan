@@ -4,6 +4,7 @@ struct IssueDetailView: View {
     let issue: GitHubIssue
     let issueBody: String
     let comments: [IssueComment]
+    @Environment(\.appTheme) private var theme
 
     private static let dateFormatter: DateFormatter = {
         let f = DateFormatter()
@@ -114,7 +115,7 @@ struct IssueDetailView: View {
                         }
                         .padding(8)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(Color.secondary.opacity(0.05))
+                        .background(theme.foreground.opacity(0.05))
                         .clipShape(RoundedRectangle(cornerRadius: 6))
                     }
                 } else if comments.isEmpty, issue.commentCount > 0 {
@@ -131,5 +132,6 @@ struct IssueDetailView: View {
             .padding(16)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
+        .background(theme.background)
     }
 }

@@ -10,6 +10,7 @@ struct IssueListView: View {
     let onWorkOnIssue: (GitHubIssue) -> Void
 
     @State private var collapsedSections: Set<IssueSection> = []
+    @Environment(\.appTheme) private var theme
 
     private var orderedSections: [(section: IssueSection, issues: [GitHubIssue])] {
         IssueSection.allCases.compactMap { section in
@@ -49,11 +50,12 @@ struct IssueListView: View {
                 rateLimitBar(rateLimit)
             }
         }
+        .background(theme.surface)
     }
 
     private func rateLimitBar(_ limit: GitHubPRService.RateLimit) -> some View {
         let fraction = limit.limit > 0 ? Double(limit.used) / Double(limit.limit) : 0
-        let color: Color = fraction > 0.8 ? .red : fraction > 0.5 ? .orange : .green
+        let color: Color = fraction > 0.8 ? theme.red : fraction > 0.5 ? theme.yellow : theme.green
 
         return HStack(spacing: 6) {
             Circle()
@@ -73,7 +75,7 @@ struct IssueListView: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 4)
-        .background(.bar)
+        .background(theme.surface)
     }
 
     private static func relativeTime(_ date: Date) -> String {
@@ -152,14 +154,16 @@ struct IssueListView: View {
             }
         }
         .listStyle(.sidebar)
+        .scrollContentBackground(.hidden)
+        .background(theme.surface)
         .padding(.top, 8)
     }
 
     private func sectionColor(_ section: IssueSection) -> Color {
         switch section {
-        case .assigned: .blue
-        case .mentioned: .orange
-        case .authored: .purple
+        case .assigned: theme.blue
+        case .mentioned: theme.yellow
+        case .authored: theme.magenta
         }
     }
 }
@@ -167,6 +171,7 @@ struct IssueListView: View {
 struct IssueRowView: View {
     let issue: GitHubIssue
     var isSelected: Bool = false
+    @Environment(\.appTheme) private var theme
 
     private static func relativeDate(_ date: Date) -> String {
         let seconds = Date().timeIntervalSince(date)
@@ -182,7 +187,7 @@ struct IssueRowView: View {
     var body: some View {
         HStack(alignment: .center, spacing: 8) {
             RoundedRectangle(cornerRadius: 1.5)
-                .fill(Color.green)
+                .fill(theme.green)
                 .frame(width: 3)
 
             if let avatarURL = issue.authorAvatarURL {

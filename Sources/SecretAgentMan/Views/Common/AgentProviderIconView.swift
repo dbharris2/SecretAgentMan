@@ -9,6 +9,8 @@ struct AgentProviderIconView: View {
         self.size = size
     }
 
+    @Environment(\.appTheme) private var theme
+
     var body: some View {
         if let assetName = provider.iconAssetName {
             Image(assetName)
@@ -18,10 +20,10 @@ struct AgentProviderIconView: View {
         } else {
             ZStack {
                 RoundedRectangle(cornerRadius: size * 0.25)
-                    .fill(Color.accentColor.opacity(0.15))
+                    .fill(theme.accent.opacity(0.15))
                 Image(systemName: provider.symbolName)
                     .scaledFont(size: size * 0.5, weight: .semibold)
-                    .foregroundStyle(Color.accentColor)
+                    .foregroundStyle(theme.accent)
             }
             .frame(width: size, height: size)
         }

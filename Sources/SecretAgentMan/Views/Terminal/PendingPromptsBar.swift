@@ -6,6 +6,7 @@ struct PendingPromptsBar: View {
     let onSend: (PendingPrompt) -> Void
 
     @State private var expandedPromptId: UUID?
+    @Environment(\.appTheme) private var theme
 
     private var prompts: [PendingPrompt] {
         guard let id = selectedAgentId else { return [] }
@@ -77,14 +78,14 @@ struct PendingPromptsBar: View {
                                     .padding(8)
                             }
                             .frame(maxHeight: 120)
-                            .background(Color.black.opacity(0.2))
+                            .background(theme.background)
                         }
 
                         Divider()
                     }
                 }
             }
-            .background(.bar)
+            .background(theme.surface)
         }
     }
 
@@ -100,11 +101,11 @@ struct PendingPromptsBar: View {
 
     private func colorForSource(_ source: PendingPrompt.PromptSource) -> Color {
         switch source {
-        case .ciFailed: .red
-        case .changesRequested: .orange
-        case .approvedWithComments: .green
-        case .reviewPR: .blue
-        case .workOnIssue: .purple
+        case .ciFailed: theme.red
+        case .changesRequested: theme.yellow
+        case .approvedWithComments: theme.green
+        case .reviewPR: theme.blue
+        case .workOnIssue: theme.magenta
         }
     }
 }

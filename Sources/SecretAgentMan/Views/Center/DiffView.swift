@@ -3,11 +3,7 @@ import SwiftUI
 struct DiffView: View {
     let diffText: String
     @Environment(\.fontScale) private var fontScale
-    @AppStorage(UserDefaultsKeys.terminalTheme) private var themeName = "Catppuccin Mocha"
-
-    private var theme: GhosttyTheme? {
-        GhosttyThemeLoader.load(named: themeName)
-    }
+    @Environment(\.appTheme) private var theme
 
     private var parsedLines: [(line: String, kind: LineKind, lang: String?)] {
         var result: [(String, LineKind, String?)] = []
@@ -26,18 +22,15 @@ struct DiffView: View {
     }
 
     var body: some View {
-        let bg = theme?.background
-        let fg = theme?.foreground
-
         ScrollView(.vertical) {
             LazyVStack(alignment: .leading, spacing: 0) {
                 ForEach(Array(parsedLines.enumerated()), id: \.offset) { _, entry in
-                    diffLine(entry.line, kind: entry.kind, lang: entry.lang, fg: fg)
+                    diffLine(entry.line, kind: entry.kind, lang: entry.lang)
                 }
             }
             .padding(.vertical, 4)
         }
-        .background(Color(nsColor: bg ?? NSColor(red: 0.11, green: 0.11, blue: 0.13, alpha: 1)))
+        .background(theme.background)
         .textSelection(.enabled)
     }
 
@@ -45,51 +38,48 @@ struct DiffView: View {
     private func diffLine(
         _ line: String,
         kind: LineKind,
-        lang: String?,
-        fg: NSColor?
+        lang: String?
     ) -> some View {
-        let contextColor = Color(nsColor: fg ?? .labelColor).opacity(0.6)
-
         switch kind {
         case .fileHeader:
             Text(line)
                 .scaledFont(size: 12, weight: .bold, design: .monospaced)
-                .foregroundStyle(Color(nsColor: fg ?? .white))
+                .foregroundStyle(theme.foreground)
                 .padding(.horizontal, 8)
                 .padding(.top, 12)
                 .padding(.bottom, 2)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Color.white.opacity(0.08))
+                .background(theme.foreground.opacity(0.08))
 
         case .hunkHeader:
             Text(line)
                 .scaledFont(size: 12, design: .monospaced)
-                .foregroundStyle(Color(nsColor: .systemCyan))
+                .foregroundStyle(theme.cyan)
                 .padding(.horizontal, 8)
                 .padding(.vertical, 2)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Color.cyan.opacity(0.06))
+                .background(theme.cyan.opacity(0.06))
 
         case .added:
-            highlightedText(line, prefix: "+", lang: lang, fallbackColor: Color(nsColor: .systemGreen))
+            highlightedText(line, prefix: "+", lang: lang, fallbackColor: theme.green)
                 .padding(.horizontal, 8)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Color.green.opacity(0.1))
+                .background(theme.green.opacity(0.1))
 
         case .removed:
-            highlightedText(line, prefix: "-", lang: lang, fallbackColor: Color(nsColor: .systemRed))
+            highlightedText(line, prefix: "-", lang: lang, fallbackColor: theme.red)
                 .padding(.horizontal, 8)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Color.red.opacity(0.1))
+                .background(theme.red.opacity(0.1))
 
         case .context:
-            highlightedText(line, prefix: " ", lang: lang, fallbackColor: contextColor)
+            highlightedText(line, prefix: " ", lang: lang, fallbackColor: theme.foreground.opacity(0.6))
                 .padding(.horizontal, 8)
 
         case .meta:
             Text(line)
                 .scaledFont(size: 11, design: .monospaced)
-                .foregroundStyle(contextColor)
+                .foregroundStyle(theme.foreground.opacity(0.6))
                 .padding(.horizontal, 8)
         }
     }

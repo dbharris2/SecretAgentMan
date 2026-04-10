@@ -3,6 +3,7 @@ import SwiftUI
 struct CodexSessionPanelView: View {
     @Environment(AppCoordinator.self) private var coordinator
     @Environment(\.fontScale) private var fontScale
+    @Environment(\.appTheme) private var theme
 
     let agent: Agent
 
@@ -56,11 +57,11 @@ struct CodexSessionPanelView: View {
                     if let debugMessage, pendingInput == nil {
                         Text(debugMessage)
                             .scaledFont(size: 12)
-                            .foregroundStyle(.orange)
+                            .foregroundStyle(theme.yellow)
                             .textSelection(.enabled)
                             .padding(12)
                             .frame(maxWidth: .infinity, alignment: .leading)
-                            .background(Color.orange.opacity(0.08))
+                            .background(theme.yellow.opacity(0.08))
                             .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                     }
 
@@ -78,6 +79,7 @@ struct CodexSessionPanelView: View {
 
             composer
         }
+        .background(theme.background)
         .id(agent.id)
         .onAppear {
             coordinator.ensureCodexSession(for: agent.id)

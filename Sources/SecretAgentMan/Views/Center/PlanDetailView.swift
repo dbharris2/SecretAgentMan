@@ -4,6 +4,7 @@ import SwiftUI
 struct PlanDetailView: View {
     let url: URL
     @State private var content: String = ""
+    @Environment(\.appTheme) private var theme
 
     var body: some View {
         ScrollView {
@@ -13,7 +14,7 @@ struct PlanDetailView: View {
                 .padding(16)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .background(Color(nsColor: NSColor(red: 0.11, green: 0.11, blue: 0.13, alpha: 1)))
+        .background(theme.background)
         .onAppear { loadContent() }
         .onChange(of: url) { loadContent() }
     }

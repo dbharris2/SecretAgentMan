@@ -8,6 +8,7 @@ enum SidebarPanel: String {
 
 struct ActivitySidebarView: View {
     @Environment(AppCoordinator.self) private var coordinator
+    @Environment(\.appTheme) private var theme
     @Binding var selectedPlanURL: URL?
     @AppStorage("sidebarSplitHeight") private var bottomPanelHeight: Double = 250
 
