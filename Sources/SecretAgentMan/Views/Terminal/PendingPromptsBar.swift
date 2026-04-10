@@ -94,6 +94,7 @@ struct PendingPromptsBar: View {
         case .changesRequested: "bubble.left.fill"
         case .approvedWithComments: "checkmark.bubble.fill"
         case .reviewPR: "eye.fill"
+        case .workOnIssue: "wrench.fill"
         }
     }
 
@@ -103,6 +104,7 @@ struct PendingPromptsBar: View {
         case .changesRequested: .orange
         case .approvedWithComments: .green
         case .reviewPR: .blue
+        case .workOnIssue: .purple
         }
     }
 }

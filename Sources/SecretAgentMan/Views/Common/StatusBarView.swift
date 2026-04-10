@@ -55,6 +55,7 @@ struct StatusBarView: View {
             HStack(spacing: 8) {
                 panelToggleButton(icon: "doc.text", panel: .plans, label: "Plans")
                 panelToggleImageButton(image: "PRIcon", panel: .prs, label: "Pull Requests")
+                panelToggleButton(icon: "exclamationmark.circle", panel: .issues, label: "Issues")
             }
 
             Divider()
