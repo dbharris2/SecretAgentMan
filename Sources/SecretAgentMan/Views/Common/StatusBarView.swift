@@ -191,6 +191,12 @@ struct StatusBarView: View {
                             }
                             .foregroundStyle(.secondary)
                         }
+                        .contextMenu {
+                            Button("Copy Session ID") {
+                                NSPasteboard.general.clearContents()
+                                NSPasteboard.general.setString(sessionId, forType: .string)
+                            }
+                        }
                         .popover(isPresented: $showingSessionPopover) {
                             SessionPopover(
                                 agent: agent,
@@ -372,8 +378,8 @@ private struct SessionPopover: View {
             } label: {
                 SessionActionRow(
                     icon: "plus.circle",
-                    title: "Start New Session",
-                    subtitle: "Create a new agent in \(agent.provider.displayName)"
+                    title: "Start New \(agent.provider.displayName) Session",
+                    subtitle: agent.folderPath
                 )
             }
             .buttonStyle(.plain)
@@ -385,18 +391,23 @@ private struct SessionPopover: View {
                     .scaledFont(size: 12)
                     .foregroundStyle(.secondary)
             } else {
-                ForEach(sessions) { session in
-                    Button {
-                        onResume(session.id)
-                    } label: {
-                        SessionActionRow(
-                            icon: "arrow.clockwise.circle",
-                            title: session.id,
-                            subtitle: sessionSubtitle(for: session)
-                        )
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 0) {
+                        ForEach(sessions) { session in
+                            Button {
+                                onResume(session.id)
+                            } label: {
+                                SessionActionRow(
+                                    icon: "arrow.clockwise.circle",
+                                    title: session.id,
+                                    subtitle: sessionSubtitle(for: session)
+                                )
+                            }
+                            .buttonStyle(.plain)
+                        }
                     }
-                    .buttonStyle(.plain)
                 }
+                .frame(maxHeight: 300)
             }
         }
         .padding(10)
