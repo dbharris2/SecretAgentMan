@@ -149,6 +149,16 @@ final class AppCoordinator {
         claudeMonitor.respondToElicitation(for: agentId, answer: answer)
     }
 
+    func interruptAgent(for agentId: UUID) {
+        guard let agent = store.agents.first(where: { $0.id == agentId }) else { return }
+        switch agent.provider {
+        case .claude:
+            claudeMonitor.interrupt(for: agentId)
+        case .codex:
+            codexMonitor.interrupt(for: agentId)
+        }
+    }
+
     func invalidateDiffs() {
         repositoryMonitor.invalidateDiffs()
     }

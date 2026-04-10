@@ -135,6 +135,10 @@ final class CodexAppServerMonitor {
         observers[agentId]?.debugTriggerUserInput()
     }
 
+    func interrupt(for agentId: UUID) {
+        observers[agentId]?.interrupt()
+    }
+
     func respondToUserInput(for agentId: UUID, answers: [String: [String]]) {
         guard let request = pendingUserInputRequests[agentId] else { return }
         observers[agentId]?.respondToUserInput(answers: answers)
@@ -274,6 +278,13 @@ private final class Observer: @unchecked Sendable {
         didInitialize = false
         if process.isRunning {
             process.terminate()
+        }
+    }
+
+    func interrupt() {
+        queue.async { [weak self] in
+            guard let self, self.process.isRunning else { return }
+            self.process.interrupt()
         }
     }
 

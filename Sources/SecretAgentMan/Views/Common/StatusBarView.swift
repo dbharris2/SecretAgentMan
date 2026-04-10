@@ -164,7 +164,22 @@ struct StatusBarView: View {
 
             if let agent = selectedAgent {
                 HStack(spacing: 8) {
-                    if let limits = coordinator.usageMonitor.rateLimits[agent.provider] {
+                    if agent.provider == .claude,
+                       let info = coordinator.claudeMonitor.rateLimits[agent.id] {
+                        popoverButton(isPresented: $showingUsagePopover, help: "API Usage") {
+                            HStack(spacing: 3) {
+                                Circle()
+                                    .fill(usageColor(for: info.usedPercent))
+                                    .frame(width: 6, height: 6)
+                                Text(verbatim: "\(Int(info.usedPercent))%")
+                                    .scaledFont(size: 11)
+                            }
+                            .foregroundStyle(.secondary)
+                        }
+                        .popover(isPresented: $showingUsagePopover) {
+                            StreamRateLimitPopover(info: info, provider: agent.provider)
+                        }
+                    } else if let limits = coordinator.usageMonitor.rateLimits[agent.provider] {
                         popoverButton(isPresented: $showingUsagePopover, help: "API Usage") {
                             HStack(spacing: 3) {
                                 Circle()
@@ -524,5 +539,73 @@ private struct UsagePopover: View {
                     .foregroundStyle(.secondary)
             }
         }
+    }
+}
+
+private struct StreamRateLimitPopover: View {
+    let info: ClaudeStreamMonitor.RateLimitInfo
+    let provider: AgentProvider
+    @Environment(\.appTheme) private var theme
+
+    private static let timeFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "h:mm a"
+        return f
+    }()
+
+    private static let dateTimeFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "MMM d, h:mm a"
+        return f
+    }()
+
+    var body: some View {
+        let percent = info.usedPercent
+        let color: Color = percent > 80 ? theme.red : percent > 50 ? theme.yellow : theme.green
+
+        VStack(alignment: .leading, spacing: 6) {
+            Text("API Usage — \(provider.displayName)")
+                .scaledFont(size: 12, weight: .semibold)
+                .foregroundStyle(.secondary)
+
+            Divider()
+
+            VStack(alignment: .leading, spacing: 3) {
+                HStack {
+                    Text("Rate limit")
+                        .scaledFont(size: 11, weight: .medium)
+                    Spacer()
+                    Text(verbatim: "\(Int(percent))%")
+                        .scaledFont(size: 11, weight: .medium)
+                        .foregroundStyle(color)
+                }
+
+                GeometryReader { geo in
+                    ZStack(alignment: .leading) {
+                        RoundedRectangle(cornerRadius: 2)
+                            .fill(Color.secondary.opacity(0.2))
+                            .frame(height: 4)
+                        RoundedRectangle(cornerRadius: 2)
+                            .fill(color)
+                            .frame(width: geo.size.width * min(percent / 100, 1.0), height: 4)
+                    }
+                }
+                .frame(height: 4)
+
+                if let resetsAt = info.resetsAt {
+                    let formatter =
+                        if Calendar.current.isDate(resetsAt, inSameDayAs: Date()) {
+                            Self.timeFormatter
+                        } else {
+                            Self.dateTimeFormatter
+                        }
+                    Text("Resets at \(formatter.string(from: resetsAt))")
+                        .scaledFont(size: 10)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+        .padding(10)
+        .frame(minWidth: 200)
     }
 }

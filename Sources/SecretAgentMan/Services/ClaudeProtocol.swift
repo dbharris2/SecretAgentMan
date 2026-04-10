@@ -81,6 +81,13 @@ enum ClaudeProtocol {
                 request: Request(subtype: "set_permission_mode", mode: mode)
             )
         }
+
+        static func interrupt() -> ControlRequest {
+            ControlRequest(
+                request_id: "int-\(UUID().uuidString)",
+                request: Request(subtype: "interrupt")
+            )
+        }
     }
 
     struct PermissionResponse: Encodable {
@@ -146,7 +153,7 @@ enum ClaudeProtocol {
         case controlRequest(requestId: String, request: [String: Any])
         case controlResponse(response: [String: Any])
         case result(isError: Bool, modelUsage: [String: Any]?, sessionId: String?)
-        case rateLimitEvent
+        case rateLimitEvent(utilization: Double, resetsAt: TimeInterval?)
         case unknown(type: String)
 
         static func parse(_ object: [String: Any]) -> Event? {
@@ -188,7 +195,10 @@ enum ClaudeProtocol {
                     sessionId: object["session_id"] as? String
                 )
             case "rate_limit_event":
-                return .rateLimitEvent
+                let info = object["rate_limit_info"] as? [String: Any] ?? [:]
+                let utilization = info["utilization"] as? Double ?? 0
+                let resetsAt = info["resetsAt"] as? TimeInterval
+                return .rateLimitEvent(utilization: utilization, resetsAt: resetsAt)
             default:
                 return .unknown(type: type)
             }

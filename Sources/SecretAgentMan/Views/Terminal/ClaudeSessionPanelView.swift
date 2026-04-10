@@ -68,6 +68,13 @@ struct ClaudeSessionPanelView: View {
         }
         .background(theme.background)
         .id(agent.id)
+        .onKeyPress(phases: .down) { keyPress in
+            if keyPress.key == .init("c"), keyPress.modifiers.contains(.control) {
+                coordinator.interruptAgent(for: agent.id)
+                return .handled
+            }
+            return .ignored
+        }
         .onAppear {
             coordinator.ensureClaudeSession(for: agent.id)
         }
@@ -180,9 +187,9 @@ struct ClaudeSessionPanelView: View {
 
     private var composerStatusText: String {
         let monitor = coordinator.claudeMonitor
-        let model = monitor.modelName.isEmpty ? "Claude" : monitor.modelName
-        let pct = monitor.contextPercentUsed
-        let mode = monitor.permissionMode
+        let model = monitor.modelNames[agent.id].flatMap { $0.isEmpty ? nil : $0 } ?? "Claude"
+        let pct = monitor.contextPercentUsed[agent.id] ?? 0
+        let mode = monitor.permissionModes[agent.id] ?? "default"
         var parts = [model]
         if pct > 0 { parts.append("\(Int(pct))% ctx") }
         parts.append("\(mode) (ctrl+m)")
@@ -191,7 +198,7 @@ struct ClaudeSessionPanelView: View {
 
     private func cyclePermissionMode() {
         let modes = ClaudeStreamMonitor.permissionModes
-        let current = coordinator.claudeMonitor.permissionMode
+        let current = coordinator.claudeMonitor.permissionModes[agent.id] ?? "default"
         let idx = modes.firstIndex(of: current) ?? 0
         let next = modes[(idx + 1) % modes.count]
         coordinator.claudeMonitor.setPermissionMode(for: agent.id, mode: next)

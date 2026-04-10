@@ -82,6 +82,13 @@ struct CodexSessionPanelView: View {
         }
         .background(theme.background)
         .id(agent.id)
+        .onKeyPress(phases: .down) { keyPress in
+            if keyPress.key == .init("c"), keyPress.modifiers.contains(.control) {
+                coordinator.interruptAgent(for: agent.id)
+                return .handled
+            }
+            return .ignored
+        }
         .onAppear {
             coordinator.ensureCodexSession(for: agent.id)
         }
