@@ -6,6 +6,7 @@ enum StatusTone: Equatable {
     case info
     case warning
     case danger
+    case orange
     case queued
     case merged
 }
@@ -18,6 +19,7 @@ extension StatusTone {
         case .info: theme.blue
         case .warning: theme.yellow
         case .danger: theme.red
+        case .orange: theme.orange
         case .queued: theme.yellow.opacity(0.8)
         case .merged: theme.magenta
         }
@@ -46,7 +48,7 @@ extension AgentState {
             AgentStatePresentation(
                 label: "Needs Approval",
                 systemImage: "exclamationmark.circle.fill",
-                tone: .danger
+                tone: .orange
             )
         case .awaitingInput:
             AgentStatePresentation(label: "Ready", systemImage: "circle.fill", tone: .success)
@@ -54,7 +56,7 @@ extension AgentState {
             AgentStatePresentation(
                 label: "Needs Input",
                 systemImage: "questionmark.circle.fill",
-                tone: .warning
+                tone: .orange
             )
         case .finished:
             AgentStatePresentation(label: "Done", systemImage: "checkmark.circle", tone: .neutral)

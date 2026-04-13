@@ -19,6 +19,7 @@ struct AppTheme: Equatable {
     let blue: Color
     let magenta: Color
     let cyan: Color
+    let orange: Color
 
     // UI accent (cursor color) and selection
     let accent: Color
@@ -53,6 +54,8 @@ struct AppTheme: Equatable {
         blue = Color(nsColor: ghostty.palette[4] ?? .systemBlue)
         magenta = Color(nsColor: ghostty.palette[5] ?? .systemPurple)
         cyan = Color(nsColor: ghostty.palette[6] ?? .systemCyan)
+        // Bright red (ANSI 9) is peach/orange in most themes — use it for a distinct warning tone.
+        orange = Color(nsColor: ghostty.palette[9] ?? .systemOrange)
 
         accent = Color(nsColor: ghostty.cursorColor)
         selection = Color(nsColor: ghostty.selectionBackground)
