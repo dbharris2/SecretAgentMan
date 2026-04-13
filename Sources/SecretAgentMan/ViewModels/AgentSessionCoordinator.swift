@@ -53,6 +53,16 @@ final class AgentSessionCoordinator {
             handleAgentStateChange(agentId: id, state: state, source: .claude)
         }
 
+        claudeMonitor.onSessionConflict = { [self] id in
+            // Session ID is locked by an orphaned Claude process.
+            // Remove the broken observer, reset to a fresh session ID, and retry once.
+            claudeMonitor.removeObserver(for: id)
+            store.resetSession(id: id)
+            if let agent = store.agents.first(where: { $0.id == id }) {
+                claudeMonitor.ensureSession(for: agent)
+            }
+        }
+
         eventBus.onSendPrompt = { [self] agentId, prompt in
             if let agent = store.agents.first(where: { $0.id == agentId }) {
                 switch agent.provider {

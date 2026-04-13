@@ -27,6 +27,7 @@ struct ClaudeElicitationRequest: Equatable {
 final class ClaudeStreamMonitor {
     @ObservationIgnored var onStateChange: ((UUID, AgentState) -> Void)?
     @ObservationIgnored var onSessionReady: ((UUID, String) -> Void)?
+    @ObservationIgnored var onSessionConflict: ((UUID) -> Void)?
 
     private(set) var pendingApprovalRequests: [UUID: ClaudeApprovalRequest] = [:]
     private(set) var pendingElicitations: [UUID: ClaudeElicitationRequest] = [:]
@@ -71,6 +72,8 @@ final class ClaudeStreamMonitor {
         guard agent.provider == .claude else { return }
 
         if let observer = observers[agent.id] {
+            // Don't retry if the session ID is locked by an orphaned process
+            guard !observer.hasSessionConflict else { return }
             observer.update(agent: agent)
             observer.start()
             return
@@ -127,6 +130,9 @@ final class ClaudeStreamMonitor {
                         )
                     }.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
                 }
+            },
+            sessionConflict: { [weak self] id in
+                Task { @MainActor in self?.onSessionConflict?(id) }
             }
         )
 
@@ -425,6 +431,7 @@ private struct ObserverDelegate {
     let permissionModeChanged: (UUID, String) -> Void
     let modelInfo: (UUID, String, Double) -> Void
     let slashCommands: ([[String: Any]]) -> Void
+    let sessionConflict: (UUID) -> Void
 }
 
 private struct PendingApproval {
@@ -444,10 +451,10 @@ private final class Observer: @unchecked Sendable {
     private(set) var agent: Agent
     private let delegate: ObserverDelegate
 
-    private let process = Process()
-    private let stdoutPipe = Pipe()
-    private let stderrPipe = Pipe()
-    private let stdinPipe = Pipe()
+    private var process: Process?
+    private var stdoutPipe = Pipe()
+    private var stderrPipe = Pipe()
+    private var stdinPipe = Pipe()
     private let queue: DispatchQueue
 
     private var stdoutBuffer = Data()
@@ -456,6 +463,8 @@ private final class Observer: @unchecked Sendable {
     private var pendingElicitation: PendingElicitation?
     private var pendingMessages: [String] = []
     private var didLaunch = false
+    /// Set when the session ID is already held by another process — prevents retries.
+    private(set) var hasSessionConflict = false
     private var lastObservedState: AgentState?
     private var currentStreamingText = ""
     private var lastStreamingFlush = Date.distantPast
@@ -467,31 +476,51 @@ private final class Observer: @unchecked Sendable {
     }
 
     func start() {
-        guard !process.isRunning else { return }
+        if let existing = process, existing.isRunning { return }
+        guard !hasSessionConflict else { return }
 
-        process.executableURL = URL(fileURLWithPath: AgentProcessManager.executablePath(for: .claude))
-        process.arguments = buildArguments()
-        process.currentDirectoryURL = agent.folder
-        process.environment = ProcessInfo.processInfo.environment
-        process.standardInput = stdinPipe
-        process.standardOutput = stdoutPipe
-        process.standardError = stderrPipe
+        // Create fresh pipes and process for each launch — Process is single-use.
+        let newProcess = Process()
+        let newStdout = Pipe()
+        let newStderr = Pipe()
+        let newStdin = Pipe()
 
-        stdoutPipe.fileHandleForReading.readabilityHandler = { [weak self] handle in
+        newProcess.executableURL = URL(fileURLWithPath: AgentProcessManager.executablePath(for: .claude))
+        newProcess.arguments = buildArguments()
+        newProcess.currentDirectoryURL = agent.folder
+        newProcess.environment = ProcessInfo.processInfo.environment
+        newProcess.standardInput = newStdin
+        newProcess.standardOutput = newStdout
+        newProcess.standardError = newStderr
+
+        // Reset buffers for the new process
+        queue.sync {
+            self.stdoutBuffer = Data()
+            self.stderrBuffer = Data()
+        }
+
+        newStdout.fileHandleForReading.readabilityHandler = { [weak self] handle in
             self?.consumeStdout(handle.availableData)
         }
-        stderrPipe.fileHandleForReading.readabilityHandler = { [weak self] handle in
+        newStderr.fileHandleForReading.readabilityHandler = { [weak self] handle in
             self?.consumeStderr(handle.availableData)
         }
 
-        process.terminationHandler = { [weak self] proc in
+        newProcess.terminationHandler = { [weak self] proc in
             guard let self else { return }
             if proc.terminationStatus != 0 {
-                // Surface stderr as a transcript item so the user sees what went wrong
                 let errorText = self.queue.sync {
                     String(data: self.stderrBuffer, encoding: .utf8)?
                         .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
                 }
+
+                // Detect "session already in use" — stop retrying and signal the coordinator
+                if errorText.contains("already in use") {
+                    self.hasSessionConflict = true
+                    self.delegate.sessionConflict(self.agent.id)
+                    return
+                }
+
                 if !errorText.isEmpty {
                     let truncated = errorText.count > 500
                         ? String(errorText.prefix(500)) + "…"
@@ -509,8 +538,14 @@ private final class Observer: @unchecked Sendable {
             }
         }
 
+        // Swap in the new pipes/process before launching
+        self.process = newProcess
+        self.stdoutPipe = newStdout
+        self.stderrPipe = newStderr
+        self.stdinPipe = newStdin
+
         do {
-            try process.run()
+            try newProcess.run()
         } catch {
             delegate.stateChanged(agent.id, .error)
             return
@@ -532,14 +567,15 @@ private final class Observer: @unchecked Sendable {
         pendingElicitation = nil
         pendingMessages.removeAll()
         didLaunch = false
-        if process.isRunning {
-            process.terminate()
+        if let proc = process, proc.isRunning {
+            proc.terminate()
         }
+        process = nil
     }
 
     func interrupt() {
         queue.async { [weak self] in
-            guard let self, self.process.isRunning else { return }
+            guard let self, let proc = self.process, proc.isRunning else { return }
             self.writeEncodable(ClaudeProtocol.ControlRequest.interrupt())
         }
     }
