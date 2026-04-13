@@ -88,6 +88,14 @@ struct SessionChatView: View {
                     Text("\(items.count) tool actions")
                         .scaledFont(size: 12)
                         .foregroundStyle(.secondary)
+
+                    if !isExpanded, let last = items.last {
+                        Text("·")
+                            .scaledFont(size: 12)
+                            .foregroundStyle(.tertiary)
+                        SessionMarkdownText(text: last.text, fontScale: fontScale)
+                            .lineLimit(1)
+                    }
                 }
                 .contentShape(Rectangle())
             }
