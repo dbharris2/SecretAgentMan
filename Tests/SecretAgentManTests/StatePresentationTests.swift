@@ -16,7 +16,7 @@ struct StatePresentationTests {
         #expect(AgentState.needsPermission.presentation == AgentStatePresentation(
             label: "Needs Approval",
             systemImage: "exclamationmark.circle.fill",
-            tone: .danger
+            tone: .orange
         ))
         #expect(AgentState.awaitingInput.presentation == AgentStatePresentation(
             label: "Ready",
