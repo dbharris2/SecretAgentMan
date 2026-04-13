@@ -50,6 +50,7 @@ struct CodexSessionPanelView: View {
                 transcript: transcript,
                 streaming: nil,
                 isThinking: isThinking,
+                activeTool: nil,
                 hasPendingCard: pendingInput != nil || pendingApproval != nil,
                 fontScale: fontScale,
                 emptyStateText: "Codex session is ready. Send a message to start."

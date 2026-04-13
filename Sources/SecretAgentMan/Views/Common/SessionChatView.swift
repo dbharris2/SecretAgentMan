@@ -5,6 +5,7 @@ struct SessionChatView: View {
     let transcript: [CodexTranscriptItem]
     let streaming: String?
     let isThinking: Bool
+    let activeTool: String?
     let hasPendingCard: Bool
     let fontScale: Double
     let emptyStateText: String
@@ -47,7 +48,7 @@ struct SessionChatView: View {
                     if let text = streaming, !text.isEmpty {
                         SessionStreamingBubble(providerName: providerName, text: text, fontScale: fontScale)
                     } else if isThinking {
-                        SessionThinkingBubble(providerName: providerName)
+                        SessionThinkingBubble(providerName: providerName, activeTool: activeTool)
                     }
 
                     pendingCards()

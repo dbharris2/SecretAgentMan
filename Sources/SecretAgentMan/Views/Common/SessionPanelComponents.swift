@@ -310,13 +310,21 @@ struct SessionStreamingBubble: View {
 
 struct SessionThinkingBubble: View {
     let providerName: String
+    var activeTool: String?
+
+    private var label: String {
+        if let activeTool {
+            return "Running \(activeTool)…"
+        }
+        return "\(providerName) is thinking…"
+    }
 
     var body: some View {
         HStack(spacing: 8) {
             ProgressView()
                 .controlSize(.small)
 
-            Text("\(providerName) is thinking…")
+            Text(label)
                 .scaledFont(size: 12)
                 .foregroundStyle(.secondary)
         }

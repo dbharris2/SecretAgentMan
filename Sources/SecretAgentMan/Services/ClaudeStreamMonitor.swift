@@ -34,6 +34,7 @@ final class ClaudeStreamMonitor {
     private(set) var transcriptItems: [UUID: [CodexTranscriptItem]] = [:]
     private(set) var runtimeStates: [UUID: AgentState] = [:]
     private(set) var streamingText: [UUID: String] = [:]
+    private(set) var activeToolName: [UUID: String] = [:]
     struct SlashCommand {
         let name: String
         let description: String
@@ -109,6 +110,15 @@ final class ClaudeStreamMonitor {
             },
             streamingFinished: { [weak self] id in
                 Task { @MainActor in self?.streamingText.removeValue(forKey: id) }
+            },
+            activeToolChanged: { [weak self] id, name in
+                Task { @MainActor in
+                    if let name {
+                        self?.activeToolName[id] = name
+                    } else {
+                        self?.activeToolName.removeValue(forKey: id)
+                    }
+                }
             },
             permissionModeChanged: { [weak self] id, mode in
                 Task { @MainActor in self?.permissionModes[id] = mode }
@@ -231,6 +241,7 @@ final class ClaudeStreamMonitor {
         transcriptItems.removeValue(forKey: agentId)
         runtimeStates.removeValue(forKey: agentId)
         streamingText.removeValue(forKey: agentId)
+        activeToolName.removeValue(forKey: agentId)
         modelNames.removeValue(forKey: agentId)
         contextPercentUsed.removeValue(forKey: agentId)
         permissionModes.removeValue(forKey: agentId)
@@ -246,6 +257,9 @@ final class ClaudeStreamMonitor {
         transcriptItems[agentId, default: []].append(
             CodexTranscriptItem(id: UUID().uuidString, role: .user, text: trimmed)
         )
+        // Immediately show "thinking" — don't wait for the first stream event.
+        runtimeStates[agentId] = .active
+        onStateChange?(agentId, .active)
         observers[agentId]?.sendMessage(trimmed, images: images)
     }
 
@@ -332,6 +346,21 @@ final class ClaudeStreamMonitor {
         }
 
         return items
+    }
+
+    /// Extract the name of the last tool_use block from an assistant event, if any.
+    nonisolated static func lastToolUseName(in event: [String: Any]) -> String? {
+        guard let message = event["message"] as? [String: Any],
+              let content = message["content"] as? [[String: Any]]
+        else { return nil }
+        // Walk backwards to find the last tool_use block
+        for block in content.reversed() {
+            if block["type"] as? String == "tool_use",
+               let name = block["name"] as? String {
+                return name
+            }
+        }
+        return nil
     }
 
     private nonisolated static func toolUseSummary(name: String, input: [String: Any]?) -> String {
@@ -428,6 +457,7 @@ private struct ObserverDelegate {
     let elicitationResolved: (UUID) -> Void
     let streamingText: (UUID, String) -> Void
     let streamingFinished: (UUID) -> Void
+    let activeToolChanged: (UUID, String?) -> Void
     let permissionModeChanged: (UUID, String) -> Void
     let modelInfo: (UUID, String, Double) -> Void
     let slashCommands: ([[String: Any]]) -> Void
@@ -611,6 +641,9 @@ private final class Observer: @unchecked Sendable {
             self.pendingApproval = nil
             self.sendPermissionResponse(requestId: pending.requestId, allow: accept, toolInput: pending.toolInput)
             self.delegate.approvalResolved(self.agent.id)
+            if accept {
+                self.publishIfChanged(.active)
+            }
         }
     }
 
@@ -763,6 +796,12 @@ private final class Observer: @unchecked Sendable {
         for item in ClaudeStreamMonitor.transcriptItems(fromAssistantEvent: event) {
             delegate.transcriptItem(agent.id, item)
         }
+
+        // If the last content block is a tool_use, set the active tool name
+        // so the thinking bubble shows "Running Bash…" while the tool executes.
+        let lastToolName = ClaudeStreamMonitor.lastToolUseName(in: event)
+        delegate.activeToolChanged(agent.id, lastToolName)
+
         publishIfChanged(.active)
     }
 
@@ -916,6 +955,8 @@ private final class Observer: @unchecked Sendable {
             let pct = (input + cacheRead + cacheCreate + output) / contextWindow * 100
             delegate.modelInfo(agent.id, "", pct)
         }
+
+        delegate.activeToolChanged(agent.id, nil)
 
         let isError = event["is_error"] as? Bool ?? false
         publishIfChanged(isError ? .error : .awaitingInput)

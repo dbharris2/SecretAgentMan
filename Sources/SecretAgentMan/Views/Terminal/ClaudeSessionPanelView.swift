@@ -27,6 +27,10 @@ struct ClaudeSessionPanelView: View {
         coordinator.claudeMonitor.streamingText[agent.id]
     }
 
+    private var activeTool: String? {
+        coordinator.claudeMonitor.activeToolName[agent.id]
+    }
+
     private var isThinking: Bool {
         agent.state == .active && streaming == nil
     }
@@ -47,6 +51,7 @@ struct ClaudeSessionPanelView: View {
                 transcript: transcript,
                 streaming: streaming,
                 isThinking: isThinking,
+                activeTool: activeTool,
                 hasPendingCard: pendingApproval != nil || pendingElicitation != nil,
                 fontScale: fontScale,
                 emptyStateText: "Claude session is ready. Send a message to start."
