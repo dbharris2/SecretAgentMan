@@ -235,11 +235,17 @@ struct ClaudeSessionPanelView: View {
             approveTitle: "Allow",
             declineTitle: "Deny",
             supportsDecisions: true,
-            unsupportedText: ""
-        ) {
-            coordinator.answerClaudeApproval(for: agent.id, accept: true)
-        } onDecline: {
-            coordinator.answerClaudeApproval(for: agent.id, accept: false)
-        }
+            unsupportedText: "",
+            onApprove: {
+                coordinator.answerClaudeApproval(for: agent.id, accept: true)
+            },
+            onDecline: {
+                coordinator.answerClaudeApproval(for: agent.id, accept: false)
+            },
+            onApproveAndSwitchMode: { mode in
+                coordinator.answerClaudeApproval(for: agent.id, accept: true)
+                coordinator.claudeMonitor.setPermissionMode(for: agent.id, mode: mode)
+            }
+        )
     }
 }

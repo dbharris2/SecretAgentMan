@@ -94,6 +94,7 @@ struct SessionApprovalCard: View {
     let unsupportedText: String
     let onApprove: () -> Void
     let onDecline: () -> Void
+    var onApproveAndSwitchMode: ((String) -> Void)?
     @Environment(\.appTheme) private var theme
 
     var body: some View {
@@ -112,10 +113,25 @@ struct SessionApprovalCard: View {
                     Button(declineTitle, action: onDecline)
                         .buttonStyle(.bordered)
                         .controlSize(.small)
+                        .tint(theme.red)
 
                     Button(approveTitle, action: onApprove)
                         .buttonStyle(.borderedProminent)
                         .controlSize(.small)
+
+                    if let onApproveAndSwitchMode {
+                        Button("Accept Edits") {
+                            onApproveAndSwitchMode("acceptEdits")
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.small)
+
+                        Button("Auto") {
+                            onApproveAndSwitchMode("auto")
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.small)
+                    }
                 }
             } else {
                 Text(unsupportedText)
