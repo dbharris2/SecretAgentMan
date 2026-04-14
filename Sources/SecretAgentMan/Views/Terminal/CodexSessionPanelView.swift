@@ -105,7 +105,7 @@ struct CodexSessionPanelView: View {
             fontScale: fontScale,
             statusText: composerStatusText,
             statusColor: .secondary,
-            sendDisabled: draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+            sendDisabled: draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && pendingImages.isEmpty,
             onSend: sendDraft,
             onKeyPress: handleComposerKeyPress,
             onDraftChange: {}
@@ -141,13 +141,13 @@ struct CodexSessionPanelView: View {
 
     private func sendDraft() {
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty else { return }
+        guard !text.isEmpty || !pendingImages.isEmpty else { return }
         let imagePaths = pendingImages.compactMap { img -> String? in
             let path = FileManager.default.temporaryDirectory
                 .appendingPathComponent("codex-image-\(UUID().uuidString).png").path
             return FileManager.default.createFile(atPath: path, contents: img.data) ? path : nil
         }
-        coordinator.sendCodexMessage(for: agent.id, text: text, imagePaths: imagePaths)
+        coordinator.sendCodexMessage(for: agent.id, text: text.isEmpty ? "[Image]" : text, imagePaths: imagePaths)
         draft = ""
         pendingImages.removeAll()
     }

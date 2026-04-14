@@ -13,9 +13,22 @@ struct SessionChatView: View {
     @ViewBuilder let pendingCards: () -> AnyView
 
     @State private var expandedGroups: Set<String> = []
+    @State private var visibleCount = 50
 
-    private var sections: [TranscriptSection] {
+    private static let pageSize = 50
+
+    private var allSections: [TranscriptSection] {
         TranscriptSection.group(transcript)
+    }
+
+    private var displayedSections: ArraySlice<TranscriptSection> {
+        let all = allSections
+        let start = max(0, all.count - visibleCount)
+        return all[start...]
+    }
+
+    private var hasMoreAbove: Bool {
+        allSections.count > visibleCount
     }
 
     var body: some View {
@@ -30,7 +43,26 @@ struct SessionChatView: View {
                             .foregroundStyle(.secondary)
                             .frame(maxWidth: .infinity, alignment: .leading)
                     } else {
-                        ForEach(sections) { section in
+                        if hasMoreAbove {
+                            Button {
+                                let anchorId = displayedSections.first?.id
+                                visibleCount += Self.pageSize
+                                if let anchorId {
+                                    DispatchQueue.main.async {
+                                        proxy.scrollTo(anchorId, anchor: .top)
+                                    }
+                                }
+                            } label: {
+                                Text("Load earlier messages")
+                                    .scaledFont(size: 12)
+                                    .foregroundStyle(.secondary)
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.vertical, 6)
+                            }
+                            .buttonStyle(.plain)
+                        }
+
+                        ForEach(displayedSections) { section in
                             switch section {
                             case let .single(item):
                                 SessionTranscriptBubble(
@@ -58,7 +90,10 @@ struct SessionChatView: View {
                 }
                 .padding(12)
             }
-            .onAppear { scrollToBottom() }
+            .onAppear {
+                visibleCount = Self.pageSize
+                scrollToBottom()
+            }
             .onChange(of: streaming) { _, _ in scrollToBottom() }
             .onChange(of: transcript.count) { _, _ in scrollToBottom() }
             .onChange(of: isThinking) { _, thinking in if thinking { scrollToBottom() } }

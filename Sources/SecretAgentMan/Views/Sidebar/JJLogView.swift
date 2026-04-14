@@ -3,8 +3,13 @@ import SwiftUI
 struct JJLogView: View {
     @Environment(AppCoordinator.self) private var coordinator
     @Environment(\.appTheme) private var theme
-    @State private var logOutput = ""
+    @State private var parsedLog = AttributedString()
     @State private var isLoading = false
+    @State private var isVisible = false
+    @State private var latestRequestID = 0
+    @State private var debounceTask: Task<Void, Never>?
+
+    private let vcsDebounceDelay: Duration = .milliseconds(400)
 
     private var folder: URL? {
         coordinator.store.selectedAgent?.folder
@@ -12,7 +17,7 @@ struct JJLogView: View {
 
     var body: some View {
         Group {
-            if logOutput.isEmpty, !isLoading {
+            if parsedLog.characters.isEmpty, !isLoading {
                 ContentUnavailableView(
                     "No JJ Log",
                     systemImage: "arrow.triangle.branch",
@@ -20,7 +25,7 @@ struct JJLogView: View {
                 )
             } else {
                 ScrollView(.vertical) {
-                    Text(Self.parseANSI(logOutput, theme: theme))
+                    Text(parsedLog)
                         .font(.system(size: 12, design: .monospaced))
                         .textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .topLeading)
@@ -29,13 +34,29 @@ struct JJLogView: View {
             }
         }
         .background(theme.surface)
-        .onAppear { loadLog() }
-        .onChange(of: coordinator.store.selectedAgentId) { _, _ in loadLog() }
-        .onChange(of: coordinator.repositoryMonitor.vcsChangeCount) { _, _ in loadLog() }
+        .onAppear {
+            isVisible = true
+            loadLog(trigger: "appear")
+        }
+        .onDisappear {
+            isVisible = false
+            debounceTask?.cancel()
+            debounceTask = nil
+        }
+        .onChange(of: coordinator.store.selectedAgentId) { _, _ in
+            guard isVisible else { return }
+            loadLog(trigger: "selectedAgentChanged")
+        }
+        .onChange(of: coordinator.repositoryMonitor.vcsChangeCount) { _, _ in
+            guard isVisible else { return }
+            scheduleDebouncedLoad(trigger: "vcsChange")
+        }
         .toolbar {
             ToolbarItem {
                 Button {
-                    loadLog()
+                    debounceTask?.cancel()
+                    debounceTask = nil
+                    loadLog(trigger: "toolbarRefresh")
                 } label: {
                     Image(systemName: "arrow.clockwise")
                 }
@@ -44,17 +65,45 @@ struct JJLogView: View {
         }
     }
 
-    private func loadLog() {
+    private func scheduleDebouncedLoad(trigger: String) {
+        debounceTask?.cancel()
+        debounceTask = Task {
+            do {
+                try await Task.sleep(for: vcsDebounceDelay)
+            } catch {
+                return
+            }
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                guard isVisible else { return }
+                loadLog(trigger: "\(trigger):debounced")
+            }
+        }
+    }
+
+    private func loadLog(trigger: String) {
+        guard isVisible else { return }
         guard let folder else {
-            logOutput = ""
+            parsedLog = AttributedString()
             return
         }
+        latestRequestID += 1
+        let requestID = latestRequestID
         isLoading = true
+        let currentTheme = theme
+        let loadStart = CFAbsoluteTimeGetCurrent()
         Task.detached {
+            let t0 = CFAbsoluteTimeGetCurrent()
             let output = Self.runJJ(in: folder)
+            PerfLogger.log("JJLogView.runJJ", start: t0, details: "folder=\(folder.lastPathComponent)")
+            let t1 = CFAbsoluteTimeGetCurrent()
+            let parsed = Self.parseANSI(output, theme: currentTheme)
+            PerfLogger.log("JJLogView.parseANSI", start: t1, details: "folder=\(folder.lastPathComponent)")
             await MainActor.run {
-                logOutput = output
+                guard requestID == latestRequestID else { return }
+                parsedLog = parsed
                 isLoading = false
+                PerfLogger.log("JJLogView.loadLog.total", start: loadStart, details: "folder=\(folder.lastPathComponent) trigger=\(trigger)")
             }
         }
     }
@@ -76,7 +125,7 @@ struct JJLogView: View {
         let process = Process()
         let pipe = Pipe()
         process.executableURL = URL(fileURLWithPath: jj)
-        process.arguments = ["log", "--no-pager", "--color=always"]
+        process.arguments = ["log", "--no-pager", "--color=always", "--limit=50"]
         process.currentDirectoryURL = folder
         var env = ProcessInfo.processInfo.environment
         env["TERM"] = "dumb"
@@ -136,7 +185,7 @@ struct JJLogView: View {
         }
     }
 
-    static func parseANSI(_ input: String, theme: AppTheme) -> AttributedString {
+    nonisolated static func parseANSI(_ input: String, theme: AppTheme) -> AttributedString {
         var result = AttributedString()
         var currentColor: Color?
         var isBold = false

@@ -5,7 +5,6 @@ struct AgentRowView: View {
     let isSelected: Bool
     var pendingPromptCount: Int = 0
     var branchName: String?
-    var prInfo: PRInfo?
     @Environment(\.appTheme) private var theme
 
     var body: some View {
@@ -21,10 +20,6 @@ struct AgentRowView: View {
 
                 if let branch = branchName {
                     BranchInfoView(branchName: branch)
-                }
-
-                if let pr = prInfo {
-                    PRMetadataView(prInfo: pr)
                 }
             }
 
