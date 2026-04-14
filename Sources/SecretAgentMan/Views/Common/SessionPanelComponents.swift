@@ -148,6 +148,8 @@ struct SessionApprovalCard: View {
 
 struct SessionElicitationCard: View {
     let message: String
+    var options: [CodexUserInputOption] = []
+    var onSelectOption: ((String) -> Void)?
     @Environment(\.appTheme) private var theme
 
     var body: some View {
@@ -165,9 +167,26 @@ struct SessionElicitationCard: View {
                     .textSelection(.enabled)
             }
 
-            Text("Type your answer in the composer below.")
-                .scaledFont(size: 11)
-                .foregroundStyle(.secondary)
+            if options.isEmpty {
+                Text("Type your answer in the composer below.")
+                    .scaledFont(size: 11)
+                    .foregroundStyle(.secondary)
+            } else {
+                HStack(spacing: 8) {
+                    ForEach(options) { option in
+                        Button(option.label) {
+                            onSelectOption?(option.label)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.small)
+                        .help(option.description)
+                    }
+                }
+
+                Text("Or type a custom answer in the composer below.")
+                    .scaledFont(size: 11)
+                    .foregroundStyle(.secondary)
+            }
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)

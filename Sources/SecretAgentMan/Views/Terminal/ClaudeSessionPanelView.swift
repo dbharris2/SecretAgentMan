@@ -58,7 +58,13 @@ struct ClaudeSessionPanelView: View {
             ) {
                 AnyView(Group {
                     if let pendingElicitation {
-                        SessionElicitationCard(message: pendingElicitation.message)
+                        SessionElicitationCard(
+                            message: pendingElicitation.message,
+                            options: pendingElicitation.options
+                        ) { label in
+                            coordinator.answerClaudeElicitation(for: agent.id, answer: label)
+                            draft = ""
+                        }
                     }
 
                     if let pendingApproval {

@@ -17,6 +17,7 @@ struct ClaudeElicitationRequest: Equatable {
     let agentId: UUID
     let requestId: String
     let message: String
+    let options: [CodexUserInputOption]
 
     static func == (lhs: Self, rhs: Self) -> Bool {
         lhs.requestId == rhs.requestId
@@ -863,17 +864,24 @@ private final class Observer: @unchecked Sendable {
             let toolName = request["tool_name"] as? String ?? ""
             let toolInput = request["input"] as? [String: Any] ?? [:]
 
-            // AskUserQuestion: let user answer via composer, suppress tool result
+            // AskUserQuestion: show options as buttons, fall back to composer for freeform
             if toolName == "AskUserQuestion" {
                 let questions = toolInput["questions"] as? [[String: Any]] ?? []
-                let questionText = questions.first?["question"] as? String ?? "Input requested"
+                let firstQuestion = questions.first ?? [:]
+                let questionText = firstQuestion["question"] as? String ?? "Input requested"
+                let optionDicts = firstQuestion["options"] as? [[String: Any]] ?? []
+                let options = optionDicts.compactMap { dict -> CodexUserInputOption? in
+                    guard let label = dict["label"] as? String else { return nil }
+                    return CodexUserInputOption(label: label, description: dict["description"] as? String ?? "")
+                }
                 pendingElicitation = PendingElicitation(
                     requestId: requestId, toolInput: toolInput, questionText: questionText
                 )
                 let elicitation = ClaudeElicitationRequest(
                     agentId: agent.id,
                     requestId: requestId,
-                    message: questionText
+                    message: questionText,
+                    options: options
                 )
                 delegate.elicitationRequest(agent.id, elicitation)
                 publishIfChanged(.awaitingResponse)
@@ -894,7 +902,8 @@ private final class Observer: @unchecked Sendable {
             let elicitation = ClaudeElicitationRequest(
                 agentId: agent.id,
                 requestId: requestId,
-                message: message
+                message: message,
+                options: []
             )
             delegate.elicitationRequest(agent.id, elicitation)
             publishIfChanged(.needsPermission)
