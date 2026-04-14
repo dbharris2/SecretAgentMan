@@ -19,12 +19,12 @@ struct JJLogView: View {
                     description: Text("Select an agent in a jj repository.")
                 )
             } else {
-                ScrollView([.horizontal, .vertical]) {
+                ScrollView(.vertical) {
                     Text(Self.parseANSI(logOutput, theme: theme))
                         .font(.system(size: 12, design: .monospaced))
                         .textSelection(.enabled)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(8)
+                        .frame(maxWidth: .infinity, alignment: .topLeading)
+                        .padding(12)
                 }
             }
         }
