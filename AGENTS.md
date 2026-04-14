@@ -1,58 +1,15 @@
 # SecretAgentMan
 
-A macOS app for managing Claude Code and Codex agent sessions with a Slack-like interface.
-
-## Tech Stack
-
-- SwiftUI with NavigationSplitView (macOS 14+)
-- SwiftTerm for embedded terminal emulation
-- XcodeGen for project generation
-- Swift Testing framework for unit tests
-- SwiftLint + SwiftFormat enforced via build phases
-
-## Setup
+## Build & Test
 
 ```bash
-brew install xcodegen just   # If not already installed
-just xcode                   # Generates project + opens in Xcode
-```
-
-## Project Structure
-
-- `Sources/SecretAgentMan/` - Main app source code
-  - `SecretAgentManApp.swift` - App entry point with three-column layout
-  - `Models/` - Data models (Agent, AgentState, FileChange, PRCheckStatus/PRInfo/PRState)
-  - `Services/` - AgentProcessManager, DiffService, PRService, TerminalManager, ShellManager, GhosttyThemeLoader
-  - `ViewModels/` - AgentStore (observable state, persists to `~/Library/Application Support/SecretAgentMan/agents.json`)
-  - `Views/` - SwiftUI views organized by panel (Sidebar, Center, Terminal, Common)
-- `Resources/` - Info.plist, entitlements, assets, bundled Ghostty themes
-- `Tests/SecretAgentManTests/` - Unit tests for PRService, DiffService, GhosttyThemeLoader
-- `project.yml` - XcodeGen project specification
-
-## Common Commands
-
-```bash
-just build    # Generate project + build
-just run      # Build + launch app
+just build    # xcodegen generate + xcodebuild
 just test     # Run unit tests
-just lint     # Check formatting + linting
-just format   # Auto-fix formatting
-just clean    # Remove build artifacts
-just xcode    # Open in Xcode
 ```
 
-## Key Patterns
+IMPORTANT: Always use `just build` and `just test`, never raw `xcodebuild`. The `just` recipes run `xcodegen generate` first.
 
-- **Polling timers**: Diffs/branches refresh every 5s, PR status every 30s (also triggers on branch change)
-- **Session persistence**: Agents store a provider + sessionId. Claude uses `--resume <id>` or `--session-id <id>`; Codex uses provider-specific resume behavior from local `~/.codex/sessions` state. Stale sessions are auto-detected and refreshed per provider.
-- **Theme loading**: 460+ Ghostty themes bundled in `Resources/Themes`. `GhosttyThemeLoader` checks the bundle first, then falls back to `/Applications/Ghostty.app` if a theme is not found.
-- **PR tracking**: `GitHubPRService` shells out to `gh` CLI. It handles both GitHub `CheckRun` and `StatusContext` API shapes and no-ops cleanly if `gh` is not installed.
-- **PersistentSplitView**: `NSViewRepresentable` wrapper around `NSSplitView` with `autosaveName` so divider positions persist across restarts.
+## Gotchas
 
-## Testing
-
-Tests use Swift Testing (`@Test`, `#expect`). Focus on parsing and logic layers such as PR parsing, diff parsing, theme parsing, process launch argument construction, and session discovery. Use `@testable import SecretAgentMan` for internal access.
-
-```bash
-just test     # or: xcodebuild test -scheme SecretAgentMan -destination 'platform=macOS'
-```
+- `handleSystemEvent` must NOT publish `.active` state — system events are config acks, not work indicators. Publishing `.active` there causes spurious "thinking" bubbles on permission mode changes.
+- SwiftLint enforces a 1000-line file limit — `ClaudeStreamMonitor.swift` is near the limit.
