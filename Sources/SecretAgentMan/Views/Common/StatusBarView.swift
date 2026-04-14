@@ -252,6 +252,7 @@ struct StatusBarView: View {
                     .scaledFont(size: 11)
             }
             .frame(height: 20)
+            .contentShape(Rectangle())
             .foregroundStyle(.primary)
         }
         .buttonStyle(.plain)
@@ -272,6 +273,7 @@ struct StatusBarView: View {
                     .scaledFont(size: 11)
             }
             .frame(height: 20)
+            .contentShape(Rectangle())
             .foregroundStyle(.primary)
         }
         .buttonStyle(.plain)
