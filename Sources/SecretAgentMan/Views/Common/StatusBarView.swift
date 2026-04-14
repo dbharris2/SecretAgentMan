@@ -57,6 +57,10 @@ struct StatusBarView: View {
                 panelToggleButton(icon: "doc.text", panel: .plans, label: "Plans")
                 panelToggleImageButton(image: "PRIcon", panel: .prs, label: "Pull Requests")
                 panelToggleButton(icon: "exclamationmark.circle", panel: .issues, label: "Issues")
+                if let folder = selectedAgent?.folder,
+                   FileManager.default.fileExists(atPath: folder.appendingPathComponent(".jj").path) {
+                    panelToggleButton(icon: "arrow.triangle.branch", panel: .jj, label: "JJ")
+                }
             }
 
             Divider()

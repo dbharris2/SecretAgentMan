@@ -4,6 +4,7 @@ enum SidebarPanel: String {
     case plans
     case prs
     case issues
+    case jj
 }
 
 struct ActivitySidebarView: View {
@@ -51,6 +52,8 @@ struct ActivitySidebarView: View {
                             onSelect: coordinator.selectIssue,
                             onWorkOnIssue: coordinator.workOnIssue
                         )
+                    case .jj:
+                        JJLogView()
                     }
                 }
                 .frame(height: bottomPanelHeight)
