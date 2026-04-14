@@ -9,7 +9,8 @@ struct PlanDetailView: View {
     var body: some View {
         ScrollView {
             Markdown(content)
-                .markdownTheme(.gitHub)
+                .markdownTheme(theme.isDark ? .basic : .gitHub)
+                .foregroundStyle(theme.foreground)
                 .textSelection(.enabled)
                 .padding(16)
                 .frame(maxWidth: .infinity, alignment: .leading)
