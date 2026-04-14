@@ -35,6 +35,15 @@ lint:
     swiftformat . --lint
     swiftlint
 
+# Build release configuration
+release: generate
+    xcodebuild -scheme SecretAgentMan -configuration Release build
+
+# Run the release build
+run-release: release
+    -pkill -x SecretAgentMan
+    @open "$( xcodebuild -scheme SecretAgentMan -configuration Release -showBuildSettings 2>/dev/null | grep -m1 'BUILT_PRODUCTS_DIR' | awk '{print $3}' )/SecretAgentMan.app"
+
 # Run unit tests
 test: generate
     xcodebuild -scheme SecretAgentMan -configuration Debug -destination 'platform=macOS' test

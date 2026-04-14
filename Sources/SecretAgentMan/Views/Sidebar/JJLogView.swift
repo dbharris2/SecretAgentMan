@@ -59,14 +59,30 @@ struct JJLogView: View {
         }
     }
 
+    private nonisolated static func jjPath() -> String? {
+        let candidates = [
+            NSHomeDirectory() + "/.local/bin/jj",
+            NSHomeDirectory() + "/.cargo/bin/jj",
+            "/opt/homebrew/bin/jj",
+            "/usr/local/bin/jj",
+        ]
+        return candidates.first { FileManager.default.isExecutableFile(atPath: $0) }
+    }
+
     private nonisolated static func runJJ(in folder: URL) -> String {
+        guard let jj = jjPath() else {
+            return "jj not found. Install with: brew install jj"
+        }
         let process = Process()
         let pipe = Pipe()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-        process.arguments = ["jj", "log", "--no-pager", "--color=always"]
+        process.executableURL = URL(fileURLWithPath: jj)
+        process.arguments = ["log", "--no-pager", "--color=always"]
         process.currentDirectoryURL = folder
+        var env = ProcessInfo.processInfo.environment
+        env["TERM"] = "dumb"
+        process.environment = env
         process.standardOutput = pipe
-        process.standardError = pipe
+        process.standardError = FileHandle.nullDevice
 
         do {
             try process.run()
