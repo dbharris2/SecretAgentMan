@@ -149,6 +149,7 @@ final class AgentStore {
     func renameAgent(id: UUID, name: String) {
         guard let index = agents.firstIndex(where: { $0.id == id }) else { return }
         agents[index].name = name
+        agents[index].updatedAt = Date()
         save()
     }
 
@@ -162,6 +163,7 @@ final class AgentStore {
         guard let index = agents.firstIndex(where: { $0.id == id }) else { return }
         agents[index].sessionId = agents[index].provider == .codex ? nil : UUID().uuidString
         agents[index].hasLaunched = false
+        agents[index].updatedAt = Date()
         save()
     }
 
@@ -169,12 +171,14 @@ final class AgentStore {
         guard let index = agents.firstIndex(where: { $0.id == id }) else { return }
         guard agents[index].sessionId != sessionId else { return }
         agents[index].sessionId = sessionId
+        agents[index].updatedAt = Date()
         save()
     }
 
     func updateState(id: UUID, state: AgentState) {
         guard let index = agents.firstIndex(where: { $0.id == id }) else { return }
         agents[index].state = state
+        agents[index].updatedAt = Date()
     }
 
     var hasActiveAgents: Bool {
