@@ -5,11 +5,19 @@ struct PlanDetailView: View {
     let url: URL
     @State private var content: String = ""
     @Environment(\.appTheme) private var theme
+    @Environment(\.fontScale) private var fontScale
 
     var body: some View {
         ScrollView {
             Markdown(content)
                 .markdownTheme(theme.isDark ? .basic : .gitHub)
+                .markdownTextStyle {
+                    FontSize(14 * fontScale)
+                }
+                .markdownTextStyle(\.code) {
+                    FontSize(13 * fontScale)
+                    FontFamilyVariant(.monospaced)
+                }
                 .foregroundStyle(theme.foreground)
                 .textSelection(.enabled)
                 .padding(16)

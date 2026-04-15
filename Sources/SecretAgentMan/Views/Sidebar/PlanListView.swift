@@ -15,7 +15,7 @@ struct PlanListView: View {
                     description: Text("Codex does not write Claude-style plan files. Use the session terminal and status panels for Codex agents.")
                 )
             } else {
-                List(plans, selection: $selectedPlanURL) { plan in
+                List(plans) { plan in
                     VStack(alignment: .leading, spacing: 2) {
                         Text(plan.title)
                             .scaledFont(size: 13)
@@ -30,8 +30,14 @@ struct PlanListView: View {
                     .padding(.top, 6)
                     .padding(.bottom, 4)
                     .contentShape(Rectangle())
-                    .hoverHighlight()
-                    .tag(plan.url)
+                    .hoverHighlight(isSelected: selectedPlanURL == plan.url)
+                    .onTapGesture {
+                        if selectedPlanURL == plan.url {
+                            selectedPlanURL = nil
+                        } else {
+                            selectedPlanURL = plan.url
+                        }
+                    }
                     .contextMenu {
                         Button("Delete", role: .destructive) {
                             deletePlan(plan)
@@ -44,16 +50,6 @@ struct PlanListView: View {
                 .onAppear { loadPlans() }
                 .onChange(of: coordinator.store.selectedAgent?.provider) {
                     loadPlans()
-                }
-                .toolbar {
-                    ToolbarItem {
-                        Button {
-                            loadPlans()
-                        } label: {
-                            Image(systemName: "arrow.clockwise")
-                        }
-                        .help("Refresh plans")
-                    }
                 }
             }
         }

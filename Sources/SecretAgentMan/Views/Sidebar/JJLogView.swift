@@ -51,18 +51,6 @@ struct JJLogView: View {
             guard isVisible else { return }
             scheduleDebouncedLoad(trigger: "vcsChange")
         }
-        .toolbar {
-            ToolbarItem {
-                Button {
-                    debounceTask?.cancel()
-                    debounceTask = nil
-                    loadLog(trigger: "toolbarRefresh")
-                } label: {
-                    Image(systemName: "arrow.clockwise")
-                }
-                .help("Refresh JJ log")
-            }
-        }
     }
 
     private func scheduleDebouncedLoad(trigger: String) {
