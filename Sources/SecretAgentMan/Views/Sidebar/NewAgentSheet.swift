@@ -3,6 +3,7 @@ import SwiftUI
 struct NewAgentSheet: View {
     let store: AgentStore
     @Binding var isPresented: Bool
+    var prefillFolder: URL?
 
     @AppStorage(UserDefaultsKeys.defaultAgentFolder) private var defaultAgentFolder = ""
     @State private var name = ""
@@ -59,7 +60,12 @@ struct NewAgentSheet: View {
         .padding(20)
         .frame(width: 400)
         .onAppear {
-            if !defaultAgentFolder.isEmpty {
+            if let folder = prefillFolder {
+                selectedFolder = folder
+                if name.isEmpty {
+                    name = folder.lastPathComponent
+                }
+            } else if !defaultAgentFolder.isEmpty {
                 let url = URL(fileURLWithPath: defaultAgentFolder)
                 var isDir: ObjCBool = false
                 if FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir), isDir.boolValue {
