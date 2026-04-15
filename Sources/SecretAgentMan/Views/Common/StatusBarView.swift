@@ -174,13 +174,9 @@ struct StatusBarView: View {
 
                     if let sessionId = agent.sessionId {
                         popoverButton(isPresented: $showingSessionPopover, help: "Sessions") {
-                            HStack(spacing: 4) {
-                                providerIcon(for: agent.provider)
-
-                                Text(verbatim: sessionId)
-                                    .scaledFont(size: 10, design: .monospaced)
-                            }
-                            .foregroundStyle(.secondary)
+                            Text(verbatim: sessionId)
+                                .scaledFont(size: 10, design: .monospaced)
+                                .foregroundStyle(.secondary)
                         }
                         .contextMenu {
                             Button("Copy Session ID") {
@@ -314,20 +310,6 @@ struct StatusBarView: View {
         if percent > 50 { return theme.yellow }
         return theme.green
     }
-
-    @ViewBuilder
-    private func providerIcon(for provider: AgentProvider) -> some View {
-        switch provider {
-        case .claude:
-            Image("ClaudeIcon")
-                .resizable()
-                .frame(width: 12, height: 12)
-        case .codex:
-            Image("CodexIcon")
-                .resizable()
-                .frame(width: 12, height: 12)
-        }
-    }
 }
 
 private extension View {
@@ -344,12 +326,6 @@ private struct SessionPopover: View {
     let sessions: [SessionFileDetector.SessionRecord]
     let onResume: (String) -> Void
     let onStartNew: () -> Void
-
-    private static let formatter: RelativeDateTimeFormatter = {
-        let formatter = RelativeDateTimeFormatter()
-        formatter.unitsStyle = .short
-        return formatter
-    }()
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -375,8 +351,7 @@ private struct SessionPopover: View {
             } label: {
                 SessionActionRow(
                     icon: "plus.circle",
-                    title: "Start New \(agent.provider.displayName) Session",
-                    subtitle: agent.folderPath
+                    title: "Start New \(agent.provider.displayName) Session"
                 )
             }
             .buttonStyle(.plain)
@@ -396,8 +371,8 @@ private struct SessionPopover: View {
                             } label: {
                                 SessionActionRow(
                                     icon: "arrow.clockwise.circle",
-                                    title: session.id,
-                                    subtitle: sessionSubtitle(for: session)
+                                    title: session.displayName,
+                                    timestamp: session.modifiedAt
                                 )
                             }
                             .buttonStyle(.plain)
@@ -410,17 +385,12 @@ private struct SessionPopover: View {
         .padding(10)
         .frame(minWidth: 320)
     }
-
-    private func sessionSubtitle(for session: SessionFileDetector.SessionRecord) -> String {
-        guard let modifiedAt = session.modifiedAt else { return "Modified date unavailable" }
-        return "Updated \(Self.formatter.localizedString(for: modifiedAt, relativeTo: Date()))"
-    }
 }
 
 private struct SessionActionRow: View {
     let icon: String
     let title: String
-    let subtitle: String
+    var timestamp: Date?
 
     var body: some View {
         HStack(spacing: 8) {
@@ -429,20 +399,32 @@ private struct SessionActionRow: View {
                 .foregroundStyle(.secondary)
                 .frame(width: 14)
 
-            VStack(alignment: .leading, spacing: 1) {
-                Text(title)
-                    .scaledFont(size: 12)
-                    .lineLimit(1)
-                Text(subtitle)
-                    .scaledFont(size: 10)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-            }
+            Text(title)
+                .scaledFont(size: 12)
+                .lineLimit(1)
 
             Spacer()
+
+            if let timestamp {
+                Text(Self.relativeDate(timestamp))
+                    .scaledFont(size: 10)
+                    .foregroundStyle(.secondary)
+            }
         }
+        .padding(.vertical, 4)
         .frame(maxWidth: .infinity, alignment: .leading)
         .hoverHighlight()
+    }
+
+    private static func relativeDate(_ date: Date) -> String {
+        let seconds = Date().timeIntervalSince(date)
+        if seconds < 60 { return "now" }
+        if seconds < 3600 { return "\(Int(seconds / 60))m ago" }
+        if seconds < 86400 { return "\(Int(seconds / 3600))h ago" }
+        if seconds < 604_800 { return "\(Int(seconds / 86400))d ago" }
+        let formatter = DateFormatter()
+        formatter.dateFormat = "MMM d"
+        return formatter.string(from: date)
     }
 }
 

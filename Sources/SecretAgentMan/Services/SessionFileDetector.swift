@@ -6,6 +6,14 @@ enum SessionFileDetector {
     struct SessionRecord: Identifiable, Equatable {
         let id: String
         let modifiedAt: Date?
+        let firstMessage: String?
+
+        var displayName: String {
+            if let firstMessage, !firstMessage.isEmpty {
+                return String(firstMessage.prefix(80))
+            }
+            return id
+        }
     }
 
     /// Convert an agent's folder URL to the Claude project directory path.
@@ -139,7 +147,8 @@ enum SessionFileDetector {
                     .flatMap(\.contentModificationDate)
                 return SessionRecord(
                     id: url.deletingPathExtension().lastPathComponent,
-                    modifiedAt: modified
+                    modifiedAt: modified,
+                    firstMessage: firstClaudeUserMessage(at: url)
                 )
             }
             .sorted { ($0.modifiedAt ?? .distantPast) > ($1.modifiedAt ?? .distantPast) }
@@ -164,7 +173,7 @@ enum SessionFileDetector {
             else { continue }
 
             let modified = (try? url.resourceValues(forKeys: [.contentModificationDateKey])).flatMap(\.contentModificationDate)
-            matches.append(SessionRecord(id: meta.id, modifiedAt: modified))
+            matches.append(SessionRecord(id: meta.id, modifiedAt: modified, firstMessage: firstCodexUserMessage(at: url)))
         }
         return matches.sorted { ($0.modifiedAt ?? .distantPast) > ($1.modifiedAt ?? .distantPast) }
     }
@@ -180,5 +189,96 @@ enum SessionFileDetector {
         else { return nil }
 
         return parseCodexSessionMetaLine(firstLine)
+    }
+
+    // MARK: - First user message extraction
+
+    /// Extract the first user-typed message from a Claude session JSONL file.
+    /// Reads only enough data to find the first user message (up to 256KB).
+    private static func firstClaudeUserMessage(at url: URL) -> String? {
+        guard let handle = try? FileHandle(forReadingFrom: url),
+              let data = try? handle.read(upToCount: 262_144),
+              let content = String(data: data, encoding: .utf8)
+        else { return nil }
+
+        for line in content.split(separator: "\n") {
+            guard let lineData = line.data(using: .utf8),
+                  let object = try? JSONSerialization.jsonObject(with: lineData) as? [String: Any],
+                  let type = object["type"] as? String,
+                  type == "user",
+                  object["userType"] != nil,
+                  let message = object["message"] as? [String: Any]
+            else { continue }
+
+            let text: String
+            if let str = message["content"] as? String {
+                text = str.trimmingCharacters(in: .whitespacesAndNewlines)
+            } else if let blocks = message["content"] as? [[String: Any]] {
+                text = blocks.compactMap { block -> String? in
+                    guard block["type"] as? String == "text" else { return nil }
+                    return block["text"] as? String
+                }.joined().trimmingCharacters(in: .whitespacesAndNewlines)
+            } else {
+                continue
+            }
+
+            if !text.isEmpty {
+                return String(text.prefix(200))
+            }
+        }
+        return nil
+    }
+
+    /// Extract the first user message from a Codex session JSONL file.
+    private static func firstCodexUserMessage(at url: URL) -> String? {
+        guard let handle = try? FileHandle(forReadingFrom: url),
+              let data = try? handle.read(upToCount: 262_144),
+              let content = String(data: data, encoding: .utf8)
+        else { return nil }
+
+        for line in content.split(separator: "\n") {
+            guard let lineData = line.data(using: .utf8),
+                  let object = try? JSONSerialization.jsonObject(with: lineData) as? [String: Any],
+                  let type = object["type"] as? String,
+                  type == "response_item",
+                  let payload = object["payload"] as? [String: Any],
+                  payload["type"] as? String == "message",
+                  payload["role"] as? String == "user"
+            else { continue }
+
+            let text = extractTextContent(from: payload["content"])
+            if !text.isEmpty {
+                return String(text.prefix(200))
+            }
+        }
+        return nil
+    }
+
+    private static func extractTextContent(from content: Any?) -> String {
+        if let str = content as? String {
+            return str.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        if let blocks = content as? [[String: Any]] {
+            return blocks.compactMap { block -> String? in
+                guard let type = block["type"] as? String,
+                      type == "input_text" || type == "text"
+                else { return nil }
+                return block["text"] as? String
+            }.joined().trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        return ""
+    }
+
+    /// Look up the first user message for a specific session.
+    static func firstUserMessage(sessionId: String, for agent: Agent) -> String? {
+        switch agent.provider {
+        case .claude:
+            let dir = claudeProjectDir(for: agent.folder)
+            let url = dir.appendingPathComponent("\(sessionId).jsonl")
+            return firstClaudeUserMessage(at: url)
+        case .codex:
+            guard let url = codexSessionFileURL(for: sessionId) else { return nil }
+            return firstCodexUserMessage(at: url)
+        }
     }
 }
