@@ -78,6 +78,10 @@ struct ContentView: View {
                     .help("Toggle Sidebar (⌘⇧[)")
                 }
 
+                ToolbarItem(placement: .automatic) {
+                    OpenInEditorButton()
+                }
+
                 ToolbarItem(placement: .primaryAction) {
                     Button {
                         isRightPanelVisible.toggle()

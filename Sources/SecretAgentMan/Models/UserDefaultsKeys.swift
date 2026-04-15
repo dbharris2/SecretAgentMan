@@ -11,4 +11,5 @@ enum UserDefaultsKeys {
     static let autoFixCIFailures = "autoFixCIFailures"
     static let autoAnalyzeReviews = "autoAnalyzeReviews"
     static let fontScale = "fontScale"
+    static let preferredEditor = "preferredEditor"
 }
