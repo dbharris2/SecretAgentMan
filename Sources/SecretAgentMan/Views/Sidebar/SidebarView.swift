@@ -6,6 +6,7 @@ struct SidebarView: View {
     @Binding var selectedPlanURL: URL?
     @SceneStorage("collapsedAgentFolders") private var collapsedFoldersStorage = ""
     @State private var showingNewAgent = false
+    @State private var newAgentPrefillFolder: URL?
     @State private var renamingAgentId: UUID?
     @State private var renameText = ""
 
@@ -30,7 +31,7 @@ struct SidebarView: View {
         .background(theme.surface)
         .frame(minWidth: 200)
         .sheet(isPresented: $showingNewAgent) {
-            NewAgentSheet(store: coordinator.store, isPresented: $showingNewAgent)
+            NewAgentSheet(store: coordinator.store, isPresented: $showingNewAgent, prefillFolder: newAgentPrefillFolder)
         }
         .alert("Rename Agent", isPresented: Binding(
             get: { renamingAgentId != nil },
@@ -49,6 +50,7 @@ struct SidebarView: View {
 
     private var newAgentButton: some View {
         Button {
+            newAgentPrefillFolder = nil
             showingNewAgent = true
         } label: {
             HStack(spacing: 10) {
@@ -86,12 +88,34 @@ struct SidebarView: View {
                         .foregroundStyle(theme.foreground)
 
                     Spacer()
+
+                    Menu {
+                        Button("New Agent in Folder...") {
+                            newAgentPrefillFolder = group.agents.first?.folder
+                            showingNewAgent = true
+                        }
+                    } label: {
+                        Image(systemName: "ellipsis")
+                            .scaledFont(size: 13)
+                            .foregroundStyle(.secondary)
+                            .frame(width: 16, height: 16)
+                            .contentShape(Rectangle())
+                    }
+                    .menuStyle(.borderlessButton)
+                    .menuIndicator(.hidden)
+                    .fixedSize()
                 }
                 .padding(.vertical, 6)
                 .contentShape(Rectangle())
                 .onTapGesture {
                     withAnimation(.snappy(duration: 0.2)) {
                         isExpanded.wrappedValue.toggle()
+                    }
+                }
+                .contextMenu {
+                    Button("New Agent in Folder...") {
+                        newAgentPrefillFolder = group.agents.first?.folder
+                        showingNewAgent = true
                     }
                 }
 
