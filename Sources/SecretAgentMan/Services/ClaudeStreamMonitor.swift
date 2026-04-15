@@ -151,14 +151,20 @@ final class ClaudeStreamMonitor {
 
         observers[agent.id] = observer
 
-        // Hydrate transcript from session file immediately (before process starts)
+        // Hydrate transcript from session file in background (avoid blocking main thread)
         if agent.hasLaunched, let sessionId = agent.sessionId {
+            let agentId = agent.id
             let sessionDir = SessionFileDetector.claudeProjectDir(for: agent.folder)
-            let items = Self.hydrateTranscriptItems(
-                sessionDir: sessionDir, sessionId: sessionId
-            )
-            if !items.isEmpty {
-                transcriptItems[agent.id] = items
+            Task.detached {
+                let hydrateStart = CFAbsoluteTimeGetCurrent()
+                let items = Self.hydrateTranscriptItems(
+                    sessionDir: sessionDir, sessionId: sessionId
+                )
+                PerfLogger.log("ClaudeStreamMonitor.hydrateTranscriptItems", start: hydrateStart, details: "agent=\(agentId.uuidString)")
+                guard !items.isEmpty else { return }
+                await MainActor.run { [weak self] in
+                    self?.transcriptItems[agentId] = items
+                }
             }
         }
 

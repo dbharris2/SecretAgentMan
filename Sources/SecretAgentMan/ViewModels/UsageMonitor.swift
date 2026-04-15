@@ -24,6 +24,7 @@ final class UsageMonitor {
     @ObservationIgnored private let watcher = FileSystemWatcher()
     @ObservationIgnored private var watchedDirs: Set<URL> = []
     @ObservationIgnored private var refreshTimer: Timer?
+    @ObservationIgnored private var refreshGeneration = 0
 
     init(store: AgentStore) {
         self.store = store
@@ -72,16 +73,27 @@ final class UsageMonitor {
               agent.sessionId != nil
         else { return }
 
-        let limits =
-            switch agent.provider {
-            case .claude:
-                readLatestClaudeRateLimits()
-            case .codex:
-                readLatestCodexRateLimits()
-            }
+        let refreshStart = CFAbsoluteTimeGetCurrent()
+        refreshGeneration += 1
+        let generation = refreshGeneration
+        let agentId = agent.id
+        let provider = agent.provider
+        Task.detached(priority: .background) {
+            let limits =
+                switch provider {
+                case .claude:
+                    Self.readLatestClaudeRateLimits()
+                case .codex:
+                    Self.readLatestCodexRateLimits()
+                }
 
-        if let limits {
-            rateLimits[agent.provider] = limits
+            await MainActor.run {
+                guard generation == self.refreshGeneration, self.store.selectedAgentId == agentId else { return }
+                if let limits {
+                    self.rateLimits[provider] = limits
+                }
+                PerfLogger.log("UsageMonitor.refreshSelectedAgent.total", start: refreshStart, details: "provider=\(provider)")
+            }
         }
     }
 
@@ -105,7 +117,7 @@ final class UsageMonitor {
 
     /// Rate limits are account-level. Scan agent-status `.json` files newest-first
     /// until one contains `rate_limits` — only TUI sessions write this field.
-    private func readLatestClaudeRateLimits() -> AgentRateLimits? {
+    private nonisolated static func readLatestClaudeRateLimits() -> AgentRateLimits? {
         let dir = URL(fileURLWithPath: NSHomeDirectory())
             .appendingPathComponent(".claude/agent-status")
 
@@ -157,7 +169,7 @@ final class UsageMonitor {
     // MARK: - Codex Parsing
 
     /// Rate limits are account-level, so read from the most recently modified Codex session file.
-    private func readLatestCodexRateLimits() -> AgentRateLimits? {
+    private nonisolated static func readLatestCodexRateLimits() -> AgentRateLimits? {
         let dir = SessionFileDetector.codexSessionsDir()
         guard let enumerator = FileManager.default.enumerator(
             at: dir,

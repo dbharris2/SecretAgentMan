@@ -88,7 +88,7 @@ struct ContentView: View {
                     VersionBadgeView()
                 }
             }
-            .onChange(of: coordinator.store.selectedAgentId) {
+            .onChange(of: coordinator.store.selectedAgentId) { _, _ in
                 coordinator.invalidateDiffs()
                 coordinator.usageMonitor.refreshSelectedAgent()
             }
