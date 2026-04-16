@@ -848,7 +848,11 @@ private final class Observer: @unchecked Sendable {
             delegate.activeToolChanged(agent.id, nil)
         }
 
-        publishIfChanged(.active)
+        // Don't overwrite needsPermission/awaitingResponse — stream events
+        // can arrive in the same buffer batch after a control_request.
+        if pendingApproval == nil, pendingElicitation == nil {
+            publishIfChanged(.active)
+        }
     }
 
     private func handleControlRequest(_ event: [String: Any]) {

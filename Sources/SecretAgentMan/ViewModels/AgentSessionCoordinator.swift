@@ -93,7 +93,12 @@ final class AgentSessionCoordinator {
 
         sessionWatcher.onDirectoryChanged = { [self] _ in
             for agent in store.agents {
-                guard let sessionId = agent.sessionId,
+                // Only recover sessions for agents that have launched. New agents
+                // won't have their session file yet — without this guard, the watcher
+                // would see the file as "missing" and overwrite the sessionId with
+                // whatever stale session was most recent in the directory.
+                guard agent.hasLaunched,
+                      let sessionId = agent.sessionId,
                       !SessionFileDetector.sessionFileExists(sessionId, for: agent),
                       let actual = SessionFileDetector.latestSessionId(for: agent)
                 else { continue }
