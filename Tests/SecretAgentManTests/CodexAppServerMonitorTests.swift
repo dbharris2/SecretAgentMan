@@ -102,27 +102,163 @@ struct CodexAppServerMonitorTests {
     }
 
     @Test
-    func parsesFileChangeOutputDeltaPayload() {
-        let delta = CodexAppServerMonitor.fileChangeOutputDelta(params: [
-            "threadId": "thread-123",
-            "turnId": "turn-123",
+    func parsesOutputDeltaPayload() {
+        let delta = CodexAppServerMonitor.outputDeltaText(params: [
             "itemId": "item-123",
-            "delta": "@@ -1 +1 @@\n-old\n+new",
+            "delta": "line one\nline two",
         ])
 
-        #expect(delta?.threadId == "thread-123")
-        #expect(delta?.turnId == "turn-123")
         #expect(delta?.itemId == "item-123")
-        #expect(delta?.text == "@@ -1 +1 @@\n-old\n+new")
+        #expect(delta?.delta == "line one\nline two")
     }
 
     @Test
-    func formatsFileChangeSummaryAsDiffBlock() {
-        let summary = CodexAppServerMonitor.formattedFileChangeSummary("@@ -1 +1 @@\n-old\n+new")
+    func ignoresEmptyOutputDeltaPayload() {
+        let delta = CodexAppServerMonitor.outputDeltaText(params: [
+            "itemId": "item-123",
+            "delta": "",
+        ])
+        #expect(delta == nil)
+    }
 
-        #expect(summary.contains("Applied file changes:"))
-        #expect(summary.contains("```diff"))
-        #expect(summary.contains("+new"))
+    @Test
+    func buildsRunningCommandToolItem() {
+        let toolItem = CodexAppServerMonitor.commandToolItem(
+            fromStartedItem: [
+                "id": "item-123",
+                "type": "commandExecution",
+                "command": ["rg", "foo"],
+            ],
+            isRunning: true
+        )
+
+        #expect(toolItem?.id == "command-item-123")
+        #expect(toolItem?.role == .system)
+        guard case let .command(detail) = toolItem?.tool else {
+            Issue.record("expected command tool detail")
+            return
+        }
+        #expect(detail.command == "rg foo")
+        #expect(detail.isRunning == true)
+        #expect(detail.output.isEmpty)
+    }
+
+    @Test
+    func buildsCompletedCommandToolItemFromCompletedEvent() {
+        let toolItem = CodexAppServerMonitor.transcriptItem(from: [
+            "id": "item-123",
+            "type": "commandExecution",
+            "command": ["rg", "approvalPolicy"],
+            "status": "completed",
+            "durationMs": 456.0,
+            "exitCode": 0,
+            "aggregatedOutput": "match one",
+        ])
+
+        #expect(toolItem?.id == "command-item-123")
+        guard case let .command(detail) = toolItem?.tool else {
+            Issue.record("expected command tool detail")
+            return
+        }
+        #expect(detail.command == "rg approvalPolicy")
+        #expect(detail.output == "match one")
+        #expect(detail.status == "completed")
+        #expect(detail.durationMs == 456.0)
+        #expect(detail.exitCode == 0)
+        #expect(detail.isRunning == false)
+    }
+
+    @Test
+    func buildsFileChangeToolItemFromCompletedEvent() {
+        let toolItem = CodexAppServerMonitor.transcriptItem(from: [
+            "id": "item-456",
+            "type": "fileChange",
+            "status": "completed",
+            "changes": [
+                ["path": "foo.txt", "kind": "modify", "diff": "@@ -1 +1 @@\n-old\n+new"],
+            ],
+        ])
+
+        #expect(toolItem?.id == "file-change-item-456")
+        guard case let .fileChange(detail) = toolItem?.tool else {
+            Issue.record("expected file change tool detail")
+            return
+        }
+        #expect(detail.patch.contains("+new"))
+        #expect(detail.isRunning == false)
+    }
+
+    @Test
+    func commandToolMarkdownIncludesStatusAndExit() {
+        let detail = CodexCommandToolDetail(
+            command: "rg foo",
+            output: "match",
+            status: "completed",
+            exitCode: 0,
+            durationMs: 120,
+            isRunning: false
+        )
+        let md = detail.markdownText
+        #expect(md.contains("Ran command"))
+        #expect(md.contains("exit: 0"))
+        #expect(md.contains("```sh"))
+        #expect(md.contains("Command output:"))
+    }
+
+    @Test
+    func commandToolMarkdownShowsRunningWhenLive() {
+        let detail = CodexCommandToolDetail(
+            command: "just build",
+            output: "",
+            status: nil,
+            exitCode: nil,
+            durationMs: nil,
+            isRunning: true
+        )
+        #expect(detail.markdownText.contains("running"))
+    }
+
+    @Test
+    func fileChangeToolMarkdownShowsDiffBlock() {
+        let detail = CodexFileChangeToolDetail(
+            patch: "@@ -1 +1 @@\n-old\n+new",
+            status: "completed",
+            isRunning: false
+        )
+        let md = detail.markdownText
+        #expect(md.contains("Applied file changes"))
+        #expect(md.contains("```diff"))
+        #expect(md.contains("+new"))
+    }
+
+    @Test
+    func transcriptItemDisplayTextPrefersToolMarkdown() {
+        let detail = CodexCommandToolDetail(
+            command: "echo hi",
+            output: "hi",
+            status: nil,
+            exitCode: 0,
+            durationMs: nil,
+            isRunning: false
+        )
+        let item = CodexTranscriptItem(
+            id: "command-x",
+            role: .system,
+            text: "legacy text",
+            tool: .command(detail)
+        )
+        #expect(item.displayText.contains("echo hi"))
+        #expect(item.displayText.contains("legacy text") == false)
+    }
+
+    @Test
+    func transcriptItemDisplayTextFallsBackToTextWithoutTool() {
+        let item = CodexTranscriptItem(
+            id: "sys-1",
+            role: .system,
+            text: "Error: something broke"
+        )
+        #expect(item.displayText == "Error: something broke")
     }
 
     @Test

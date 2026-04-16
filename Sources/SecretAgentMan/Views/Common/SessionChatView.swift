@@ -68,7 +68,7 @@ struct SessionChatView: View {
                                 SessionTranscriptBubble(
                                     role: item.role,
                                     label: SessionPanelTheme.label(for: item.role, providerName: providerName),
-                                    text: item.text,
+                                    text: item.displayText,
                                     fontScale: fontScale,
                                     images: item.images
                                 )
@@ -121,15 +121,17 @@ struct SessionChatView: View {
                         .foregroundStyle(.secondary)
                         .frame(width: 12)
 
-                    Text("\(items.count) tool actions")
+                    Text("\(items.count) saved tool actions")
                         .scaledFont(size: 12)
                         .foregroundStyle(.secondary)
 
-                    if !isExpanded, let last = items.last {
+                    if !isExpanded, let summary = collapsedSystemSummary(items: items) {
                         Text("·")
                             .scaledFont(size: 12)
                             .foregroundStyle(.tertiary)
-                        SessionMarkdownText(text: last.text, fontScale: fontScale)
+                        Text(summary)
+                            .scaledFont(size: 12)
+                            .foregroundStyle(.secondary)
                             .lineLimit(1)
                     }
                 }
@@ -139,13 +141,87 @@ struct SessionChatView: View {
 
             if isExpanded {
                 VStack(alignment: .leading, spacing: 6) {
-                    ForEach(items) { item in
-                        SessionMarkdownText(text: item.text, fontScale: fontScale)
+                    ForEach(mergedExpandedSystemItems(items: items), id: \.id) { item in
+                        SessionMarkdownText(text: item.displayText, fontScale: fontScale)
                             .padding(.leading, 18)
                     }
                 }
             }
         }
+    }
+
+    private func mergedExpandedSystemItems(items: [CodexTranscriptItem]) -> [CodexTranscriptItem] {
+        var merged: [CodexTranscriptItem] = []
+
+        for item in items {
+            guard let preview = systemPreview(item: item) else {
+                merged.append(item)
+                continue
+            }
+
+            let body = systemBody(item.displayText)
+            if let last = merged.last,
+               let lastPreview = systemPreview(item: last),
+               lastPreview.title == preview.title {
+                let mergedBody = [systemBody(last.displayText), body]
+                    .filter { !$0.isEmpty }
+                    .joined(separator: "\n\n")
+                let mergedText = mergedBody.isEmpty ? preview.title : "\(preview.title)\n\n\(mergedBody)"
+                merged[merged.count - 1] = CodexTranscriptItem(
+                    id: last.id,
+                    role: last.role,
+                    text: mergedText,
+                    images: last.images
+                )
+            } else {
+                merged.append(item)
+            }
+        }
+
+        return merged
+    }
+
+    private func collapsedSystemSummary(items: [CodexTranscriptItem]) -> String? {
+        let previews = items.compactMap(systemPreview)
+        guard !previews.isEmpty else { return nil }
+
+        let uniqueTitles = previews.map(\.title).uniqued()
+        if uniqueTitles.count == 1, let title = uniqueTitles.first {
+            let mergedDetails = previews
+                .flatMap(\.details)
+                .uniqued()
+                .prefix(4)
+
+            if mergedDetails.isEmpty {
+                return title
+            }
+            return "\(title) \(mergedDetails.joined(separator: ", "))"
+        }
+
+        return previews.last.map { preview in
+            ([preview.title] + preview.details)
+                .joined(separator: " ")
+                .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+    }
+
+    private func systemPreview(item: CodexTranscriptItem) -> (title: String, details: [String])? {
+        let lines = item.displayText
+            .split(separator: "\n")
+            .map(String.init)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty && !$0.hasPrefix("```") }
+
+        guard let title = lines.first else { return nil }
+        let details = lines.dropFirst().filter { !$0.hasSuffix(":") }
+        return (title, Array(details))
+    }
+
+    private func systemBody(_ text: String) -> String {
+        let parts = text.split(separator: "\n", maxSplits: 1, omittingEmptySubsequences: false)
+        guard parts.count == 2 else { return "" }
+        return String(parts[1]).trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }
 
@@ -188,5 +264,12 @@ private enum TranscriptSection: Identifiable {
         flushSystemRun()
 
         return sections
+    }
+}
+
+private extension Sequence where Element: Hashable {
+    func uniqued() -> [Element] {
+        var seen: Set<Element> = []
+        return filter { seen.insert($0).inserted }
     }
 }

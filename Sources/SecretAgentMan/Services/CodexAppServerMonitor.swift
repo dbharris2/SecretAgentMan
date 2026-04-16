@@ -1,3 +1,4 @@
+// swiftlint:disable file_length
 import Foundation
 import Observation
 
@@ -9,7 +10,6 @@ final class CodexAppServerMonitor {
     private(set) var pendingUserInputRequests: [UUID: CodexUserInputRequest] = [:]
     private(set) var pendingApprovalRequests: [UUID: CodexApprovalRequest] = [:]
     private(set) var transcriptItems: [UUID: [CodexTranscriptItem]] = [:]
-    private(set) var liveFileChangeOutputs: [UUID: String] = [:]
     private(set) var runtimeStates: [UUID: AgentState] = [:]
     private(set) var debugMessages: [UUID: String] = [:]
     private(set) var modelNames: [UUID: String] = [:]
@@ -58,11 +58,14 @@ final class CodexAppServerMonitor {
             }
         } onTranscriptItem: { [weak self] id, item in
             Task { @MainActor in
-                self?.transcriptItems[id, default: []].append(item)
-            }
-        } onFileChangeOutput: { [weak self] id, output in
-            Task { @MainActor in
-                self?.liveFileChangeOutputs[id] = output
+                guard let self else { return }
+                var items = self.transcriptItems[id, default: []]
+                if let idx = items.firstIndex(where: { $0.id == item.id }) {
+                    items[idx] = item
+                } else {
+                    items.append(item)
+                }
+                self.transcriptItems[id] = items
             }
         } onUserInputRequest: { [weak self] id, request in
             Task { @MainActor in
@@ -114,7 +117,6 @@ final class CodexAppServerMonitor {
         pendingUserInputRequests.removeValue(forKey: agentId)
         pendingApprovalRequests.removeValue(forKey: agentId)
         transcriptItems.removeValue(forKey: agentId)
-        liveFileChangeOutputs.removeValue(forKey: agentId)
         runtimeStates.removeValue(forKey: agentId)
         debugMessages.removeValue(forKey: agentId)
         modelNames.removeValue(forKey: agentId)
@@ -198,7 +200,6 @@ private final class Observer: @unchecked Sendable {
     private let onStateChange: (UUID, AgentState) -> Void
     private let onSessionReady: (UUID, String) -> Void
     private let onTranscriptItem: (UUID, CodexTranscriptItem) -> Void
-    private let onFileChangeOutput: (UUID, String) -> Void
     private let onUserInputRequest: (UUID, CodexUserInputRequest) -> Void
     private let onApprovalRequest: (UUID, CodexApprovalRequest) -> Void
     private let onDebugMessage: (UUID, String) -> Void
@@ -226,14 +227,13 @@ private final class Observer: @unchecked Sendable {
     private var rawModelName = "gpt-5.4"
     private var collaborationMode: CodexCollaborationMode = .default
     private var approvalPolicy: CodexApprovalPolicy = .storedValue
-    private var activeFileChangeOutput: CodexFileChangeOutput?
+    private var inProgressToolItems: [String: CodexTranscriptItem] = [:]
 
     init(
         agent: Agent,
         onStateChange: @escaping (UUID, AgentState) -> Void,
         onSessionReady: @escaping (UUID, String) -> Void,
         onTranscriptItem: @escaping (UUID, CodexTranscriptItem) -> Void,
-        onFileChangeOutput: @escaping (UUID, String) -> Void,
         onUserInputRequest: @escaping (UUID, CodexUserInputRequest) -> Void,
         onApprovalRequest: @escaping (UUID, CodexApprovalRequest) -> Void,
         onDebugMessage: @escaping (UUID, String) -> Void,
@@ -245,7 +245,6 @@ private final class Observer: @unchecked Sendable {
         self.onStateChange = onStateChange
         self.onSessionReady = onSessionReady
         self.onTranscriptItem = onTranscriptItem
-        self.onFileChangeOutput = onFileChangeOutput
         self.onUserInputRequest = onUserInputRequest
         self.onApprovalRequest = onApprovalRequest
         self.onDebugMessage = onDebugMessage
@@ -373,9 +372,9 @@ private final class Observer: @unchecked Sendable {
                 agent.sessionId = threadId
                 onSessionReady(agent.id, threadId)
             }
+            hydrateTranscriptFromThread(thread)
             if let path = thread["path"] as? String {
                 sessionFilePath = path
-                hydrateTranscriptFromSessionFile(at: path)
                 refreshSessionMetadataFromFile(at: path)
             }
             if let status = thread["status"] as? [String: Any],
@@ -389,6 +388,23 @@ private final class Observer: @unchecked Sendable {
         }
 
         flushPendingMessages()
+    }
+
+    private func hydrateTranscriptFromThread(_ thread: [String: Any]) {
+        guard let turns = thread["turns"] as? [[String: Any]] else { return }
+
+        var sawTaskStarted = false
+        for turn in turns {
+            guard let items = turn["items"] as? [[String: Any]] else { continue }
+            for rawItem in items {
+                guard let item = CodexAppServerMonitor.transcriptItem(from: rawItem) else { continue }
+                if !sawTaskStarted, CodexAppServerMonitor.isBootstrapUserContextMessage(item) {
+                    continue
+                }
+                sawTaskStarted = true
+                onTranscriptItem(agent.id, item)
+            }
+        }
     }
 
     @MainActor
@@ -580,88 +596,6 @@ private final class Observer: @unchecked Sendable {
         ]
     }
 
-    private func hydrateTranscriptFromSessionFile(at path: String) {
-        guard let data = FileManager.default.contents(atPath: path),
-              let content = String(data: data, encoding: .utf8)
-        else { return }
-
-        var hydratedItems: [CodexTranscriptItem] = []
-        var fileChangeOutputs: [String: CodexFileChangeOutput] = [:]
-        var tentativeUserIndex: Int?
-        var sawTaskStarted = false
-
-        for line in content.split(separator: "\n") {
-            guard let data = line.data(using: .utf8),
-                  let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
-            else { continue }
-
-            if CodexAppServerMonitor.isTaskStartedEvent(object) {
-                sawTaskStarted = true
-                tentativeUserIndex = nil
-                continue
-            }
-
-            if CodexAppServerMonitor.isTurnAbortedEvent(object) {
-                if let index = tentativeUserIndex, hydratedItems.indices.contains(index) {
-                    hydratedItems.remove(at: index)
-                }
-                tentativeUserIndex = nil
-                continue
-            }
-
-            if let method = object["method"] as? String,
-               method == "item/fileChange/outputDelta",
-               let params = object["params"] as? [String: Any],
-               let delta = CodexAppServerMonitor.fileChangeOutputDelta(params: params) {
-                if let existing = fileChangeOutputs[delta.itemId] {
-                    fileChangeOutputs[delta.itemId] = CodexFileChangeOutput(
-                        itemId: delta.itemId,
-                        threadId: delta.threadId,
-                        turnId: delta.turnId,
-                        text: existing.text + delta.text
-                    )
-                } else {
-                    fileChangeOutputs[delta.itemId] = delta
-                }
-                continue
-            }
-
-            if let method = object["method"] as? String,
-               method == "item/completed",
-               let params = object["params"] as? [String: Any],
-               let item = params["item"] as? [String: Any],
-               let itemType = item["type"] as? String,
-               itemType == "fileChange",
-               let itemId = item["id"] as? String,
-               let output = fileChangeOutputs.removeValue(forKey: itemId) {
-                hydratedItems.append(CodexTranscriptItem(
-                    id: "file-change-\(itemId)",
-                    role: .system,
-                    text: CodexAppServerMonitor.formattedFileChangeSummary(output.text)
-                ))
-                tentativeUserIndex = nil
-                continue
-            }
-
-            guard let item = CodexAppServerMonitor.transcriptItem(fromSessionEvent: object) else {
-                tentativeUserIndex = nil
-                continue
-            }
-
-            if !sawTaskStarted, CodexAppServerMonitor.isBootstrapUserContextMessage(item) {
-                tentativeUserIndex = nil
-                continue
-            }
-
-            hydratedItems.append(item)
-            tentativeUserIndex = item.role == .user ? hydratedItems.count - 1 : nil
-        }
-
-        for item in hydratedItems {
-            onTranscriptItem(agent.id, item)
-        }
-    }
-
     private func refreshSessionMetadataFromFile(at path: String) {
         guard let data = FileManager.default.contents(atPath: path),
               let content = String(data: data, encoding: .utf8)
@@ -732,104 +666,7 @@ private final class Observer: @unchecked Sendable {
               let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
         else { return }
 
-        if CodexAppServerMonitor.isTaskStartedEvent(object) {
-            clearActiveFileChangeOutput()
-            return
-        }
-
-        if CodexAppServerMonitor.isTurnAbortedEvent(object) {
-            clearActiveFileChangeOutput()
-            return
-        }
-
-        if let id = object["id"] as? Int, object["method"] == nil {
-            guard let request = pendingRequests.removeValue(forKey: id) else { return }
-            request.completion(object)
-            return
-        }
-
-        if let id = object["id"] as? Int,
-           let method = object["method"] as? String,
-           method == "item/tool/requestUserInput",
-           let params = object["params"] as? [String: Any],
-           let request = CodexAppServerMonitor.userInputRequest(agentId: agent.id, params: params) {
-            pendingUserInputRequest = PendingUserInputServerRequest(requestId: id, request: request)
-            publishIfChanged(.awaitingResponse)
-            onUserInputRequest(agent.id, request)
-            return
-        }
-
-        if let id = object["id"] as? Int,
-           let method = object["method"] as? String,
-           let params = object["params"] as? [String: Any],
-           let request = CodexAppServerMonitor.approvalRequest(
-               agentId: agent.id,
-               requestId: id,
-               method: method,
-               params: params
-           ) {
-            pendingApprovalRequest = PendingApprovalServerRequest(requestId: id, request: request)
-            publishIfChanged(.needsPermission)
-            onApprovalRequest(agent.id, request)
-            return
-        }
-
-        if let method = object["method"] as? String,
-           method == "item/fileChange/outputDelta",
-           let params = object["params"] as? [String: Any],
-           let delta = CodexAppServerMonitor.fileChangeOutputDelta(params: params) {
-            appendFileChangeOutput(delta)
-            return
-        }
-
-        if let method = object["method"] as? String,
-           method == "item/completed",
-           let params = object["params"] as? [String: Any],
-           let item = params["item"] as? [String: Any] {
-            if let transcriptItem = CodexAppServerMonitor.transcriptItem(from: item) {
-                onTranscriptItem(agent.id, transcriptItem)
-            }
-            if let itemType = item["type"] as? String,
-               itemType == "fileChange",
-               let itemId = item["id"] as? String,
-               activeFileChangeOutput?.itemId == itemId {
-                finalizeActiveFileChangeOutput()
-            }
-            if let sessionFilePath {
-                refreshSessionMetadataFromFile(at: sessionFilePath)
-            }
-
-            if let type = item["type"] as? String,
-               type == "agentMessage",
-               let text = item["text"] as? String,
-               text.contains("request_user_input"),
-               text.contains("unavailable in Default mode") {
-                onDebugMessage(agent.id, text)
-            }
-            return
-        }
-
-        if let method = object["method"] as? String,
-           method == "thread/status/changed",
-           let params = object["params"] as? [String: Any],
-           let status = params["status"] as? [String: Any],
-           let mapped = CodexAppServerMonitor.agentState(fromThreadStatus: status) {
-            publishIfChanged(mapped)
-        }
-
-        if let method = object["method"] as? String,
-           method == "error",
-           let params = object["params"] as? [String: Any],
-           let error = params["error"] as? [String: Any],
-           let message = error["message"] as? String {
-            let item = CodexTranscriptItem(
-                id: UUID().uuidString,
-                role: .system,
-                text: "Error: \(message)"
-            )
-            onTranscriptItem(agent.id, item)
-            publishIfChanged(.error)
-        }
+        handleJSONObject(object)
     }
 
     private static func extractThreadStatus(fromResponse response: [String: Any]) -> [String: Any]? {
@@ -842,37 +679,161 @@ private final class Observer: @unchecked Sendable {
 }
 
 private extension Observer {
-    func appendFileChangeOutput(_ delta: CodexFileChangeOutput) {
-        if let currentFileChangeOutput = activeFileChangeOutput,
-           currentFileChangeOutput.itemId == delta.itemId {
-            activeFileChangeOutput = CodexFileChangeOutput(
-                itemId: delta.itemId,
-                threadId: delta.threadId,
-                turnId: delta.turnId,
-                text: currentFileChangeOutput.text + delta.text
-            )
-        } else {
-            activeFileChangeOutput = delta
-        }
-
-        if let activeFileChangeOutput {
-            onFileChangeOutput(agent.id, activeFileChangeOutput.text)
+    func handleJSONObject(_ object: [String: Any]) {
+        if handleResponseObject(object)
+            || handleUserInputRequestObject(object)
+            || handleApprovalRequestObject(object)
+            || handleItemStartedObject(object)
+            || handleOutputDeltaObject(object)
+            || handleCompletedItemObject(object)
+            || handleThreadStatusObject(object)
+            || handleErrorObject(object) {
+            return
         }
     }
 
-    func finalizeActiveFileChangeOutput() {
-        guard let activeFileChangeOutput else { return }
-        let summary = CodexAppServerMonitor.formattedFileChangeSummary(activeFileChangeOutput.text)
-        onTranscriptItem(agent.id, CodexTranscriptItem(
-            id: "file-change-\(activeFileChangeOutput.itemId)",
+    func handleResponseObject(_ object: [String: Any]) -> Bool {
+        guard let id = object["id"] as? Int, object["method"] == nil else { return false }
+        guard let request = pendingRequests.removeValue(forKey: id) else { return true }
+        request.completion(object)
+        return true
+    }
+
+    func handleUserInputRequestObject(_ object: [String: Any]) -> Bool {
+        guard let id = object["id"] as? Int,
+              let method = object["method"] as? String,
+              method == "item/tool/requestUserInput",
+              let params = object["params"] as? [String: Any],
+              let request = CodexAppServerMonitor.userInputRequest(agentId: agent.id, params: params)
+        else { return false }
+
+        pendingUserInputRequest = PendingUserInputServerRequest(requestId: id, request: request)
+        publishIfChanged(.awaitingResponse)
+        onUserInputRequest(agent.id, request)
+        return true
+    }
+
+    func handleApprovalRequestObject(_ object: [String: Any]) -> Bool {
+        guard let id = object["id"] as? Int,
+              let method = object["method"] as? String,
+              let params = object["params"] as? [String: Any],
+              let request = CodexAppServerMonitor.approvalRequest(
+                  agentId: agent.id,
+                  requestId: id,
+                  method: method,
+                  params: params
+              )
+        else { return false }
+
+        pendingApprovalRequest = PendingApprovalServerRequest(requestId: id, request: request)
+        publishIfChanged(.needsPermission)
+        onApprovalRequest(agent.id, request)
+        return true
+    }
+
+    func handleItemStartedObject(_ object: [String: Any]) -> Bool {
+        guard let method = object["method"] as? String,
+              method == "item/started",
+              let params = object["params"] as? [String: Any],
+              let item = params["item"] as? [String: Any]
+        else { return false }
+
+        if let toolItem = CodexAppServerMonitor.commandToolItem(fromStartedItem: item, isRunning: true)
+            ?? CodexAppServerMonitor.fileChangeToolItem(fromStartedItem: item, isRunning: true) {
+            guard let rawId = item["id"] as? String else { return true }
+            inProgressToolItems[rawId] = toolItem
+            onTranscriptItem(agent.id, toolItem)
+            return true
+        }
+        return false
+    }
+
+    func handleOutputDeltaObject(_ object: [String: Any]) -> Bool {
+        guard let method = object["method"] as? String,
+              method == "item/commandExecution/outputDelta"
+              || method == "item/fileChange/outputDelta",
+              let params = object["params"] as? [String: Any],
+              let delta = CodexAppServerMonitor.outputDeltaText(params: params)
+        else { return false }
+
+        guard var item = inProgressToolItems[delta.itemId] else { return true }
+        switch item.tool {
+        case var .command(detail)?:
+            detail.output += delta.delta
+            item.tool = .command(detail)
+        case var .fileChange(detail)?:
+            detail.patch += delta.delta
+            item.tool = .fileChange(detail)
+        default:
+            return true
+        }
+        inProgressToolItems[delta.itemId] = item
+        onTranscriptItem(agent.id, item)
+        return true
+    }
+
+    func handleCompletedItemObject(_ object: [String: Any]) -> Bool {
+        guard let method = object["method"] as? String,
+              method == "item/completed",
+              let params = object["params"] as? [String: Any],
+              let item = params["item"] as? [String: Any]
+        else { return false }
+
+        let itemType = item["type"] as? String
+        let rawId = item["id"] as? String
+
+        if itemType == "commandExecution" || itemType == "fileChange" {
+            if let rawId {
+                inProgressToolItems.removeValue(forKey: rawId)
+            }
+            if let finalized = CodexAppServerMonitor.transcriptItem(from: item) {
+                onTranscriptItem(agent.id, finalized)
+            }
+        } else if let transcriptItem = CodexAppServerMonitor.transcriptItem(from: item) {
+            onTranscriptItem(agent.id, transcriptItem)
+        }
+
+        if let sessionFilePath {
+            refreshSessionMetadataFromFile(at: sessionFilePath)
+        }
+        if itemType == "agentMessage",
+           let text = item["text"] as? String,
+           text.contains("request_user_input"),
+           text.contains("unavailable in Default mode") {
+            onDebugMessage(agent.id, text)
+        }
+        return true
+    }
+
+    func handleThreadStatusObject(_ object: [String: Any]) -> Bool {
+        guard let method = object["method"] as? String,
+              method == "thread/status/changed",
+              let params = object["params"] as? [String: Any],
+              let status = params["status"] as? [String: Any],
+              let mapped = CodexAppServerMonitor.agentState(fromThreadStatus: status)
+        else { return false }
+
+        publishIfChanged(mapped)
+        return true
+    }
+
+    func handleErrorObject(_ object: [String: Any]) -> Bool {
+        guard let method = object["method"] as? String,
+              method == "error",
+              let params = object["params"] as? [String: Any],
+              let error = params["error"] as? [String: Any],
+              let message = error["message"] as? String
+        else { return false }
+
+        let item = CodexTranscriptItem(
+            id: UUID().uuidString,
             role: .system,
-            text: summary
-        ))
-        clearActiveFileChangeOutput()
-    }
-
-    func clearActiveFileChangeOutput() {
-        activeFileChangeOutput = nil
-        onFileChangeOutput(agent.id, "")
+            text: "Error: \(message)"
+        )
+        onTranscriptItem(agent.id, item)
+        publishIfChanged(.error)
+        return true
     }
 }
+
+// swiftlint:enable file_length

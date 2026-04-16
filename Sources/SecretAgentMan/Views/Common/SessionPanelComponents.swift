@@ -153,8 +153,18 @@ struct SessionLiveToolCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text(title)
-                .scaledFont(size: 12, weight: .semibold)
+            HStack(spacing: 8) {
+                Text("Live")
+                    .scaledFont(size: 10, weight: .semibold)
+                    .foregroundStyle(theme.blue)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 3)
+                    .background(theme.blue.opacity(0.12))
+                    .clipShape(Capsule())
+
+                Text(title)
+                    .scaledFont(size: 12, weight: .semibold)
+            }
 
             ScrollView {
                 Text(detail)
