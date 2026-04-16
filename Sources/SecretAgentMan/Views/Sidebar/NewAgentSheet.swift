@@ -3,7 +3,7 @@ import SwiftUI
 struct NewAgentSheet: View {
     let store: AgentStore
     @Binding var isPresented: Bool
-    var prefillFolder: URL?
+    @Binding var prefillFolder: URL?
 
     @AppStorage(UserDefaultsKeys.defaultAgentFolder) private var defaultAgentFolder = ""
     @State private var name = ""

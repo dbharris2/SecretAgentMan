@@ -31,7 +31,7 @@ struct SidebarView: View {
         .background(theme.surface)
         .frame(minWidth: 200)
         .sheet(isPresented: $showingNewAgent) {
-            NewAgentSheet(store: coordinator.store, isPresented: $showingNewAgent, prefillFolder: newAgentPrefillFolder)
+            NewAgentSheet(store: coordinator.store, isPresented: $showingNewAgent, prefillFolder: $newAgentPrefillFolder)
         }
         .alert("Rename Agent", isPresented: Binding(
             get: { renamingAgentId != nil },
