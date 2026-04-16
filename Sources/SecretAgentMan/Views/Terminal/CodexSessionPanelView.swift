@@ -27,6 +27,12 @@ struct CodexSessionPanelView: View {
         coordinator.codexMonitor.debugMessages[agent.id]
     }
 
+    private var liveFileChangeOutput: String? {
+        coordinator.codexMonitor.liveFileChangeOutputs[agent.id].flatMap { output in
+            output.isEmpty ? nil : output
+        }
+    }
+
     private var isThinking: Bool {
         agent.state == .active
     }
@@ -52,11 +58,18 @@ struct CodexSessionPanelView: View {
                 streaming: nil,
                 isThinking: isThinking,
                 activeTool: nil,
-                hasPendingCard: pendingInput != nil || pendingApproval != nil,
+                hasPendingCard: pendingInput != nil || pendingApproval != nil || liveFileChangeOutput != nil,
                 fontScale: fontScale,
                 emptyStateText: "Codex session is ready. Send a message to start."
             ) {
                 AnyView(Group {
+                    if let liveFileChangeOutput {
+                        SessionLiveToolCard(
+                            title: "Applying File Changes",
+                            detail: liveFileChangeOutput
+                        )
+                    }
+
                     if let debugMessage, pendingInput == nil {
                         Text(debugMessage)
                             .scaledFont(size: 12)

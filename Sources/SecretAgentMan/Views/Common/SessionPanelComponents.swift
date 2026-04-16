@@ -146,6 +146,34 @@ struct SessionApprovalCard: View {
     }
 }
 
+struct SessionLiveToolCard: View {
+    let title: String
+    let detail: String
+    @Environment(\.appTheme) private var theme
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(title)
+                .scaledFont(size: 12, weight: .semibold)
+
+            ScrollView {
+                Text(detail)
+                    .scaledFont(size: 12)
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .frame(minHeight: 120, maxHeight: 220)
+            .padding(8)
+            .background(theme.background.opacity(0.45))
+            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(theme.blue.opacity(0.08))
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+}
+
 struct SessionElicitationCard: View {
     let message: String
     var options: [CodexUserInputOption] = []

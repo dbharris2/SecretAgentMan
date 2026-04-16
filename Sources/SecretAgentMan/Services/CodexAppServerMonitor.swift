@@ -9,6 +9,7 @@ final class CodexAppServerMonitor {
     private(set) var pendingUserInputRequests: [UUID: CodexUserInputRequest] = [:]
     private(set) var pendingApprovalRequests: [UUID: CodexApprovalRequest] = [:]
     private(set) var transcriptItems: [UUID: [CodexTranscriptItem]] = [:]
+    private(set) var liveFileChangeOutputs: [UUID: String] = [:]
     private(set) var runtimeStates: [UUID: AgentState] = [:]
     private(set) var debugMessages: [UUID: String] = [:]
     private(set) var modelNames: [UUID: String] = [:]
@@ -58,6 +59,10 @@ final class CodexAppServerMonitor {
         } onTranscriptItem: { [weak self] id, item in
             Task { @MainActor in
                 self?.transcriptItems[id, default: []].append(item)
+            }
+        } onFileChangeOutput: { [weak self] id, output in
+            Task { @MainActor in
+                self?.liveFileChangeOutputs[id] = output
             }
         } onUserInputRequest: { [weak self] id, request in
             Task { @MainActor in
@@ -109,6 +114,7 @@ final class CodexAppServerMonitor {
         pendingUserInputRequests.removeValue(forKey: agentId)
         pendingApprovalRequests.removeValue(forKey: agentId)
         transcriptItems.removeValue(forKey: agentId)
+        liveFileChangeOutputs.removeValue(forKey: agentId)
         runtimeStates.removeValue(forKey: agentId)
         debugMessages.removeValue(forKey: agentId)
         modelNames.removeValue(forKey: agentId)
@@ -144,7 +150,7 @@ final class CodexAppServerMonitor {
     }
 
     func respondToUserInput(for agentId: UUID, answers: [String: [String]]) {
-        guard let request = pendingUserInputRequests[agentId] else { return }
+        guard pendingUserInputRequests[agentId] != nil else { return }
         observers[agentId]?.respondToUserInput(answers: answers)
         pendingUserInputRequests.removeValue(forKey: agentId)
     }
@@ -192,6 +198,7 @@ private final class Observer: @unchecked Sendable {
     private let onStateChange: (UUID, AgentState) -> Void
     private let onSessionReady: (UUID, String) -> Void
     private let onTranscriptItem: (UUID, CodexTranscriptItem) -> Void
+    private let onFileChangeOutput: (UUID, String) -> Void
     private let onUserInputRequest: (UUID, CodexUserInputRequest) -> Void
     private let onApprovalRequest: (UUID, CodexApprovalRequest) -> Void
     private let onDebugMessage: (UUID, String) -> Void
@@ -219,12 +226,14 @@ private final class Observer: @unchecked Sendable {
     private var rawModelName = "gpt-5.4"
     private var collaborationMode: CodexCollaborationMode = .default
     private var approvalPolicy: CodexApprovalPolicy = .storedValue
+    private var activeFileChangeOutput: CodexFileChangeOutput?
 
     init(
         agent: Agent,
         onStateChange: @escaping (UUID, AgentState) -> Void,
         onSessionReady: @escaping (UUID, String) -> Void,
         onTranscriptItem: @escaping (UUID, CodexTranscriptItem) -> Void,
+        onFileChangeOutput: @escaping (UUID, String) -> Void,
         onUserInputRequest: @escaping (UUID, CodexUserInputRequest) -> Void,
         onApprovalRequest: @escaping (UUID, CodexApprovalRequest) -> Void,
         onDebugMessage: @escaping (UUID, String) -> Void,
@@ -236,6 +245,7 @@ private final class Observer: @unchecked Sendable {
         self.onStateChange = onStateChange
         self.onSessionReady = onSessionReady
         self.onTranscriptItem = onTranscriptItem
+        self.onFileChangeOutput = onFileChangeOutput
         self.onUserInputRequest = onUserInputRequest
         self.onApprovalRequest = onApprovalRequest
         self.onDebugMessage = onDebugMessage
@@ -576,6 +586,7 @@ private final class Observer: @unchecked Sendable {
         else { return }
 
         var hydratedItems: [CodexTranscriptItem] = []
+        var fileChangeOutputs: [String: CodexFileChangeOutput] = [:]
         var tentativeUserIndex: Int?
         var sawTaskStarted = false
 
@@ -594,6 +605,40 @@ private final class Observer: @unchecked Sendable {
                 if let index = tentativeUserIndex, hydratedItems.indices.contains(index) {
                     hydratedItems.remove(at: index)
                 }
+                tentativeUserIndex = nil
+                continue
+            }
+
+            if let method = object["method"] as? String,
+               method == "item/fileChange/outputDelta",
+               let params = object["params"] as? [String: Any],
+               let delta = CodexAppServerMonitor.fileChangeOutputDelta(params: params) {
+                if let existing = fileChangeOutputs[delta.itemId] {
+                    fileChangeOutputs[delta.itemId] = CodexFileChangeOutput(
+                        itemId: delta.itemId,
+                        threadId: delta.threadId,
+                        turnId: delta.turnId,
+                        text: existing.text + delta.text
+                    )
+                } else {
+                    fileChangeOutputs[delta.itemId] = delta
+                }
+                continue
+            }
+
+            if let method = object["method"] as? String,
+               method == "item/completed",
+               let params = object["params"] as? [String: Any],
+               let item = params["item"] as? [String: Any],
+               let itemType = item["type"] as? String,
+               itemType == "fileChange",
+               let itemId = item["id"] as? String,
+               let output = fileChangeOutputs.removeValue(forKey: itemId) {
+                hydratedItems.append(CodexTranscriptItem(
+                    id: "file-change-\(itemId)",
+                    role: .system,
+                    text: CodexAppServerMonitor.formattedFileChangeSummary(output.text)
+                ))
                 tentativeUserIndex = nil
                 continue
             }
@@ -687,6 +732,16 @@ private final class Observer: @unchecked Sendable {
               let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
         else { return }
 
+        if CodexAppServerMonitor.isTaskStartedEvent(object) {
+            clearActiveFileChangeOutput()
+            return
+        }
+
+        if CodexAppServerMonitor.isTurnAbortedEvent(object) {
+            clearActiveFileChangeOutput()
+            return
+        }
+
         if let id = object["id"] as? Int, object["method"] == nil {
             guard let request = pendingRequests.removeValue(forKey: id) else { return }
             request.completion(object)
@@ -720,11 +775,25 @@ private final class Observer: @unchecked Sendable {
         }
 
         if let method = object["method"] as? String,
+           method == "item/fileChange/outputDelta",
+           let params = object["params"] as? [String: Any],
+           let delta = CodexAppServerMonitor.fileChangeOutputDelta(params: params) {
+            appendFileChangeOutput(delta)
+            return
+        }
+
+        if let method = object["method"] as? String,
            method == "item/completed",
            let params = object["params"] as? [String: Any],
            let item = params["item"] as? [String: Any] {
             if let transcriptItem = CodexAppServerMonitor.transcriptItem(from: item) {
                 onTranscriptItem(agent.id, transcriptItem)
+            }
+            if let itemType = item["type"] as? String,
+               itemType == "fileChange",
+               let itemId = item["id"] as? String,
+               activeFileChangeOutput?.itemId == itemId {
+                finalizeActiveFileChangeOutput()
             }
             if let sessionFilePath {
                 refreshSessionMetadataFromFile(at: sessionFilePath)
@@ -769,5 +838,41 @@ private final class Observer: @unchecked Sendable {
               let status = thread["status"] as? [String: Any]
         else { return nil }
         return status
+    }
+}
+
+private extension Observer {
+    func appendFileChangeOutput(_ delta: CodexFileChangeOutput) {
+        if let currentFileChangeOutput = activeFileChangeOutput,
+           currentFileChangeOutput.itemId == delta.itemId {
+            activeFileChangeOutput = CodexFileChangeOutput(
+                itemId: delta.itemId,
+                threadId: delta.threadId,
+                turnId: delta.turnId,
+                text: currentFileChangeOutput.text + delta.text
+            )
+        } else {
+            activeFileChangeOutput = delta
+        }
+
+        if let activeFileChangeOutput {
+            onFileChangeOutput(agent.id, activeFileChangeOutput.text)
+        }
+    }
+
+    func finalizeActiveFileChangeOutput() {
+        guard let activeFileChangeOutput else { return }
+        let summary = CodexAppServerMonitor.formattedFileChangeSummary(activeFileChangeOutput.text)
+        onTranscriptItem(agent.id, CodexTranscriptItem(
+            id: "file-change-\(activeFileChangeOutput.itemId)",
+            role: .system,
+            text: summary
+        ))
+        clearActiveFileChangeOutput()
+    }
+
+    func clearActiveFileChangeOutput() {
+        activeFileChangeOutput = nil
+        onFileChangeOutput(agent.id, "")
     }
 }

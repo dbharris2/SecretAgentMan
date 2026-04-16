@@ -102,6 +102,30 @@ struct CodexAppServerMonitorTests {
     }
 
     @Test
+    func parsesFileChangeOutputDeltaPayload() {
+        let delta = CodexAppServerMonitor.fileChangeOutputDelta(params: [
+            "threadId": "thread-123",
+            "turnId": "turn-123",
+            "itemId": "item-123",
+            "delta": "@@ -1 +1 @@\n-old\n+new",
+        ])
+
+        #expect(delta?.threadId == "thread-123")
+        #expect(delta?.turnId == "turn-123")
+        #expect(delta?.itemId == "item-123")
+        #expect(delta?.text == "@@ -1 +1 @@\n-old\n+new")
+    }
+
+    @Test
+    func formatsFileChangeSummaryAsDiffBlock() {
+        let summary = CodexAppServerMonitor.formattedFileChangeSummary("@@ -1 +1 @@\n-old\n+new")
+
+        #expect(summary.contains("Applied file changes:"))
+        #expect(summary.contains("```diff"))
+        #expect(summary.contains("+new"))
+    }
+
+    @Test
     func parsesTranscriptItemFromSessionEvent() {
         let item = CodexAppServerMonitor.transcriptItem(fromSessionEvent: [
             "type": "response_item",

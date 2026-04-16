@@ -88,6 +88,13 @@ struct CodexTranscriptItem: Identifiable, Equatable {
     }
 }
 
+struct CodexFileChangeOutput: Equatable {
+    let itemId: String
+    let threadId: String
+    let turnId: String
+    let text: String
+}
+
 enum CodexApprovalKind: Equatable {
     case command(command: String?, reason: String?)
     case fileChange(reason: String?, grantRoot: String?)
@@ -139,6 +146,39 @@ struct CodexApprovalRequest: Equatable {
 }
 
 extension CodexAppServerMonitor {
+    nonisolated static func fileChangeOutputDelta(
+        params: [String: Any]
+    ) -> CodexFileChangeOutput? {
+        guard let threadId = params["threadId"] as? String,
+              let turnId = params["turnId"] as? String,
+              let itemId = params["itemId"] as? String,
+              let text = params["delta"] as? String,
+              !text.isEmpty
+        else { return nil }
+
+        return CodexFileChangeOutput(
+            itemId: itemId,
+            threadId: threadId,
+            turnId: turnId,
+            text: text
+        )
+    }
+
+    nonisolated static func formattedFileChangeSummary(_ output: String) -> String {
+        let maxLines = 120
+        let maxCharacters = 4000
+        let rawLines = output.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+        let trimmedLines = Array(rawLines.prefix(maxLines))
+        var trimmedText = trimmedLines.joined(separator: "\n")
+        let wasLineTruncated = rawLines.count > trimmedLines.count
+        if trimmedText.count > maxCharacters {
+            trimmedText = String(trimmedText.prefix(maxCharacters))
+        }
+        let wasCharTruncated = output.count > trimmedText.count
+        let ellipsis = (wasLineTruncated || wasCharTruncated) ? "\n..." : ""
+        return "Applied file changes:\n\n```diff\n\(trimmedText)\(ellipsis)\n```"
+    }
+
     nonisolated static func userInputRequest(
         agentId: UUID,
         params: [String: Any]
