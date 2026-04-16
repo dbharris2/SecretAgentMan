@@ -80,19 +80,75 @@ enum CodexTranscriptRole: String, Equatable {
 struct CodexTranscriptItem: Identifiable, Equatable {
     let id: String
     let role: CodexTranscriptRole
-    let text: String
+    var text: String
     var images: [Data] = []
+    var tool: CodexToolDetail?
+
+    var displayText: String {
+        tool?.markdownText ?? text
+    }
 
     static func == (lhs: Self, rhs: Self) -> Bool {
-        lhs.id == rhs.id && lhs.role == rhs.role && lhs.text == rhs.text
+        lhs.id == rhs.id
+            && lhs.role == rhs.role
+            && lhs.text == rhs.text
+            && lhs.tool == rhs.tool
     }
 }
 
-struct CodexFileChangeOutput: Equatable {
-    let itemId: String
-    let threadId: String
-    let turnId: String
-    let text: String
+enum CodexToolDetail: Equatable {
+    case command(CodexCommandToolDetail)
+    case fileChange(CodexFileChangeToolDetail)
+
+    var markdownText: String {
+        switch self {
+        case let .command(detail): detail.markdownText
+        case let .fileChange(detail): detail.markdownText
+        }
+    }
+}
+
+struct CodexCommandToolDetail: Equatable {
+    var command: String
+    var output: String
+    var status: String?
+    var exitCode: Int?
+    var durationMs: Double?
+    var isRunning: Bool
+
+    var markdownText: String {
+        var suffixParts: [String] = []
+        if isRunning {
+            suffixParts.append("running")
+        }
+        if let status, !status.isEmpty, !isRunning {
+            suffixParts.append("status: \(status)")
+        }
+        if let exitCode {
+            suffixParts.append("exit: \(exitCode)")
+        }
+        if let durationMs {
+            suffixParts.append("duration: \(Int(durationMs))ms")
+        }
+        let suffix = suffixParts.isEmpty ? "" : " (\(suffixParts.joined(separator: " · ")))"
+        var parts = ["Ran command\(suffix):\n\n```sh\n\(command)\n```"]
+        if let formatted = CodexAppServerMonitor.formattedCommandOutput(output) {
+            parts.append("Command output:\n\n```text\n\(formatted)\n```")
+        }
+        return parts.joined(separator: "\n\n")
+    }
+}
+
+struct CodexFileChangeToolDetail: Equatable {
+    var patch: String
+    var status: String?
+    var isRunning: Bool
+
+    var markdownText: String {
+        let suffix = isRunning ? " (applying)" : ""
+        let trimmed = CodexAppServerMonitor.formattedFileChangeSummary(patch)
+        return "Applied file changes\(suffix):\n\n```diff\n\(trimmed)\n```"
+    }
 }
 
 enum CodexApprovalKind: Equatable {
@@ -146,37 +202,70 @@ struct CodexApprovalRequest: Equatable {
 }
 
 extension CodexAppServerMonitor {
-    nonisolated static func fileChangeOutputDelta(
+    nonisolated static func outputDeltaText(
         params: [String: Any]
-    ) -> CodexFileChangeOutput? {
-        guard let threadId = params["threadId"] as? String,
-              let turnId = params["turnId"] as? String,
-              let itemId = params["itemId"] as? String,
-              let text = params["delta"] as? String,
-              !text.isEmpty
+    ) -> (itemId: String, delta: String)? {
+        guard let itemId = params["itemId"] as? String,
+              let delta = params["delta"] as? String,
+              !delta.isEmpty
+        else { return nil }
+        return (itemId, delta)
+    }
+
+    nonisolated static func commandToolItem(
+        fromStartedItem item: [String: Any],
+        isRunning: Bool = true
+    ) -> CodexTranscriptItem? {
+        guard let itemId = item["id"] as? String,
+              let type = item["type"] as? String,
+              type == "commandExecution"
         else { return nil }
 
-        return CodexFileChangeOutput(
-            itemId: itemId,
-            threadId: threadId,
-            turnId: turnId,
-            text: text
+        let detail = CodexCommandToolDetail(
+            command: commandText(from: item) ?? "",
+            output: item["aggregatedOutput"] as? String ?? "",
+            status: item["status"] as? String,
+            exitCode: item["exitCode"] as? Int ?? item["exit_code"] as? Int,
+            durationMs: item["durationMs"] as? Double ?? item["duration_ms"] as? Double,
+            isRunning: isRunning
+        )
+        return CodexTranscriptItem(
+            id: "command-\(itemId)",
+            role: .system,
+            text: "",
+            tool: .command(detail)
         )
     }
 
-    nonisolated static func formattedFileChangeSummary(_ output: String) -> String {
-        let maxLines = 120
-        let maxCharacters = 4000
-        let rawLines = output.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
-        let trimmedLines = Array(rawLines.prefix(maxLines))
-        var trimmedText = trimmedLines.joined(separator: "\n")
-        let wasLineTruncated = rawLines.count > trimmedLines.count
-        if trimmedText.count > maxCharacters {
-            trimmedText = String(trimmedText.prefix(maxCharacters))
-        }
-        let wasCharTruncated = output.count > trimmedText.count
-        let ellipsis = (wasLineTruncated || wasCharTruncated) ? "\n..." : ""
-        return "Applied file changes:\n\n```diff\n\(trimmedText)\(ellipsis)\n```"
+    nonisolated static func fileChangeToolItem(
+        fromStartedItem item: [String: Any],
+        isRunning: Bool = true
+    ) -> CodexTranscriptItem? {
+        guard let itemId = item["id"] as? String,
+              let type = item["type"] as? String,
+              type == "fileChange"
+        else { return nil }
+
+        let detail = CodexFileChangeToolDetail(
+            patch: fileChangePatchText(from: item),
+            status: item["status"] as? String,
+            isRunning: isRunning
+        )
+        return CodexTranscriptItem(
+            id: "file-change-\(itemId)",
+            role: .system,
+            text: "",
+            tool: .fileChange(detail)
+        )
+    }
+
+    nonisolated static func formattedCommandOutput(_ output: String) -> String? {
+        let trimmed = trimmedTranscriptOutput(output, maxLines: 120, maxCharacters: 4000)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    nonisolated static func formattedFileChangeSummary(_ patch: String) -> String {
+        trimmedTranscriptOutput(patch, maxLines: 120, maxCharacters: 4000)
     }
 
     nonisolated static func userInputRequest(
@@ -281,6 +370,10 @@ extension CodexAppServerMonitor {
                 role: .assistant,
                 text: text
             )
+        case "commandExecution":
+            return commandToolItem(fromStartedItem: item, isRunning: false)
+        case "fileChange":
+            return fileChangeToolItem(fromStartedItem: item, isRunning: false)
         default:
             return nil
         }
@@ -398,5 +491,45 @@ extension CodexAppServerMonitor {
             return part["input_text"] as? String ?? part["output_text"] as? String
         }
         .joined()
+    }
+
+    fileprivate nonisolated static func commandText(from item: [String: Any]) -> String? {
+        if let command = item["command"] as? String, !command.isEmpty {
+            return command
+        }
+        if let parts = item["command"] as? [Any] {
+            let command = parts.map { String(describing: $0) }.joined(separator: " ")
+            return command.isEmpty ? nil : command
+        }
+        return nil
+    }
+
+    fileprivate nonisolated static func fileChangePatchText(from item: [String: Any]) -> String {
+        if let aggregated = item["aggregatedOutput"] as? String, !aggregated.isEmpty {
+            return aggregated
+        }
+        guard let changes = item["changes"] as? [[String: Any]] else { return "" }
+        return changes.compactMap { $0["diff"] as? String }
+            .filter { !$0.isEmpty }
+            .joined(separator: "\n\n")
+    }
+
+    fileprivate nonisolated static func trimmedTranscriptOutput(
+        _ output: String,
+        maxLines: Int,
+        maxCharacters: Int
+    ) -> String {
+        let rawLines = output.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+        let trimmedLines = Array(rawLines.prefix(maxLines))
+        var trimmedText = trimmedLines.joined(separator: "\n")
+        let wasLineTruncated = rawLines.count > trimmedLines.count
+        if trimmedText.count > maxCharacters {
+            trimmedText = String(trimmedText.prefix(maxCharacters))
+        }
+        let wasCharTruncated = output.count > trimmedText.count
+        if wasLineTruncated || wasCharTruncated {
+            trimmedText.append("\n...")
+        }
+        return trimmedText
     }
 }
