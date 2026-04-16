@@ -27,8 +27,12 @@ struct CodexSessionPanelView: View {
         coordinator.codexMonitor.debugMessages[agent.id]
     }
 
+    private var streamingText: String? {
+        coordinator.codexMonitor.streamingText[agent.id]
+    }
+
     private var isThinking: Bool {
-        agent.state == .active
+        agent.state == .active && streamingText == nil
     }
 
     private var composerStatusText: String {
@@ -49,7 +53,7 @@ struct CodexSessionPanelView: View {
             SessionChatView(
                 providerName: "Codex",
                 transcript: transcript,
-                streaming: nil,
+                streaming: streamingText,
                 isThinking: isThinking,
                 activeTool: nil,
                 hasPendingCard: pendingInput != nil || pendingApproval != nil,

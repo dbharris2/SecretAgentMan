@@ -125,6 +125,119 @@ struct CodexProtocolTests {
         #expect(json["flag"] as? Bool == true)
     }
 
+    // MARK: - Event parsing
+
+    @Test
+    func parsesAgentMessageDeltaEvent() {
+        let event = CodexProtocol.Event.parse([
+            "method": "item/agentMessage/delta",
+            "params": [
+                "threadId": "t1",
+                "itemId": "item-42",
+                "delta": "hello ",
+            ],
+        ])
+        guard case let .agentMessageDelta(itemId, delta) = event else {
+            Issue.record("expected agentMessageDelta, got \(String(describing: event))")
+            return
+        }
+        #expect(itemId == "item-42")
+        #expect(delta == "hello ")
+    }
+
+    @Test
+    func parsesCommandOutputDeltaEvent() {
+        let event = CodexProtocol.Event.parse([
+            "method": "item/commandExecution/outputDelta",
+            "params": ["itemId": "cmd-1", "delta": "line\n"],
+        ])
+        guard case let .outputDelta(kind, itemId, delta) = event else {
+            Issue.record("expected outputDelta, got \(String(describing: event))")
+            return
+        }
+        #expect(kind == .commandExecution)
+        #expect(itemId == "cmd-1")
+        #expect(delta == "line\n")
+    }
+
+    @Test
+    func parsesFileChangeOutputDeltaEvent() {
+        let event = CodexProtocol.Event.parse([
+            "method": "item/fileChange/outputDelta",
+            "params": ["itemId": "fc-1", "delta": "@@ -1 +1 @@"],
+        ])
+        guard case let .outputDelta(kind, _, _) = event else {
+            Issue.record("expected outputDelta")
+            return
+        }
+        #expect(kind == .fileChange)
+    }
+
+    @Test
+    func parsesResponseEventWhenNoMethod() {
+        let event = CodexProtocol.Event.parse([
+            "id": 7,
+            "result": ["hello": "world"],
+        ])
+        guard case let .response(id, _) = event else {
+            Issue.record("expected response")
+            return
+        }
+        #expect(id == 7)
+    }
+
+    @Test
+    func parsesThreadStatusChangedEvent() {
+        let event = CodexProtocol.Event.parse([
+            "method": "thread/status/changed",
+            "params": ["status": ["type": "idle"]],
+        ])
+        guard case let .threadStatusChanged(status) = event else {
+            Issue.record("expected threadStatusChanged")
+            return
+        }
+        #expect(status["type"] as? String == "idle")
+    }
+
+    @Test
+    func parsesItemStartedEvent() {
+        let event = CodexProtocol.Event.parse([
+            "method": "item/started",
+            "params": ["item": ["id": "i", "type": "commandExecution"]],
+        ])
+        guard case let .itemStarted(item) = event else {
+            Issue.record("expected itemStarted")
+            return
+        }
+        #expect(item["id"] as? String == "i")
+    }
+
+    @Test
+    func parsesErrorEvent() {
+        let event = CodexProtocol.Event.parse([
+            "method": "error",
+            "params": ["error": ["message": "boom"]],
+        ])
+        guard case let .error(message) = event else {
+            Issue.record("expected error")
+            return
+        }
+        #expect(message == "boom")
+    }
+
+    @Test
+    func returnsUnknownForUnhandledMethod() {
+        let event = CodexProtocol.Event.parse([
+            "method": "some/novel/method",
+            "params": [:],
+        ])
+        guard case let .unknown(method) = event else {
+            Issue.record("expected unknown")
+            return
+        }
+        #expect(method == "some/novel/method")
+    }
+
     // MARK: - Helpers
 
     private func requireJSON(_ value: Encodable) throws -> [String: Any] {

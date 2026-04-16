@@ -10,6 +10,7 @@ final class CodexAppServerMonitor {
     private(set) var pendingUserInputRequests: [UUID: CodexUserInputRequest] = [:]
     private(set) var pendingApprovalRequests: [UUID: CodexApprovalRequest] = [:]
     private(set) var transcriptItems: [UUID: [CodexTranscriptItem]] = [:]
+    private(set) var streamingText: [UUID: String] = [:]
     private(set) var runtimeStates: [UUID: AgentState] = [:]
     private(set) var debugMessages: [UUID: String] = [:]
     private(set) var modelNames: [UUID: String] = [:]
@@ -67,6 +68,14 @@ final class CodexAppServerMonitor {
                 }
                 self.transcriptItems[id] = items
             }
+        } onStreamingText: { [weak self] id, text in
+            Task { @MainActor in
+                if text.isEmpty {
+                    self?.streamingText.removeValue(forKey: id)
+                } else {
+                    self?.streamingText[id] = text
+                }
+            }
         } onUserInputRequest: { [weak self] id, request in
             Task { @MainActor in
                 self?.debugMessages.removeValue(forKey: id)
@@ -117,6 +126,7 @@ final class CodexAppServerMonitor {
         pendingUserInputRequests.removeValue(forKey: agentId)
         pendingApprovalRequests.removeValue(forKey: agentId)
         transcriptItems.removeValue(forKey: agentId)
+        streamingText.removeValue(forKey: agentId)
         runtimeStates.removeValue(forKey: agentId)
         debugMessages.removeValue(forKey: agentId)
         modelNames.removeValue(forKey: agentId)
@@ -200,6 +210,7 @@ private final class Observer: @unchecked Sendable {
     private let onStateChange: (UUID, AgentState) -> Void
     private let onSessionReady: (UUID, String) -> Void
     private let onTranscriptItem: (UUID, CodexTranscriptItem) -> Void
+    private let onStreamingText: (UUID, String) -> Void
     private let onUserInputRequest: (UUID, CodexUserInputRequest) -> Void
     private let onApprovalRequest: (UUID, CodexApprovalRequest) -> Void
     private let onDebugMessage: (UUID, String) -> Void
@@ -228,12 +239,15 @@ private final class Observer: @unchecked Sendable {
     private var collaborationMode: CodexCollaborationMode = .default
     private var approvalPolicy: CodexApprovalPolicy = .storedValue
     private var inProgressToolItems: [String: CodexTranscriptItem] = [:]
+    private var streamingAgentMessages: [String: String] = [:]
+    private var activeStreamingItemId: String?
 
     init(
         agent: Agent,
         onStateChange: @escaping (UUID, AgentState) -> Void,
         onSessionReady: @escaping (UUID, String) -> Void,
         onTranscriptItem: @escaping (UUID, CodexTranscriptItem) -> Void,
+        onStreamingText: @escaping (UUID, String) -> Void,
         onUserInputRequest: @escaping (UUID, CodexUserInputRequest) -> Void,
         onApprovalRequest: @escaping (UUID, CodexApprovalRequest) -> Void,
         onDebugMessage: @escaping (UUID, String) -> Void,
@@ -245,6 +259,7 @@ private final class Observer: @unchecked Sendable {
         self.onStateChange = onStateChange
         self.onSessionReady = onSessionReady
         self.onTranscriptItem = onTranscriptItem
+        self.onStreamingText = onStreamingText
         self.onUserInputRequest = onUserInputRequest
         self.onApprovalRequest = onApprovalRequest
         self.onDebugMessage = onDebugMessage
@@ -680,105 +695,95 @@ private final class Observer: @unchecked Sendable {
 
 private extension Observer {
     func handleJSONObject(_ object: [String: Any]) {
-        if handleResponseObject(object)
-            || handleUserInputRequestObject(object)
-            || handleApprovalRequestObject(object)
-            || handleItemStartedObject(object)
-            || handleOutputDeltaObject(object)
-            || handleCompletedItemObject(object)
-            || handleThreadStatusObject(object)
-            || handleErrorObject(object) {
-            return
+        guard let event = CodexProtocol.Event.parse(object) else { return }
+        switch event {
+        case let .response(requestId, object):
+            guard let request = pendingRequests.removeValue(forKey: requestId) else { return }
+            request.completion(object)
+
+        case let .userInputRequest(requestId, params):
+            guard let request = CodexAppServerMonitor.userInputRequest(agentId: agent.id, params: params)
+            else { return }
+            pendingUserInputRequest = PendingUserInputServerRequest(requestId: requestId, request: request)
+            publishIfChanged(.awaitingResponse)
+            onUserInputRequest(agent.id, request)
+
+        case let .approvalRequest(requestId, method, params):
+            guard let request = CodexAppServerMonitor.approvalRequest(
+                agentId: agent.id,
+                requestId: requestId,
+                method: method,
+                params: params
+            ) else { return }
+            pendingApprovalRequest = PendingApprovalServerRequest(requestId: requestId, request: request)
+            publishIfChanged(.needsPermission)
+            onApprovalRequest(agent.id, request)
+
+        case let .itemStarted(item):
+            handleItemStarted(item: item)
+
+        case let .agentMessageDelta(itemId, delta):
+            handleAgentMessageDelta(itemId: itemId, delta: delta)
+
+        case let .outputDelta(_, itemId, delta):
+            handleToolOutputDelta(itemId: itemId, delta: delta)
+
+        case let .itemCompleted(item):
+            handleItemCompleted(item: item)
+
+        case let .threadStatusChanged(status):
+            if let mapped = CodexAppServerMonitor.agentState(fromThreadStatus: status) {
+                publishIfChanged(mapped)
+            }
+
+        case let .error(message):
+            let item = CodexTranscriptItem(
+                id: UUID().uuidString,
+                role: .system,
+                text: "Error: \(message)"
+            )
+            onTranscriptItem(agent.id, item)
+            publishIfChanged(.error)
+
+        case .unknown:
+            break
         }
     }
 
-    func handleResponseObject(_ object: [String: Any]) -> Bool {
-        guard let id = object["id"] as? Int, object["method"] == nil else { return false }
-        guard let request = pendingRequests.removeValue(forKey: id) else { return true }
-        request.completion(object)
-        return true
+    func handleItemStarted(item: [String: Any]) {
+        guard let toolItem = CodexAppServerMonitor.commandToolItem(fromStartedItem: item, isRunning: true)
+            ?? CodexAppServerMonitor.fileChangeToolItem(fromStartedItem: item, isRunning: true),
+            let rawId = item["id"] as? String
+        else { return }
+        inProgressToolItems[rawId] = toolItem
+        onTranscriptItem(agent.id, toolItem)
     }
 
-    func handleUserInputRequestObject(_ object: [String: Any]) -> Bool {
-        guard let id = object["id"] as? Int,
-              let method = object["method"] as? String,
-              method == "item/tool/requestUserInput",
-              let params = object["params"] as? [String: Any],
-              let request = CodexAppServerMonitor.userInputRequest(agentId: agent.id, params: params)
-        else { return false }
-
-        pendingUserInputRequest = PendingUserInputServerRequest(requestId: id, request: request)
-        publishIfChanged(.awaitingResponse)
-        onUserInputRequest(agent.id, request)
-        return true
+    func handleAgentMessageDelta(itemId: String, delta: String) {
+        let existing = streamingAgentMessages[itemId] ?? ""
+        let updated = existing + delta
+        streamingAgentMessages[itemId] = updated
+        activeStreamingItemId = itemId
+        onStreamingText(agent.id, updated)
     }
 
-    func handleApprovalRequestObject(_ object: [String: Any]) -> Bool {
-        guard let id = object["id"] as? Int,
-              let method = object["method"] as? String,
-              let params = object["params"] as? [String: Any],
-              let request = CodexAppServerMonitor.approvalRequest(
-                  agentId: agent.id,
-                  requestId: id,
-                  method: method,
-                  params: params
-              )
-        else { return false }
-
-        pendingApprovalRequest = PendingApprovalServerRequest(requestId: id, request: request)
-        publishIfChanged(.needsPermission)
-        onApprovalRequest(agent.id, request)
-        return true
-    }
-
-    func handleItemStartedObject(_ object: [String: Any]) -> Bool {
-        guard let method = object["method"] as? String,
-              method == "item/started",
-              let params = object["params"] as? [String: Any],
-              let item = params["item"] as? [String: Any]
-        else { return false }
-
-        if let toolItem = CodexAppServerMonitor.commandToolItem(fromStartedItem: item, isRunning: true)
-            ?? CodexAppServerMonitor.fileChangeToolItem(fromStartedItem: item, isRunning: true) {
-            guard let rawId = item["id"] as? String else { return true }
-            inProgressToolItems[rawId] = toolItem
-            onTranscriptItem(agent.id, toolItem)
-            return true
-        }
-        return false
-    }
-
-    func handleOutputDeltaObject(_ object: [String: Any]) -> Bool {
-        guard let method = object["method"] as? String,
-              method == "item/commandExecution/outputDelta"
-              || method == "item/fileChange/outputDelta",
-              let params = object["params"] as? [String: Any],
-              let delta = CodexAppServerMonitor.outputDeltaText(params: params)
-        else { return false }
-
-        guard var item = inProgressToolItems[delta.itemId] else { return true }
+    func handleToolOutputDelta(itemId: String, delta: String) {
+        guard var item = inProgressToolItems[itemId] else { return }
         switch item.tool {
         case var .command(detail)?:
-            detail.output += delta.delta
+            detail.output += delta
             item.tool = .command(detail)
         case var .fileChange(detail)?:
-            detail.patch += delta.delta
+            detail.patch += delta
             item.tool = .fileChange(detail)
         default:
-            return true
+            return
         }
-        inProgressToolItems[delta.itemId] = item
+        inProgressToolItems[itemId] = item
         onTranscriptItem(agent.id, item)
-        return true
     }
 
-    func handleCompletedItemObject(_ object: [String: Any]) -> Bool {
-        guard let method = object["method"] as? String,
-              method == "item/completed",
-              let params = object["params"] as? [String: Any],
-              let item = params["item"] as? [String: Any]
-        else { return false }
-
+    func handleItemCompleted(item: [String: Any]) {
         let itemType = item["type"] as? String
         let rawId = item["id"] as? String
 
@@ -793,6 +798,14 @@ private extension Observer {
             onTranscriptItem(agent.id, transcriptItem)
         }
 
+        if itemType == "agentMessage", let rawId {
+            streamingAgentMessages.removeValue(forKey: rawId)
+            if activeStreamingItemId == rawId {
+                activeStreamingItemId = nil
+                onStreamingText(agent.id, "")
+            }
+        }
+
         if let sessionFilePath {
             refreshSessionMetadataFromFile(at: sessionFilePath)
         }
@@ -802,37 +815,6 @@ private extension Observer {
            text.contains("unavailable in Default mode") {
             onDebugMessage(agent.id, text)
         }
-        return true
-    }
-
-    func handleThreadStatusObject(_ object: [String: Any]) -> Bool {
-        guard let method = object["method"] as? String,
-              method == "thread/status/changed",
-              let params = object["params"] as? [String: Any],
-              let status = params["status"] as? [String: Any],
-              let mapped = CodexAppServerMonitor.agentState(fromThreadStatus: status)
-        else { return false }
-
-        publishIfChanged(mapped)
-        return true
-    }
-
-    func handleErrorObject(_ object: [String: Any]) -> Bool {
-        guard let method = object["method"] as? String,
-              method == "error",
-              let params = object["params"] as? [String: Any],
-              let error = params["error"] as? [String: Any],
-              let message = error["message"] as? String
-        else { return false }
-
-        let item = CodexTranscriptItem(
-            id: UUID().uuidString,
-            role: .system,
-            text: "Error: \(message)"
-        )
-        onTranscriptItem(agent.id, item)
-        publishIfChanged(.error)
-        return true
     }
 }
 

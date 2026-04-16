@@ -91,6 +91,88 @@ enum CodexProtocol {
         }
     }
 
+    // MARK: - Incoming Events (parsed from [String: Any])
+
+    enum Event {
+        case response(requestId: Int, object: [String: Any])
+        case userInputRequest(requestId: Int, params: [String: Any])
+        case approvalRequest(requestId: Int, method: String, params: [String: Any])
+        case itemStarted(item: [String: Any])
+        case agentMessageDelta(itemId: String, delta: String)
+        case outputDelta(kind: ToolOutputKind, itemId: String, delta: String)
+        case itemCompleted(item: [String: Any])
+        case threadStatusChanged(status: [String: Any])
+        case error(message: String)
+        case unknown(method: String?)
+
+        enum ToolOutputKind {
+            case commandExecution
+            case fileChange
+        }
+
+        static func parse(_ object: [String: Any]) -> Event? {
+            if let id = object["id"] as? Int, object["method"] == nil {
+                return .response(requestId: id, object: object)
+            }
+            guard let method = object["method"] as? String else { return nil }
+            let params = object["params"] as? [String: Any] ?? [:]
+            let requestId = object["id"] as? Int
+
+            switch method {
+            case "item/tool/requestUserInput":
+                guard let requestId else { return .unknown(method: method) }
+                return .userInputRequest(requestId: requestId, params: params)
+
+            case "item/commandExecution/requestApproval",
+                 "item/fileChange/requestApproval",
+                 "item/permissions/requestApproval":
+                guard let requestId else { return .unknown(method: method) }
+                return .approvalRequest(requestId: requestId, method: method, params: params)
+
+            case "item/started":
+                guard let item = params["item"] as? [String: Any] else { return .unknown(method: method) }
+                return .itemStarted(item: item)
+
+            case "item/agentMessage/delta":
+                guard let itemId = params["itemId"] as? String,
+                      let delta = params["delta"] as? String,
+                      !delta.isEmpty
+                else { return .unknown(method: method) }
+                return .agentMessageDelta(itemId: itemId, delta: delta)
+
+            case "item/commandExecution/outputDelta":
+                guard let itemId = params["itemId"] as? String,
+                      let delta = params["delta"] as? String,
+                      !delta.isEmpty
+                else { return .unknown(method: method) }
+                return .outputDelta(kind: .commandExecution, itemId: itemId, delta: delta)
+
+            case "item/fileChange/outputDelta":
+                guard let itemId = params["itemId"] as? String,
+                      let delta = params["delta"] as? String,
+                      !delta.isEmpty
+                else { return .unknown(method: method) }
+                return .outputDelta(kind: .fileChange, itemId: itemId, delta: delta)
+
+            case "item/completed":
+                guard let item = params["item"] as? [String: Any] else { return .unknown(method: method) }
+                return .itemCompleted(item: item)
+
+            case "thread/status/changed":
+                guard let status = params["status"] as? [String: Any] else { return .unknown(method: method) }
+                return .threadStatusChanged(status: status)
+
+            case "error":
+                let errorInfo = params["error"] as? [String: Any] ?? [:]
+                let message = errorInfo["message"] as? String ?? "Unknown error"
+                return .error(message: message)
+
+            default:
+                return .unknown(method: method)
+            }
+        }
+    }
+
     // MARK: - Encoding Helpers
 
     static func encode(_ value: Encodable) -> Data? {
