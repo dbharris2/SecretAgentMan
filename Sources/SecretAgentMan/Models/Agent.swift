@@ -10,6 +10,7 @@ struct Agent: Identifiable, Hashable, Codable {
     var initialPrompt: String?
     var hasLaunched: Bool
     var createdAt: Date
+    var updatedAt: Date
 
     var folderName: String {
         folder.lastPathComponent
@@ -28,7 +29,8 @@ struct Agent: Identifiable, Hashable, Codable {
         sessionId: String? = nil,
         initialPrompt: String? = nil,
         hasLaunched: Bool = false,
-        createdAt: Date = Date()
+        createdAt: Date = Date(),
+        updatedAt: Date = Date()
     ) {
         self.id = id
         self.name = name
@@ -39,6 +41,7 @@ struct Agent: Identifiable, Hashable, Codable {
         self.initialPrompt = initialPrompt
         self.hasLaunched = hasLaunched
         self.createdAt = createdAt
+        self.updatedAt = updatedAt
     }
 
     init(from decoder: Decoder) throws {
@@ -52,5 +55,6 @@ struct Agent: Identifiable, Hashable, Codable {
         initialPrompt = try container.decodeIfPresent(String.self, forKey: .initialPrompt)
         hasLaunched = try container.decodeIfPresent(Bool.self, forKey: .hasLaunched) ?? false
         createdAt = try container.decode(Date.self, forKey: .createdAt)
+        updatedAt = try container.decodeIfPresent(Date.self, forKey: .updatedAt) ?? createdAt
     }
 }

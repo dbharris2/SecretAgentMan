@@ -124,7 +124,6 @@ struct SidebarView: View {
                         AgentRowView(
                             agent: agent,
                             isSelected: coordinator.store.selectedAgentId == agent.id,
-                            pendingPromptCount: coordinator.store.pendingPrompts(for: agent.id).count,
                             branchName: coordinator.repositoryMonitor.branchNames[agent.folderPath]
                         )
                         .tag(agent.id)
