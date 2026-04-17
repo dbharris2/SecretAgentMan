@@ -43,11 +43,11 @@ extension AgentState {
         case .idle:
             AgentStatePresentation(label: "Idle", systemImage: "circle", tone: .neutral)
         case .active:
-            AgentStatePresentation(label: "Working", systemImage: "bolt.circle.fill", tone: .info)
+            AgentStatePresentation(label: "Working", systemImage: "bolt.fill", tone: .info)
         case .needsPermission:
             AgentStatePresentation(
                 label: "Needs Approval",
-                systemImage: "exclamationmark.circle.fill",
+                systemImage: "hand.raised.fill",
                 tone: .orange
             )
         case .awaitingInput:
@@ -55,15 +55,15 @@ extension AgentState {
         case .awaitingResponse:
             AgentStatePresentation(
                 label: "Needs Input",
-                systemImage: "questionmark.circle.fill",
-                tone: .orange
+                systemImage: "questionmark.bubble.fill",
+                tone: .warning
             )
         case .finished:
             AgentStatePresentation(label: "Done", systemImage: "checkmark.circle", tone: .neutral)
         case .error:
             AgentStatePresentation(
                 label: "Error",
-                systemImage: "exclamationmark.triangle.fill",
+                systemImage: "xmark.octagon.fill",
                 tone: .danger
             )
         }

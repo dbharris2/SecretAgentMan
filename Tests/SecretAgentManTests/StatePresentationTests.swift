@@ -10,18 +10,23 @@ struct StatePresentationTests {
         ))
         #expect(AgentState.active.presentation == AgentStatePresentation(
             label: "Working",
-            systemImage: "bolt.circle.fill",
+            systemImage: "bolt.fill",
             tone: .info
         ))
         #expect(AgentState.needsPermission.presentation == AgentStatePresentation(
             label: "Needs Approval",
-            systemImage: "exclamationmark.circle.fill",
+            systemImage: "hand.raised.fill",
             tone: .orange
         ))
         #expect(AgentState.awaitingInput.presentation == AgentStatePresentation(
             label: "Ready",
             systemImage: "circle.fill",
             tone: .success
+        ))
+        #expect(AgentState.awaitingResponse.presentation == AgentStatePresentation(
+            label: "Needs Input",
+            systemImage: "questionmark.bubble.fill",
+            tone: .warning
         ))
         #expect(AgentState.finished.presentation == AgentStatePresentation(
             label: "Done",
@@ -30,7 +35,7 @@ struct StatePresentationTests {
         ))
         #expect(AgentState.error.presentation == AgentStatePresentation(
             label: "Error",
-            systemImage: "exclamationmark.triangle.fill",
+            systemImage: "xmark.octagon.fill",
             tone: .danger
         ))
     }
