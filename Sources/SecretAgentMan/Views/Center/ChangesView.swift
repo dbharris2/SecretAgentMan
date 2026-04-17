@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 struct ChangesView: View {
@@ -93,12 +94,9 @@ struct ChangesView: View {
                             }
                         }
                     }
-                    .padding(.vertical, 2)
-                    .listRowBackground(
-                        selectedFile == change.path
-                            ? theme.accent.opacity(0.2)
-                            : Color.clear
-                    )
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 3)
+                    .hoverHighlight(isSelected: selectedFile == change.path)
                     .contentShape(Rectangle())
                     .onTapGesture {
                         if selectedFile == change.path {
@@ -107,6 +105,16 @@ struct ChangesView: View {
                             selectedFile = change.path
                         }
                     }
+                    .contextMenu {
+                        Button("Copy File Name") {
+                            copyToPasteboard((change.path as NSString).lastPathComponent)
+                        }
+                        Button("Copy Path") {
+                            copyToPasteboard(change.path)
+                        }
+                    }
+                    .listRowBackground(Color.clear)
+                    .listRowInsets(EdgeInsets(top: 0, leading: 4, bottom: 0, trailing: 4))
                 }
             } header: {
                 HStack {
@@ -142,6 +150,11 @@ struct ChangesView: View {
         }
 
         return result.joined(separator: "\n")
+    }
+
+    private func copyToPasteboard(_ text: String) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
     }
 
     private func statusColor(_ status: FileChange.ChangeStatus, theme: AppTheme) -> Color {
