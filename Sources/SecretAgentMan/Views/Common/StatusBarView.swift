@@ -52,6 +52,11 @@ struct StatusBarView: View {
         let sessions = sessions
 
         HStack(spacing: 8) {
+            AgentStatusSummary(agents: coordinator.store.agents)
+
+            Divider()
+                .frame(height: 16)
+
             // Left: navigation toggles
             HStack(spacing: 8) {
                 panelToggleButton(icon: "doc.text", panel: .plans, label: "Plans")
@@ -318,6 +323,37 @@ private extension View {
             .padding(.horizontal, 6)
             .padding(.vertical, 3)
             .hoverHighlight(isSelected: isSelected)
+    }
+}
+
+private struct AgentStatusSummary: View {
+    let agents: [Agent]
+    @Environment(\.appTheme) private var theme
+
+    private static let trackedStates: [AgentState] = [
+        .active, .needsPermission, .awaitingResponse, .error,
+    ]
+
+    var body: some View {
+        HStack(spacing: 8) {
+            ForEach(Self.trackedStates, id: \.self) { state in
+                indicator(for: state)
+            }
+        }
+    }
+
+    private func indicator(for state: AgentState) -> some View {
+        let count = agents.count { $0.state == state }
+        let presentation = state.presentation
+        return HStack(spacing: 3) {
+            Image(systemName: presentation.systemImage)
+                .scaledFont(size: 10)
+                .foregroundStyle(presentation.tone.color(in: theme))
+            Text(verbatim: "\(count)")
+                .scaledFont(size: 11)
+                .foregroundStyle(count > 0 ? .primary : .secondary)
+        }
+        .help(presentation.label)
     }
 }
 
