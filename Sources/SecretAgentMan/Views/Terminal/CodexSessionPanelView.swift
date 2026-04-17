@@ -151,12 +151,19 @@ struct CodexSessionPanelView: View {
     private func sendDraft() {
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty || !pendingImages.isEmpty else { return }
+        let imageData = pendingImages.map(\.data)
         let imagePaths = pendingImages.compactMap { img -> String? in
             let path = FileManager.default.temporaryDirectory
                 .appendingPathComponent("codex-image-\(UUID().uuidString).png").path
             return FileManager.default.createFile(atPath: path, contents: img.data) ? path : nil
         }
-        coordinator.sendCodexMessage(for: agent.id, text: text.isEmpty ? "[Image]" : text, imagePaths: imagePaths)
+        let sendText = text.isEmpty ? "[Image]" : text
+        coordinator.codexMonitor.recordSentUserMessage(
+            for: agent.id,
+            text: sendText,
+            imageData: imageData
+        )
+        coordinator.sendCodexMessage(for: agent.id, text: sendText, imagePaths: imagePaths)
         draft = ""
         pendingImages.removeAll()
     }

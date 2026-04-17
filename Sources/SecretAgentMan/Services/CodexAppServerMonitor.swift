@@ -63,6 +63,18 @@ final class CodexAppServerMonitor {
                 var items = self.transcriptItems[id, default: []]
                 if let idx = items.firstIndex(where: { $0.id == item.id }) {
                     items[idx] = item
+                } else if item.role == .user,
+                          let localIdx = items.lastIndex(where: {
+                              $0.role == .user
+                                  && $0.id.hasPrefix("local-user-")
+                                  && $0.text == item.text
+                          }) {
+                    items[localIdx] = CodexTranscriptItem(
+                        id: item.id,
+                        role: item.role,
+                        text: item.text,
+                        images: items[localIdx].images.isEmpty ? item.images : items[localIdx].images
+                    )
                 } else {
                     items.append(item)
                 }
@@ -137,6 +149,19 @@ final class CodexAppServerMonitor {
 
     func sendMessage(for agentId: UUID, text: String, imagePaths: [String] = []) {
         observers[agentId]?.sendMessage(text, imagePaths: imagePaths)
+    }
+
+    func recordSentUserMessage(for agentId: UUID, text: String, imageData: [Data]) {
+        guard !text.isEmpty || !imageData.isEmpty else { return }
+        let item = CodexTranscriptItem(
+            id: "local-user-\(UUID().uuidString)",
+            role: .user,
+            text: text,
+            images: imageData
+        )
+        var items = transcriptItems[agentId, default: []]
+        items.append(item)
+        transcriptItems[agentId] = items
     }
 
     func setCollaborationMode(for agentId: UUID, mode: CodexCollaborationMode) {
@@ -241,6 +266,7 @@ private final class Observer: @unchecked Sendable {
     private var inProgressToolItems: [String: CodexTranscriptItem] = [:]
     private var streamingAgentMessages: [String: String] = [:]
     private var activeStreamingItemId: String?
+    private var pendingImageTempPaths: [String] = []
 
     init(
         agent: Agent,
@@ -469,6 +495,8 @@ private final class Observer: @unchecked Sendable {
             ["type": "localImage", "path": path] as [String: Any]
         }
         input.append(["type": "text", "text": trimmed])
+
+        pendingImageTempPaths.append(contentsOf: imagePaths)
 
         sendRequest(
             method: "turn/start",
@@ -804,6 +832,13 @@ private extension Observer {
                 activeStreamingItemId = nil
                 onStreamingText(agent.id, "")
             }
+        }
+
+        if itemType == "userMessage", !pendingImageTempPaths.isEmpty {
+            for path in pendingImageTempPaths {
+                try? FileManager.default.removeItem(atPath: path)
+            }
+            pendingImageTempPaths.removeAll()
         }
 
         if let sessionFilePath {

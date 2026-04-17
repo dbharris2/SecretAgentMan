@@ -357,11 +357,13 @@ extension CodexAppServerMonitor {
         switch type {
         case "userMessage":
             let text = extractText(from: item["content"])
-            guard !text.isEmpty else { return nil }
+            let images = extractLocalImageData(from: item["content"])
+            guard !text.isEmpty || !images.isEmpty else { return nil }
             return CodexTranscriptItem(
                 id: item["id"] as? String ?? UUID().uuidString,
                 role: .user,
-                text: text
+                text: text,
+                images: images
             )
         case "agentMessage":
             guard let text = item["text"] as? String, !text.isEmpty else { return nil }
@@ -480,6 +482,16 @@ extension CodexAppServerMonitor {
     fileprivate nonisolated static func extractText(from content: Any?) -> String {
         guard let parts = content as? [[String: Any]] else { return "" }
         return parts.compactMap { $0["text"] as? String }.joined()
+    }
+
+    fileprivate nonisolated static func extractLocalImageData(from content: Any?) -> [Data] {
+        guard let parts = content as? [[String: Any]] else { return [] }
+        return parts.compactMap { part -> Data? in
+            guard (part["type"] as? String) == "localImage",
+                  let path = part["path"] as? String
+            else { return nil }
+            return try? Data(contentsOf: URL(fileURLWithPath: path))
+        }
     }
 
     fileprivate nonisolated static func extractMessageText(from content: Any?) -> String {
