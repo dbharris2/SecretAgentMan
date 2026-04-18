@@ -152,10 +152,21 @@ final class AppCoordinator {
 
     func interruptAgent(for agentId: UUID) {
         guard let agent = store.agents.first(where: { $0.id == agentId }) else { return }
+        let isInFlight = switch agent.state {
+        case .active, .needsPermission, .awaitingResponse, .awaitingInput: true
+        case .idle, .finished, .error: false
+        }
+        let interruptMessage = "[Request interrupted by user]"
         switch agent.provider {
         case .claude:
+            if isInFlight {
+                claudeMonitor.recordSystemTranscript(for: agentId, text: interruptMessage)
+            }
             claudeMonitor.interrupt(for: agentId)
         case .codex:
+            if isInFlight {
+                codexMonitor.recordSystemTranscript(for: agentId, text: interruptMessage)
+            }
             codexMonitor.interrupt(for: agentId)
         }
     }

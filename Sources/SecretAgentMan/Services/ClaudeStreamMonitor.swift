@@ -1,3 +1,4 @@
+// swiftlint:disable file_length
 import Foundation
 import Observation
 
@@ -256,6 +257,17 @@ final class ClaudeStreamMonitor {
 
     func interrupt(for agentId: UUID) {
         observers[agentId]?.interrupt()
+    }
+
+    func recordSystemTranscript(for agentId: UUID, text: String) {
+        let item = CodexTranscriptItem(
+            id: "system-\(UUID().uuidString)",
+            role: .system,
+            text: text
+        )
+        var items = transcriptItems[agentId, default: []]
+        items.append(item)
+        transcriptItems[agentId] = items
     }
 
     func sendMessage(for agentId: UUID, text: String, images: [(Data, String)] = []) {
@@ -994,3 +1006,5 @@ private final class Observer: @unchecked Sendable {
         delegate.stateChanged(agent.id, state)
     }
 }
+
+// swiftlint:enable file_length

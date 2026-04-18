@@ -200,6 +200,38 @@ struct CodexProtocolTests {
     }
 
     @Test
+    func parsesTurnStartedEvent() {
+        let event = CodexProtocol.Event.parse([
+            "method": "turn/started",
+            "params": [
+                "threadId": "thread-1",
+                "turn": ["id": "turn-1"],
+            ],
+        ])
+        guard case let .turnStarted(turnId) = event else {
+            Issue.record("expected turnStarted")
+            return
+        }
+        #expect(turnId == "turn-1")
+    }
+
+    @Test
+    func parsesTurnCompletedEvent() {
+        let event = CodexProtocol.Event.parse([
+            "method": "turn/completed",
+            "params": [
+                "threadId": "thread-1",
+                "turn": ["id": "turn-1"],
+            ],
+        ])
+        guard case let .turnCompleted(turnId) = event else {
+            Issue.record("expected turnCompleted")
+            return
+        }
+        #expect(turnId == "turn-1")
+    }
+
+    @Test
     func parsesItemStartedEvent() {
         let event = CodexProtocol.Event.parse([
             "method": "item/started",

@@ -101,6 +101,8 @@ enum CodexProtocol {
         case agentMessageDelta(itemId: String, delta: String)
         case outputDelta(kind: ToolOutputKind, itemId: String, delta: String)
         case itemCompleted(item: [String: Any])
+        case turnStarted(turnId: String)
+        case turnCompleted(turnId: String)
         case threadStatusChanged(status: [String: Any])
         case error(message: String)
         case unknown(method: String?)
@@ -117,59 +119,107 @@ enum CodexProtocol {
             guard let method = object["method"] as? String else { return nil }
             let params = object["params"] as? [String: Any] ?? [:]
             let requestId = object["id"] as? Int
+            if let requestEvent = requestEvent(method: method, params: params, requestId: requestId) {
+                return requestEvent
+            }
+            if let itemEvent = itemEvent(method: method, params: params) {
+                return itemEvent
+            }
+            if let turnEvent = turnLifecycleEvent(method: method, params: params) {
+                return turnEvent
+            }
+            if let threadEvent = threadEvent(method: method, params: params) {
+                return threadEvent
+            }
+            if let errorEvent = errorEvent(method: method, params: params) {
+                return errorEvent
+            }
+            return .unknown(method: method)
+        }
 
+        private static func requestEvent(
+            method: String,
+            params: [String: Any],
+            requestId: Int?
+        ) -> Event? {
             switch method {
             case "item/tool/requestUserInput":
                 guard let requestId else { return .unknown(method: method) }
                 return .userInputRequest(requestId: requestId, params: params)
-
             case "item/commandExecution/requestApproval",
                  "item/fileChange/requestApproval",
                  "item/permissions/requestApproval":
                 guard let requestId else { return .unknown(method: method) }
                 return .approvalRequest(requestId: requestId, method: method, params: params)
+            default:
+                return nil
+            }
+        }
 
+        private static func itemEvent(method: String, params: [String: Any]) -> Event? {
+            switch method {
             case "item/started":
                 guard let item = params["item"] as? [String: Any] else { return .unknown(method: method) }
                 return .itemStarted(item: item)
-
             case "item/agentMessage/delta":
-                guard let itemId = params["itemId"] as? String,
-                      let delta = params["delta"] as? String,
-                      !delta.isEmpty
-                else { return .unknown(method: method) }
-                return .agentMessageDelta(itemId: itemId, delta: delta)
-
-            case "item/commandExecution/outputDelta":
-                guard let itemId = params["itemId"] as? String,
-                      let delta = params["delta"] as? String,
-                      !delta.isEmpty
-                else { return .unknown(method: method) }
-                return .outputDelta(kind: .commandExecution, itemId: itemId, delta: delta)
-
-            case "item/fileChange/outputDelta":
-                guard let itemId = params["itemId"] as? String,
-                      let delta = params["delta"] as? String,
-                      !delta.isEmpty
-                else { return .unknown(method: method) }
-                return .outputDelta(kind: .fileChange, itemId: itemId, delta: delta)
-
+                return deltaEvent(method: method, params: params)
+            case "item/commandExecution/outputDelta", "item/fileChange/outputDelta":
+                return toolOutputEvent(method: method, params: params)
             case "item/completed":
                 guard let item = params["item"] as? [String: Any] else { return .unknown(method: method) }
                 return .itemCompleted(item: item)
-
-            case "thread/status/changed":
-                guard let status = params["status"] as? [String: Any] else { return .unknown(method: method) }
-                return .threadStatusChanged(status: status)
-
-            case "error":
-                let errorInfo = params["error"] as? [String: Any] ?? [:]
-                let message = errorInfo["message"] as? String ?? "Unknown error"
-                return .error(message: message)
-
             default:
-                return .unknown(method: method)
+                return nil
             }
+        }
+
+        private static func deltaEvent(method: String, params: [String: Any]) -> Event {
+            guard let itemId = params["itemId"] as? String,
+                  let delta = params["delta"] as? String,
+                  !delta.isEmpty
+            else { return .unknown(method: method) }
+            return .agentMessageDelta(itemId: itemId, delta: delta)
+        }
+
+        private static func toolOutputEvent(method: String, params: [String: Any]) -> Event {
+            guard let itemId = params["itemId"] as? String,
+                  let delta = params["delta"] as? String,
+                  !delta.isEmpty
+            else { return .unknown(method: method) }
+            let kind: ToolOutputKind = method == "item/fileChange/outputDelta" ? .fileChange : .commandExecution
+            return .outputDelta(kind: kind, itemId: itemId, delta: delta)
+        }
+
+        private static func turnLifecycleEvent(method: String, params: [String: Any]) -> Event? {
+            switch method {
+            case "turn/started":
+                guard let turnId = turnId(from: params) else { return .unknown(method: method) }
+                return .turnStarted(turnId: turnId)
+            case "turn/completed":
+                guard let turnId = turnId(from: params) else { return .unknown(method: method) }
+                return .turnCompleted(turnId: turnId)
+            default:
+                return nil
+            }
+        }
+
+        private static func threadEvent(method: String, params: [String: Any]) -> Event? {
+            guard method == "thread/status/changed" else { return nil }
+            guard let status = params["status"] as? [String: Any] else { return .unknown(method: method) }
+            return .threadStatusChanged(status: status)
+        }
+
+        private static func errorEvent(method: String, params: [String: Any]) -> Event? {
+            guard method == "error" else { return nil }
+            let errorInfo = params["error"] as? [String: Any] ?? [:]
+            let message = errorInfo["message"] as? String ?? "Unknown error"
+            return .error(message: message)
+        }
+
+        private static func turnId(from params: [String: Any]) -> String? {
+            let turn = params["turn"] as? [String: Any]
+            let turnId = (turn?["id"] as? String) ?? (params["turnId"] as? String) ?? ""
+            return turnId.isEmpty ? nil : turnId
         }
     }
 

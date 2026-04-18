@@ -186,6 +186,17 @@ final class CodexAppServerMonitor {
         observers[agentId]?.interrupt()
     }
 
+    func recordSystemTranscript(for agentId: UUID, text: String) {
+        let item = CodexTranscriptItem(
+            id: "system-\(UUID().uuidString)",
+            role: .system,
+            text: text
+        )
+        var items = transcriptItems[agentId, default: []]
+        items.append(item)
+        transcriptItems[agentId] = items
+    }
+
     func respondToUserInput(for agentId: UUID, answers: [String: [String]]) {
         guard pendingUserInputRequests[agentId] != nil else { return }
         observers[agentId]?.respondToUserInput(answers: answers)
@@ -266,6 +277,7 @@ private final class Observer: @unchecked Sendable {
     private var inProgressToolItems: [String: CodexTranscriptItem] = [:]
     private var streamingAgentMessages: [String: String] = [:]
     private var activeStreamingItemId: String?
+    private var activeTurnId: String?
     private var pendingImageTempPaths: [String] = []
 
     init(
@@ -310,6 +322,11 @@ private final class Observer: @unchecked Sendable {
         stderrPipe.fileHandleForReading.readabilityHandler = { [weak self] handle in
             self?.consumeStderr(handle.availableData)
         }
+        process.terminationHandler = { [weak self] _ in
+            self?.queue.async { [weak self] in
+                self?.handleProcessTermination()
+            }
+        }
 
         do {
             try process.run()
@@ -331,6 +348,7 @@ private final class Observer: @unchecked Sendable {
         pendingUserInputRequest = nil
         pendingMessages.removeAll()
         didInitialize = false
+        activeTurnId = nil
         if process.isRunning {
             process.terminate()
         }
@@ -338,8 +356,18 @@ private final class Observer: @unchecked Sendable {
 
     func interrupt() {
         queue.async { [weak self] in
-            guard let self, self.process.isRunning else { return }
-            self.process.interrupt()
+            guard let self,
+                  self.process.isRunning,
+                  let threadId = self.agent.sessionId
+            else { return }
+            let turnId = self.activeTurnId ?? "pending"
+            self.sendRequest(
+                method: "turn/interrupt",
+                params: [
+                    "threadId": threadId,
+                    "turnId": turnId,
+                ]
+            ) { _ in }
         }
     }
 
@@ -497,6 +525,7 @@ private final class Observer: @unchecked Sendable {
         input.append(["type": "text", "text": trimmed])
 
         pendingImageTempPaths.append(contentsOf: imagePaths)
+        activeTurnId = "pending"
 
         sendRequest(
             method: "turn/start",
@@ -594,12 +623,13 @@ private final class Observer: @unchecked Sendable {
     }
 
     private func writeEncodable(_ value: Encodable) {
-        guard let data = CodexProtocol.encodeLine(value) else { return }
+        guard process.isRunning, let data = CodexProtocol.encodeLine(value) else { return }
         stdinPipe.fileHandleForWriting.write(data)
     }
 
     private func writeJSONObject(_ payload: [String: Any]) {
-        guard let data = try? JSONSerialization.data(withJSONObject: payload, options: []),
+        guard process.isRunning,
+              let data = try? JSONSerialization.data(withJSONObject: payload, options: []),
               var line = String(data: data, encoding: .utf8)
         else { return }
         line.append("\n")
@@ -611,6 +641,7 @@ private final class Observer: @unchecked Sendable {
         let messages = pendingMessages
         pendingMessages.removeAll()
         for message in messages {
+            activeTurnId = "pending"
             sendRequest(
                 method: "turn/start",
                 params: [
@@ -719,6 +750,18 @@ private final class Observer: @unchecked Sendable {
         else { return nil }
         return status
     }
+
+    private func handleProcessTermination() {
+        stdoutPipe.fileHandleForReading.readabilityHandler = nil
+        stderrPipe.fileHandleForReading.readabilityHandler = nil
+        pendingRequests.removeAll()
+        pollTimer?.invalidate()
+        pollTimer = nil
+        pendingApprovalRequest = nil
+        pendingUserInputRequest = nil
+        didInitialize = false
+        activeTurnId = nil
+    }
 }
 
 private extension Observer {
@@ -759,8 +802,20 @@ private extension Observer {
         case let .itemCompleted(item):
             handleItemCompleted(item: item)
 
+        case let .turnStarted(turnId):
+            activeTurnId = turnId
+
+        case .turnCompleted:
+            activeTurnId = nil
+
         case let .threadStatusChanged(status):
             if let mapped = CodexAppServerMonitor.agentState(fromThreadStatus: status) {
+                switch mapped {
+                case .idle, .finished, .error:
+                    activeTurnId = nil
+                case .active, .needsPermission, .awaitingResponse, .awaitingInput:
+                    break
+                }
                 publishIfChanged(mapped)
             }
 
