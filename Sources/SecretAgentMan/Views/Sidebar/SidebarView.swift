@@ -72,15 +72,21 @@ struct SidebarView: View {
                 ForEach(groupedAgents, id: \.folder) { group in
                     let isExpanded = folderExpandedBinding(for: group.folder, in: collapsedSet)
 
-                    HStack(spacing: 8) {
+                    HStack(spacing: 10) {
                         Image(systemName: isExpanded.wrappedValue ? "folder.fill" : "folder")
                             .scaledFont(size: 13)
                             .foregroundStyle(theme.accent)
                             .frame(width: 16)
 
-                        Text(group.agents.first?.folderName ?? "")
-                            .scaledFont(size: 13, weight: .bold)
-                            .foregroundStyle(theme.foreground)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(group.agents.first?.folderName ?? "")
+                                .scaledFont(size: 13, weight: .bold)
+                                .foregroundStyle(theme.foreground)
+
+                            if let branch = coordinator.repositoryMonitor.branchNames[group.folder] {
+                                BranchInfoView(branchName: branch)
+                            }
+                        }
 
                         Spacer()
 
@@ -121,8 +127,7 @@ struct SidebarView: View {
                         ForEach(group.agents) { agent in
                             AgentRowView(
                                 agent: agent,
-                                isSelected: coordinator.store.selectedAgentId == agent.id,
-                                branchName: coordinator.repositoryMonitor.branchNames[agent.folderPath]
+                                isSelected: coordinator.store.selectedAgentId == agent.id
                             )
                             .onTapGesture {
                                 coordinator.store.selectAgent(id: agent.id)

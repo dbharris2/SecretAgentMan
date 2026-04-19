@@ -3,31 +3,24 @@ import SwiftUI
 struct AgentRowView: View {
     let agent: Agent
     let isSelected: Bool
-    var branchName: String?
     @Environment(\.appTheme) private var theme
 
     var body: some View {
         HStack(spacing: 8) {
             StatusBadge(state: agent.state)
 
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 5) {
-                    Text(agent.name)
-                        .scaledFont(size: 13, weight: isSelected ? .semibold : .regular)
-                        .lineLimit(1)
+            HStack(spacing: 5) {
+                Text(agent.name)
+                    .scaledFont(size: 13, weight: isSelected ? .semibold : .regular)
+                    .lineLimit(1)
 
-                    Text(agent.provider.displayName)
-                        .scaledFont(size: 9, weight: .medium)
-                        .foregroundStyle(providerPillColor)
-                        .padding(.horizontal, 5)
-                        .padding(.vertical, 1)
-                        .background(providerPillColor.opacity(0.15))
-                        .clipShape(Capsule())
-                }
-
-                if let branch = branchName {
-                    BranchInfoView(branchName: branch)
-                }
+                Text(agent.provider.displayName)
+                    .scaledFont(size: 9, weight: .medium)
+                    .foregroundStyle(providerPillColor)
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 1)
+                    .background(providerPillColor.opacity(0.15))
+                    .clipShape(Capsule())
             }
 
             Spacer()
