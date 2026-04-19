@@ -67,86 +67,90 @@ struct SidebarView: View {
     }
 
     private func agentList(collapsedSet: Set<String>) -> some View {
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: 0) {
-                ForEach(groupedAgents, id: \.folder) { group in
-                    let isExpanded = folderExpandedBinding(for: group.folder, in: collapsedSet)
+        List {
+            ForEach(groupedAgents, id: \.folder) { group in
+                let isExpanded = folderExpandedBinding(for: group.folder, in: collapsedSet)
 
-                    HStack(spacing: 10) {
-                        Image(systemName: isExpanded.wrappedValue ? "folder.fill" : "folder")
-                            .scaledFont(size: 13)
-                            .foregroundStyle(theme.accent)
-                            .frame(width: 16)
+                HStack(spacing: 10) {
+                    Image(systemName: isExpanded.wrappedValue ? "folder.fill" : "folder")
+                        .scaledFont(size: 13)
+                        .foregroundStyle(theme.accent)
+                        .frame(width: 16)
 
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(group.agents.first?.folderName ?? "")
-                                .scaledFont(size: 13, weight: .bold)
-                                .foregroundStyle(theme.foreground)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(group.agents.first?.folderName ?? "")
+                            .scaledFont(size: 13, weight: .bold)
+                            .foregroundStyle(theme.foreground)
 
-                            if let branch = coordinator.repositoryMonitor.branchNames[group.folder] {
-                                BranchInfoView(branchName: branch)
-                            }
-                        }
-
-                        Spacer()
-
-                        Menu {
-                            Button("New Agent in Folder...") {
-                                newAgentPrefillFolder = group.agents.first?.folder
-                                showingNewAgent = true
-                            }
-                        } label: {
-                            Image(systemName: "ellipsis")
-                                .scaledFont(size: 13)
-                                .foregroundStyle(.secondary)
-                                .frame(width: 16, height: 16)
-                                .contentShape(Rectangle())
-                        }
-                        .menuStyle(.borderlessButton)
-                        .menuIndicator(.hidden)
-                        .fixedSize()
-                    }
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 6)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .contentShape(Rectangle())
-                    .hoverHighlight(cornerRadius: 0)
-                    .onTapGesture {
-                        withAnimation(.snappy(duration: 0.2)) {
-                            isExpanded.wrappedValue.toggle()
+                        if let branch = coordinator.repositoryMonitor.branchNames[group.folder] {
+                            BranchInfoView(branchName: branch)
                         }
                     }
-                    .contextMenu {
+
+                    Spacer()
+
+                    Menu {
                         Button("New Agent in Folder...") {
                             newAgentPrefillFolder = group.agents.first?.folder
                             showingNewAgent = true
                         }
+                    } label: {
+                        Image(systemName: "ellipsis")
+                            .scaledFont(size: 13)
+                            .foregroundStyle(.secondary)
+                            .frame(width: 16, height: 16)
+                            .contentShape(Rectangle())
                     }
+                    .menuStyle(.borderlessButton)
+                    .menuIndicator(.hidden)
+                    .fixedSize()
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+                .hoverHighlight(cornerRadius: 0)
+                .listRowInsets(EdgeInsets())
+                .listRowBackground(Color.clear)
+                .onTapGesture {
+                    withAnimation(.snappy(duration: 0.2)) {
+                        isExpanded.wrappedValue.toggle()
+                    }
+                }
+                .contextMenu {
+                    Button("New Agent in Folder...") {
+                        newAgentPrefillFolder = group.agents.first?.folder
+                        showingNewAgent = true
+                    }
+                }
 
-                    if isExpanded.wrappedValue {
-                        ForEach(group.agents) { agent in
-                            AgentRowView(
-                                agent: agent,
-                                isSelected: coordinator.store.selectedAgentId == agent.id
-                            )
-                            .onTapGesture {
-                                coordinator.store.selectAgent(id: agent.id)
+                if isExpanded.wrappedValue {
+                    ForEach(group.agents) { agent in
+                        AgentRowView(
+                            agent: agent,
+                            isSelected: coordinator.store.selectedAgentId == agent.id
+                        )
+                        .listRowInsets(EdgeInsets())
+                        .listRowBackground(Color.clear)
+                        .onTapGesture {
+                            coordinator.store.selectAgent(id: agent.id)
+                        }
+                        .contextMenu {
+                            Button("Rename...") {
+                                renameText = agent.name
+                                renamingAgentId = agent.id
                             }
-                            .contextMenu {
-                                Button("Rename...") {
-                                    renameText = agent.name
-                                    renamingAgentId = agent.id
-                                }
-                                Divider()
-                                Button("Remove", role: .destructive) {
-                                    coordinator.removeAgent(agent.id)
-                                }
+                            Divider()
+                            Button("Remove", role: .destructive) {
+                                coordinator.removeAgent(agent.id)
                             }
                         }
                     }
                 }
             }
         }
+        .listStyle(.sidebar)
+        .scrollContentBackground(.hidden)
         .background(theme.surface)
     }
 
