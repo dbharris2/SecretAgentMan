@@ -153,7 +153,7 @@ struct DiffServiceTests {
             encoding: .utf8
         )
 
-        let diff = await service.fetchFullDiff(in: root)
+        let diff = try #require(await service.fetchFullDiff(in: root))
 
         #expect(diff.contains("diff --git a/file.txt b/file.txt"))
         #expect(diff.contains("-old line"))

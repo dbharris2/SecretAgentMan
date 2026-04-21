@@ -31,6 +31,9 @@ final class RepositoryMonitor {
     private let selectedVCSDiffDebounceDelay: Duration = .milliseconds(400)
     private let selfInducedVCSSuppression: Duration = .seconds(1)
 
+    private static let maxDiffRetries = 2
+    private static let diffRetryDelay: Duration = .milliseconds(500)
+
     init(store: AgentStore, diffService: DiffService = DiffService()) {
         self.store = store
         self.diffService = diffService
@@ -95,7 +98,7 @@ final class RepositoryMonitor {
         refreshDiffs(trigger: "invalidateDiffs")
     }
 
-    func refreshDiffs(trigger: String = "manual") {
+    func refreshDiffs(trigger: String = "manual", retryCount: Int = 0) {
         guard let agent = store.selectedAgent else {
             fileChanges = []
             fullDiff = ""
@@ -109,14 +112,32 @@ final class RepositoryMonitor {
         let diffService = self.diffService
         Task.detached(priority: .background) {
             let t0 = CFAbsoluteTimeGetCurrent()
-            let diff = await diffService.fetchFullDiff(in: folder)
+            let result = await diffService.fetchFullDiff(in: folder)
             PerfLogger.log("fetchFullDiff", start: t0, details: "folder=\(folder.lastPathComponent)")
-            let changes = diffService.parseChanges(from: diff)
+            let changes = result.map { diffService.parseChanges(from: $0) }
             await MainActor.run {
                 guard generation == self.diffGeneration, self.store.selectedAgentId == agentId else { return }
+                guard let diff = result, let changes else {
+                    // Transient VCS failure (e.g. mid-pull/rebase). Preserve existing state and retry.
+                    if retryCount < Self.maxDiffRetries {
+                        self.scheduleDiffRetry(trigger: trigger, retryCount: retryCount + 1)
+                    }
+                    return
+                }
                 self.fullDiff = diff
                 self.fileChanges = changes
                 PerfLogger.log("refreshDiffs.total", start: refreshStart, details: "folder=\(folder.lastPathComponent) trigger=\(trigger)")
+            }
+        }
+    }
+
+    private func scheduleDiffRetry(trigger: String, retryCount: Int) {
+        selectedVCSDiffRefreshTask?.cancel()
+        selectedVCSDiffRefreshTask = Task { [weak self] in
+            try? await Task.sleep(for: Self.diffRetryDelay)
+            guard !Task.isCancelled, let self else { return }
+            await MainActor.run {
+                self.refreshDiffs(trigger: "\(trigger):retry\(retryCount)", retryCount: retryCount)
             }
         }
     }
