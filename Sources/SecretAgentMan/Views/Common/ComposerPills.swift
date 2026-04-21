@@ -1,14 +1,11 @@
 import SwiftUI
 
-// MARK: - Model Pill (read-only)
-
-struct ClaudeModelPill: View {
-    let agentId: UUID
-    let monitor: ClaudeStreamMonitor
+struct ComposerPill: View {
+    let text: String
     @Environment(\.appTheme) private var theme
 
     var body: some View {
-        Text(monitor.modelNames[agentId] ?? "Claude")
+        Text(text)
             .scaledFont(size: 11)
             .foregroundStyle(.secondary)
             .padding(.horizontal, 8)
@@ -24,23 +21,24 @@ struct ClaudeModelPill: View {
     }
 }
 
-// MARK: - Mode Picker
+struct ComposerModePickerButton<Mode: Hashable>: View {
+    let title: String
+    let modes: [Mode]
+    let currentMode: Mode
+    let label: (Mode) -> String
+    let shortcutKey: KeyEquivalent
+    let shortcutModifiers: EventModifiers
+    let shortcutLabel: String
+    let onSelect: (Mode) -> Void
 
-struct ClaudeModePickerButton: View {
-    let agentId: UUID
-    let monitor: ClaudeStreamMonitor
     @State private var isPresented = false
     @Environment(\.appTheme) private var theme
-
-    private var currentMode: String {
-        monitor.permissionModes[agentId] ?? ClaudeStreamMonitor.defaultPermissionMode
-    }
 
     var body: some View {
         Button {
             isPresented.toggle()
         } label: {
-            Text(currentMode)
+            Text(label(currentMode))
                 .scaledFont(size: 11)
                 .foregroundStyle(.secondary)
                 .padding(.horizontal, 8)
@@ -52,31 +50,40 @@ struct ClaudeModePickerButton: View {
                 )
         }
         .buttonStyle(.plain)
-        .keyboardShortcut("m", modifiers: [.command, .shift])
+        .keyboardShortcut(shortcutKey, modifiers: shortcutModifiers)
         .popover(isPresented: $isPresented, arrowEdge: .bottom) {
-            ClaudeModeList(monitor: monitor, agentId: agentId) { isPresented = false }
+            ComposerModeList(
+                title: title,
+                shortcutLabel: shortcutLabel,
+                modes: modes,
+                currentMode: currentMode,
+                label: label
+            ) { mode in
+                onSelect(mode)
+                isPresented = false
+            }
         }
     }
 }
 
-private struct ClaudeModeList: View {
-    let monitor: ClaudeStreamMonitor
-    let agentId: UUID
-    let onDismiss: () -> Void
-    @Environment(\.appTheme) private var theme
+private struct ComposerModeList<Mode: Hashable>: View {
+    let title: String
+    let shortcutLabel: String
+    let modes: [Mode]
+    let currentMode: Mode
+    let label: (Mode) -> String
+    let onSelect: (Mode) -> Void
 
-    private var currentMode: String {
-        monitor.permissionModes[agentId] ?? ClaudeStreamMonitor.defaultPermissionMode
-    }
+    @Environment(\.appTheme) private var theme
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
             HStack {
-                Text("Mode")
+                Text(title)
                     .scaledFont(size: 11, weight: .semibold)
                     .foregroundStyle(.secondary)
                 Spacer()
-                Text("⌘⇧M")
+                Text(shortcutLabel)
                     .scaledFont(size: 9, weight: .medium, design: .monospaced)
                     .foregroundStyle(.secondary)
                     .padding(.horizontal, 4)
@@ -87,13 +94,12 @@ private struct ClaudeModeList: View {
                     )
             }
 
-            ForEach(ClaudeStreamMonitor.permissionModes, id: \.self) { mode in
+            ForEach(modes, id: \.self) { mode in
                 Button {
-                    monitor.setPermissionMode(for: agentId, mode: mode)
-                    onDismiss()
+                    onSelect(mode)
                 } label: {
                     HStack {
-                        Text(mode).scaledFont(size: 12)
+                        Text(label(mode)).scaledFont(size: 12)
                         Spacer()
                         if currentMode == mode {
                             Image(systemName: "checkmark")

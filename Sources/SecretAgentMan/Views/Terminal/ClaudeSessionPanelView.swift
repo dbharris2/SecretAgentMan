@@ -156,7 +156,7 @@ struct ClaudeSessionPanelView: View {
             pendingImages: $pendingImages,
             composerFocused: $composerFocused,
             fontScale: fontScale,
-            statusText: pendingElicitation != nil ? "Answering question..." : contextUsageLabel,
+            statusText: pendingElicitation != nil ? "Answering question..." : "",
             statusColor: pendingElicitation != nil ? theme.yellow : .secondary,
             sendDisabled: draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && pendingImages.isEmpty,
             showsSendButton: false,
@@ -169,14 +169,21 @@ struct ClaudeSessionPanelView: View {
             }
         } trailingControls: {
             HStack(spacing: 6) {
-                ClaudeModelPill(
-                    agentId: agent.id,
-                    monitor: coordinator.claudeMonitor
+                ComposerPill(
+                    text: coordinator.claudeMonitor.modelNames[agent.id] ?? "Claude"
                 )
-                ClaudeModePickerButton(
-                    agentId: agent.id,
-                    monitor: coordinator.claudeMonitor
-                )
+                ComposerModePickerButton(
+                    title: "Mode",
+                    modes: ClaudeStreamMonitor.permissionModes,
+                    currentMode: coordinator.claudeMonitor.permissionModes[agent.id]
+                        ?? ClaudeStreamMonitor.defaultPermissionMode,
+                    label: { $0 },
+                    shortcutKey: "m",
+                    shortcutModifiers: [.command, .shift],
+                    shortcutLabel: "⌘⇧M"
+                ) { mode in
+                    coordinator.claudeMonitor.setPermissionMode(for: agent.id, mode: mode)
+                }
             }
         }
     }
@@ -211,11 +218,6 @@ struct ClaudeSessionPanelView: View {
             return .handled
         }
         return .ignored
-    }
-
-    private var contextUsageLabel: String {
-        let pct = coordinator.claudeMonitor.contextPercentUsed[agent.id] ?? 0
-        return pct > 0 ? "\(Int(pct))% ctx" : ""
     }
 
     private func sendDraft() {

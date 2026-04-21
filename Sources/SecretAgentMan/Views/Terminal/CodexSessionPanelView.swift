@@ -35,17 +35,13 @@ struct CodexSessionPanelView: View {
         agent.state == .active && streamingText == nil
     }
 
-    private var composerStatusText: String {
-        let monitor = coordinator.codexMonitor
-        let model = monitor.modelNames[agent.id].flatMap { $0.isEmpty ? nil : $0 } ?? "Codex"
-        let pct = monitor.contextPercentUsedByAgent[agent.id] ?? 0
-        let mode = monitor.collaborationModes[agent.id]?.label ?? CodexCollaborationMode.default.label
-        var parts = [model]
-        if pct > 0 {
-            parts.append("\(Int(pct))% ctx")
-        }
-        parts.append("\(mode) (ctrl+m)")
-        return parts.joined(separator: " · ")
+    private var currentModelName: String {
+        let name = coordinator.codexMonitor.modelNames[agent.id]
+        return (name?.isEmpty == false ? name : nil) ?? "Codex"
+    }
+
+    private var currentCollaborationMode: CodexCollaborationMode {
+        coordinator.codexMonitor.collaborationModes[agent.id] ?? .default
     }
 
     var body: some View {
@@ -112,7 +108,7 @@ struct CodexSessionPanelView: View {
             pendingImages: $pendingImages,
             composerFocused: $composerFocused,
             fontScale: fontScale,
-            statusText: composerStatusText,
+            statusText: "",
             statusColor: .secondary,
             sendDisabled: draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && pendingImages.isEmpty,
             onSend: sendDraft,
@@ -121,15 +117,24 @@ struct CodexSessionPanelView: View {
         ) {
             EmptyView()
         } trailingControls: {
-            EmptyView()
+            HStack(spacing: 6) {
+                ComposerPill(text: currentModelName)
+                ComposerModePickerButton(
+                    title: "Mode",
+                    modes: CodexCollaborationMode.allCases,
+                    currentMode: currentCollaborationMode,
+                    label: { $0.label },
+                    shortcutKey: "m",
+                    shortcutModifiers: [.command, .shift],
+                    shortcutLabel: "⌘⇧M"
+                ) { mode in
+                    coordinator.setCodexCollaborationMode(for: agent.id, mode: mode)
+                }
+            }
         }
     }
 
     private func handleComposerKeyPress(_ keyPress: KeyPress) -> KeyPress.Result {
-        if keyPress.key == .init("m"), keyPress.modifiers.contains(.control) {
-            cycleCollaborationMode()
-            return .handled
-        }
         if keyPress.key == .return {
             if keyPress.modifiers.contains(.shift) {
                 return .ignored
@@ -138,14 +143,6 @@ struct CodexSessionPanelView: View {
             return .handled
         }
         return .ignored
-    }
-
-    private func cycleCollaborationMode() {
-        let modes = CodexCollaborationMode.allCases
-        let current = coordinator.codexMonitor.collaborationModes[agent.id] ?? .default
-        let idx = modes.firstIndex(of: current) ?? 0
-        let next = modes[(idx + 1) % modes.count]
-        coordinator.setCodexCollaborationMode(for: agent.id, mode: next)
     }
 
     private func sendDraft() {
