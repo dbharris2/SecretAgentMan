@@ -29,9 +29,9 @@ actor DiffService {
                     "if(description, description.first_line(), change_id.shortest(8))",
                 ],
                 in: directory
-            )
+            ) ?? ""
         case .git:
-            raw = await runCommand("/usr/bin/git", args: ["branch", "--show-current"], in: directory)
+            raw = await runCommand("/usr/bin/git", args: ["branch", "--show-current"], in: directory) ?? ""
         case .none:
             return nil
         }
@@ -43,7 +43,7 @@ actor DiffService {
 
     /// Get the "owner/repo" name from git remote (local, no API call). Suitable for caching.
     nonisolated func fetchRepoName(in directory: URL) async -> String? {
-        let remoteRaw = await runCommand("/usr/bin/git", args: ["remote", "get-url", "origin"], in: directory)
+        let remoteRaw = await runCommand("/usr/bin/git", args: ["remote", "get-url", "origin"], in: directory) ?? ""
         return Self.parseRepoFromRemote(remoteRaw.trimmingCharacters(in: .whitespacesAndNewlines))
     }
 
@@ -56,12 +56,12 @@ actor DiffService {
                 "/opt/homebrew/bin/jj",
                 args: ["log", "-r", "@", "--no-graph", "-T", "bookmarks"],
                 in: directory
-            )
+            ) ?? ""
             let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
             return trimmed.components(separatedBy: " ").first { !$0.isEmpty }?
                 .trimmingCharacters(in: CharacterSet(charactersIn: "*"))
         case .git:
-            let raw = await runCommand("/usr/bin/git", args: ["branch", "--show-current"], in: directory)
+            let raw = await runCommand("/usr/bin/git", args: ["branch", "--show-current"], in: directory) ?? ""
             let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
             return trimmed.isEmpty ? nil : trimmed
         case .none:
@@ -86,7 +86,9 @@ actor DiffService {
         return "\(parts[0])/\(parts[1])"
     }
 
-    nonisolated func fetchFullDiff(in directory: URL) async -> String {
+    /// Returns the full diff, or `nil` if the VCS command failed (non-zero exit or launch error).
+    /// Empty string means "no changes"; `nil` signals a transient/real error the caller should handle.
+    nonisolated func fetchFullDiff(in directory: URL) async -> String? {
         let vcs = detectVCS(in: directory)
         switch vcs {
         case .jj:
@@ -187,7 +189,9 @@ actor DiffService {
         return .modified
     }
 
-    private nonisolated func runCommand(_ command: String, args: [String], in directory: URL) async -> String {
+    /// Runs `command` and returns stdout on success (exit code 0), or `nil` on launch failure
+    /// or non-zero exit. `nil` lets callers distinguish real errors from empty-but-successful output.
+    private nonisolated func runCommand(_ command: String, args: [String], in directory: URL) async -> String? {
         let process = Process()
         let pipe = Pipe()
 
@@ -201,9 +205,10 @@ actor DiffService {
             try process.run()
             let data = pipe.fileHandleForReading.readDataToEndOfFile()
             process.waitUntilExit()
+            guard process.terminationStatus == 0 else { return nil }
             return String(data: data, encoding: .utf8) ?? ""
         } catch {
-            return ""
+            return nil
         }
     }
 }
