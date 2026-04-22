@@ -97,7 +97,12 @@ actor GitHubPRService {
         additions deletions changedFiles
         reviewDecision isDraft mergeStateStatus updatedAt
         totalCommentsCount
-        reviewRequests(first: 5) { nodes { requestedReviewer { ... on User { login avatarUrl } } } }
+        reviewRequests(first: 5) { nodes { requestedReviewer {
+            __typename
+            ... on User { login avatarUrl }
+            ... on Team { name avatarUrl }
+            ... on Mannequin { login avatarUrl }
+        } } }
         latestReviews(first: 5) { nodes { author { login avatarUrl } } }
         statusCheckRollup { state }
     """
@@ -287,12 +292,16 @@ actor GitHubPRService {
 
         let requestNodes = ((node["reviewRequests"] as? [String: Any])?["nodes"] as? [[String: Any]]) ?? []
         for req in requestNodes {
-            if let reviewer = req["requestedReviewer"] as? [String: Any],
-               let login = reviewer["login"] as? String,
-               seenLogins.insert(login).inserted,
-               let avatarUrl = URL(string: "https://github.com/\(login).png?size=36") {
-                reviewers.append(PRReviewer(login: login, avatarURL: avatarUrl))
-            }
+            guard let reviewer = req["requestedReviewer"] as? [String: Any] else { continue }
+            let isTeam = (reviewer["__typename"] as? String) == "Team"
+            guard let identifier = (reviewer["login"] as? String) ?? (reviewer["name"] as? String),
+                  seenLogins.insert(identifier).inserted
+            else { continue }
+            let avatarURL: URL? = isTeam
+                ? (reviewer["avatarUrl"] as? String).flatMap { URL(string: $0) }
+                : URL(string: "https://github.com/\(identifier).png?size=36")
+            guard let avatarURL else { continue }
+            reviewers.append(PRReviewer(login: identifier, avatarURL: avatarURL))
         }
         let reviewNodes = ((node["latestReviews"] as? [String: Any])?["nodes"] as? [[String: Any]]) ?? []
         for rev in reviewNodes {
