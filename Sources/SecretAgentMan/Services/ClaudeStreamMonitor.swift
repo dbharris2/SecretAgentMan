@@ -356,12 +356,14 @@ final class ClaudeStreamMonitor {
                 let name = block["name"] as? String ?? "Tool"
                 let input = block["input"] as? [String: Any]
                 let summary = toolUseSummary(name: name, input: input)
-                // AskUserQuestion is Claude asking the user — show as assistant message
-                let role: CodexTranscriptRole = name == "AskUserQuestion" ? .assistant : .system
+                // AskUserQuestion and TodoWrite are Claude communicating with the user —
+                // show as assistant messages so they aren't collapsed into the tool drawer.
+                let role: CodexTranscriptRole = (name == "AskUserQuestion" || name == "TodoWrite") ? .assistant : .system
                 items.append(CodexTranscriptItem(
                     id: "\(baseId)-tool-\(index)",
                     role: role,
-                    text: summary
+                    text: summary,
+                    toolName: name
                 ))
             default:
                 break
@@ -426,6 +428,8 @@ final class ClaudeStreamMonitor {
                 return "**Question**: \(question)"
             }
             return "**Question**"
+        case "TodoWrite":
+            return todoWriteSummary(input: input)
         case "ToolSearch":
             let query = input?["query"] as? String ?? ""
             return "**ToolSearch**: `\(query)`"
@@ -449,6 +453,30 @@ final class ClaudeStreamMonitor {
             }
             return "**\(name)**"
         }
+    }
+
+    private nonisolated static func todoWriteSummary(input: [String: Any]?) -> String {
+        guard let todos = input?["todos"] as? [[String: Any]], !todos.isEmpty else {
+            return "**TODO list**"
+        }
+        let completed = todos.count(where: { ($0["status"] as? String) == "completed" })
+        let inProgress = todos.count(where: { ($0["status"] as? String) == "in_progress" })
+        var segments: [String] = []
+        if inProgress > 0 { segments.append("\(inProgress) in progress") }
+        segments.append("\(completed)/\(todos.count) complete")
+        let header = "**TODO list** (\(segments.joined(separator: ", ")))"
+
+        let rows = todos.map { todo -> String in
+            let status = todo["status"] as? String ?? "pending"
+            let content = todo["content"] as? String ?? ""
+            let activeForm = todo["activeForm"] as? String ?? content
+            switch status {
+            case "completed": return "- ✅ \(content)"
+            case "in_progress": return "- 🔄 **\(activeForm)**"
+            default: return "- ⬜ \(content)"
+            }
+        }
+        return ([header] + rows).joined(separator: "\n")
     }
 
     nonisolated static func friendlyModelName(_ raw: String) -> String {

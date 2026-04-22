@@ -85,6 +85,30 @@ struct SessionTranscriptBubble: View {
     }
 }
 
+struct SessionTodoCard: View {
+    let text: String
+    let fontScale: Double
+    @Environment(\.appTheme) private var theme
+
+    var body: some View {
+        HStack(alignment: .top, spacing: Spacing.lg) {
+            Image(systemName: "checklist")
+                .foregroundStyle(theme.accent)
+
+            SessionMarkdownText(text: text, fontScale: fontScale)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(Spacing.xxl)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(theme.accent.opacity(0.06))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(theme.accent.opacity(0.25), lineWidth: 1)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+}
+
 struct SessionApprovalCard: View {
     let title: String
     let detail: String

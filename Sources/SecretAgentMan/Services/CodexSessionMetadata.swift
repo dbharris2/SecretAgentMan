@@ -83,6 +83,7 @@ struct CodexTranscriptItem: Identifiable, Equatable {
     var text: String
     var images: [Data] = []
     var tool: CodexToolDetail?
+    var toolName: String?
 
     var displayText: String {
         tool?.markdownText ?? text
@@ -93,6 +94,7 @@ struct CodexTranscriptItem: Identifiable, Equatable {
             && lhs.role == rhs.role
             && lhs.text == rhs.text
             && lhs.tool == rhs.tool
+            && lhs.toolName == rhs.toolName
     }
 }
 

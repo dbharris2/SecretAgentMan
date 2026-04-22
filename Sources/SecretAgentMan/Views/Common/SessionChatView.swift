@@ -65,13 +65,17 @@ struct SessionChatView: View {
                         ForEach(displayedSections) { section in
                             switch section {
                             case let .single(item):
-                                SessionTranscriptBubble(
-                                    role: item.role,
-                                    label: SessionPanelTheme.label(for: item.role, providerName: providerName),
-                                    text: item.displayText,
-                                    fontScale: fontScale,
-                                    images: item.images
-                                )
+                                if item.toolName == "TodoWrite" {
+                                    SessionTodoCard(text: item.displayText, fontScale: fontScale)
+                                } else {
+                                    SessionTranscriptBubble(
+                                        role: item.role,
+                                        label: SessionPanelTheme.label(for: item.role, providerName: providerName),
+                                        text: item.displayText,
+                                        fontScale: fontScale,
+                                        images: item.images
+                                    )
+                                }
                             case let .systemGroup(items, groupId):
                                 systemGroupView(items: items, groupId: groupId)
                             }
