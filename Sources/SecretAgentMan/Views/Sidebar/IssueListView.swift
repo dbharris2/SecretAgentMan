@@ -95,7 +95,8 @@ struct IssueListView: View {
                         ForEach(item.issues) { issue in
                             IssueRowView(
                                 issue: issue,
-                                isSelected: selectedIssueId == issue.id
+                                isSelected: selectedIssueId == issue.id,
+                                lastPollTime: lastPollTime
                             )
                             .contentShape(Rectangle())
                             .listRowInsets(EdgeInsets())
@@ -173,18 +174,8 @@ struct IssueListView: View {
 struct IssueRowView: View {
     let issue: GitHubIssue
     var isSelected: Bool = false
+    var lastPollTime: Date?
     @Environment(\.appTheme) private var theme
-
-    private static func relativeDate(_ date: Date) -> String {
-        let seconds = Date().timeIntervalSince(date)
-        if seconds < 60 { return "now" }
-        if seconds < 3600 { return "\(Int(seconds / 60))m ago" }
-        if seconds < 86400 { return "\(Int(seconds / 3600))h ago" }
-        if seconds < 604_800 { return "\(Int(seconds / 86400))d ago" }
-        let formatter = DateFormatter()
-        formatter.dateFormat = "MMM d"
-        return formatter.string(from: date)
-    }
 
     var body: some View {
         HStack(alignment: .center, spacing: Spacing.lg) {
@@ -214,7 +205,7 @@ struct IssueRowView: View {
 
                     Spacer()
 
-                    Text(Self.relativeDate(issue.updatedAt))
+                    Text(issue.updatedAt.relativeAgo)
                         .scaledFont(size: 10)
                         .foregroundStyle(.secondary)
                 }

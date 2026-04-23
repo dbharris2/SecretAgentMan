@@ -103,7 +103,8 @@ struct PRListView: View {
                         ForEach(item.prs) { pr in
                             PRRowView(
                                 pr: pr,
-                                isSelected: selectedPRId == pr.id
+                                isSelected: selectedPRId == pr.id,
+                                lastPollTime: lastPollTime
                             )
                             .contentShape(Rectangle())
                             .listRowInsets(EdgeInsets())
@@ -211,6 +212,7 @@ struct PRListView: View {
 struct PRRowView: View {
     let pr: GitHubPRService.GitHubPR
     var isSelected: Bool = false
+    var lastPollTime: Date?
     @Environment(\.appTheme) private var theme
 
     private var stateColor: Color {
@@ -218,17 +220,6 @@ struct PRRowView: View {
         if pr.reviewDecision == "CHANGES_REQUESTED" { return theme.red }
         if pr.isDraft { return theme.foreground.opacity(0.5) }
         return theme.yellow
-    }
-
-    private static func relativeDate(_ date: Date) -> String {
-        let seconds = Date().timeIntervalSince(date)
-        if seconds < 60 { return "now" }
-        if seconds < 3600 { return "\(Int(seconds / 60))m ago" }
-        if seconds < 86400 { return "\(Int(seconds / 3600))h ago" }
-        if seconds < 604_800 { return "\(Int(seconds / 86400))d ago" }
-        let formatter = DateFormatter()
-        formatter.dateFormat = "MMM d"
-        return formatter.string(from: date)
     }
 
     var body: some View {
@@ -259,7 +250,7 @@ struct PRRowView: View {
 
                     Spacer()
 
-                    Text(Self.relativeDate(pr.updatedAt))
+                    Text(pr.updatedAt.relativeAgo)
                         .scaledFont(size: 10)
                         .foregroundStyle(.secondary)
                 }
