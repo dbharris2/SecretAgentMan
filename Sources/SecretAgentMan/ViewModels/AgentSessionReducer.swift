@@ -43,17 +43,21 @@ enum AgentSessionReducer {
         if snapshot.metadata.sessionId == sessionId {
             return
         }
-        // Session replacement: clear session-scoped state.
-        // Preserve agent-level metadata (model, permission mode, collaboration mode,
-        // slash commands) since the new session typically inherits these — monitors
-        // can explicitly `.clear` fields via `metadataUpdated` if that's not true.
-        snapshot.runState = .idle
-        snapshot.transcript = []
-        snapshot.activePrompt = nil
-        snapshot.queuedPrompts = []
-        snapshot.hasUnread = false
+        // Only clear session-scoped state when transitioning between two
+        // distinct known sessions. A first `sessionReady` (metadata.sessionId
+        // was nil) is initial session bootstrap and may arrive *after* the
+        // user has already sent a message — clearing in that case wipes
+        // legitimate transcript items.
+        let isReplacement = snapshot.metadata.sessionId != nil
+        if isReplacement {
+            snapshot.runState = .idle
+            snapshot.transcript = []
+            snapshot.activePrompt = nil
+            snapshot.queuedPrompts = []
+            snapshot.hasUnread = false
+            snapshot.metadata.activeToolName = nil
+        }
         snapshot.metadata.sessionId = sessionId
-        snapshot.metadata.activeToolName = nil
     }
 
     private static func applyTranscriptUpsert(

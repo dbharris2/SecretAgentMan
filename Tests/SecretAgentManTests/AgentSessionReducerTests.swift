@@ -319,6 +319,25 @@ struct AgentSessionReducerTests {
         #expect(snap.metadata.sessionId == "sess-1")
     }
 
+    @Test func firstSessionReadyDoesNotClearPrecedingState() {
+        // Realistic flow: the user sends a message before the provider
+        // has finished initializing and emitted its `sessionReady`. The
+        // initial `sessionReady` must not wipe the transcript/prompt
+        // state that was already accumulated.
+        var snap = AgentSessionSnapshot()
+        snap = AgentSessionReducer.reduce(
+            snap,
+            event: .transcriptUpsert(SessionTranscriptItem(id: "m1", kind: .userMessage, text: "hi"))
+        )
+        snap = AgentSessionReducer.reduce(snap, event: .runStateChanged(.running))
+
+        snap = AgentSessionReducer.reduce(snap, event: .sessionReady(sessionId: "sess-1"))
+
+        #expect(snap.metadata.sessionId == "sess-1")
+        #expect(snap.transcript.count == 1)
+        #expect(snap.runState == .running)
+    }
+
     @Test func sessionReadyWithSameIdIsNoOp() {
         var snap = AgentSessionSnapshot()
         snap = AgentSessionReducer.reduce(snap, event: .sessionReady(sessionId: "sess-1"))
