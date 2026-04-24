@@ -106,7 +106,16 @@ final class ClaudeStreamMonitor {
                 PerfLogger.log("ClaudeStreamMonitor.hydrateTranscriptItems", start: hydrateStart, details: "agent=\(agentId.uuidString)")
                 guard !items.isEmpty else { return }
                 await MainActor.run { [weak self] in
-                    self?.transcriptItems[agentId] = items
+                    guard let self else { return }
+                    self.transcriptItems[agentId] = items
+                    // Dual-emit: also fold hydrated items into the normalized
+                    // snapshot so the Phase 2 view layer sees them. Without
+                    // this, sessions loaded from disk render an empty
+                    // transcript once the view reads from `snapshots` instead
+                    // of the legacy dict.
+                    for item in items {
+                        self.emitTranscriptItem(agentId, item: item)
+                    }
                 }
             }
         }
