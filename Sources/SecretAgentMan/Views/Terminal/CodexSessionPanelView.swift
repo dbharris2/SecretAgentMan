@@ -41,7 +41,8 @@ struct CodexSessionPanelView: View {
     }
 
     private var currentCollaborationMode: CodexCollaborationMode {
-        coordinator.codexMonitor.collaborationModes[agent.id] ?? .default
+        let raw = coordinator.agentSessions.snapshots[agent.id]?.metadata.collaborationMode
+        return raw.flatMap(CodexCollaborationMode.init(rawValue:)) ?? .default
     }
 
     @State private var showingUsagePopover = false

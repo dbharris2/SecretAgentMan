@@ -173,7 +173,7 @@ struct ClaudeSessionPanelView: View {
                 ComposerModePickerButton(
                     title: "Mode",
                     modes: ClaudeStreamMonitor.permissionModes,
-                    currentMode: coordinator.claudeMonitor.permissionModes[agent.id]
+                    currentMode: coordinator.agentSessions.snapshots[agent.id]?.metadata.permissionMode
                         ?? ClaudeStreamMonitor.defaultPermissionMode,
                     label: { $0 },
                     shortcutKey: "m",
