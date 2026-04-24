@@ -30,6 +30,7 @@ final class ClaudeStreamMonitor {
     @ObservationIgnored var onStateChange: ((UUID, AgentState) -> Void)?
     @ObservationIgnored var onSessionReady: ((UUID, String) -> Void)?
     @ObservationIgnored var onSessionConflict: ((UUID) -> Void)?
+    @ObservationIgnored var onSessionEvent: ((UUID, SessionEvent) -> Void)?
 
     private(set) var pendingApprovalRequests: [UUID: ClaudeApprovalRequest] = [:]
     private(set) var pendingElicitations: [UUID: ClaudeElicitationRequest] = [:]
@@ -52,6 +53,13 @@ final class ClaudeStreamMonitor {
     static let defaultPermissionMode = permissionModes[0]
 
     @ObservationIgnored private var observers: [UUID: Observer] = [:]
+
+    // Normalized event emission state (Phase 1 dual-emit migration).
+    // Visibility relaxed from `private` so the ClaudeStreamMonitor+SessionEvents
+    // extension in a separate file can access them.
+    @ObservationIgnored var activeStreamingId: [UUID: String] = [:]
+    @ObservationIgnored var lastStreamingText: [UUID: String] = [:]
+    @ObservationIgnored var lastFinalizedStreamId: [UUID: String] = [:]
 
     func syncMonitoredAgents(_ agents: [Agent]) {
         let desired = Dictionary(
@@ -83,74 +91,7 @@ final class ClaudeStreamMonitor {
             return
         }
 
-        let delegate = ObserverDelegate(
-            stateChanged: { [weak self] id, state in
-                Task { @MainActor in
-                    self?.runtimeStates[id] = state
-                    self?.onStateChange?(id, state)
-                }
-            },
-            sessionReady: { [weak self] id, sessionId in
-                Task { @MainActor in self?.onSessionReady?(id, sessionId) }
-            },
-            transcriptItem: { [weak self] id, item in
-                Task { @MainActor in self?.transcriptItems[id, default: []].append(item) }
-            },
-            approvalRequest: { [weak self] id, request in
-                Task { @MainActor in self?.pendingApprovalRequests[id] = request }
-            },
-            approvalResolved: { [weak self] id in
-                Task { @MainActor in self?.pendingApprovalRequests.removeValue(forKey: id) }
-            },
-            elicitationRequest: { [weak self] id, request in
-                Task { @MainActor in self?.pendingElicitations[id] = request }
-            },
-            elicitationResolved: { [weak self] id in
-                Task { @MainActor in self?.pendingElicitations.removeValue(forKey: id) }
-            },
-            streamingText: { [weak self] id, text in
-                Task { @MainActor in self?.streamingText[id] = text }
-            },
-            streamingFinished: { [weak self] id in
-                Task { @MainActor in self?.streamingText.removeValue(forKey: id) }
-            },
-            activeToolChanged: { [weak self] id, name in
-                Task { @MainActor in
-                    if let name {
-                        self?.activeToolName[id] = name
-                    } else {
-                        self?.activeToolName.removeValue(forKey: id)
-                    }
-                }
-            },
-            permissionModeChanged: { [weak self] id, mode in
-                Task { @MainActor in self?.permissionModes[id] = mode }
-            },
-            modelInfo: { [weak self] id, model, contextPct in
-                Task { @MainActor in
-                    if !model.isEmpty { self?.modelNames[id] = model }
-                    self?.contextPercentUsed[id] = contextPct
-                }
-            },
-            slashCommands: { [weak self] commands in
-                Task { @MainActor in
-                    self?.slashCommands = commands.compactMap { dict in
-                        guard let name = dict["name"] as? String else { return nil }
-                        return SlashCommand(
-                            name: name,
-                            description: dict["description"] as? String ?? "",
-                            argumentHint: dict["argumentHint"] as? String ?? ""
-                        )
-                    }.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
-                }
-            },
-            sessionConflict: { [weak self] id in
-                Task { @MainActor in self?.onSessionConflict?(id) }
-            }
-        )
-
-        let observer = Observer(agent: agent, delegate: delegate)
-
+        let observer = Observer(agent: agent, delegate: makeObserverDelegate())
         observers[agent.id] = observer
 
         // Hydrate transcript from session file in background (avoid blocking main thread)
@@ -171,6 +112,141 @@ final class ClaudeStreamMonitor {
         }
 
         observer.start()
+    }
+
+    private func makeObserverDelegate() -> ObserverDelegate {
+        ObserverDelegate(
+            stateChanged: { [weak self] id, state in
+                Task { @MainActor in
+                    guard let self else { return }
+                    self.runtimeStates[id] = state
+                    self.onStateChange?(id, state)
+                    self.emitRunStateChanged(id, state: state)
+                }
+            },
+            sessionReady: { [weak self] id, sessionId in
+                Task { @MainActor in
+                    guard let self else { return }
+                    self.onSessionReady?(id, sessionId)
+                    self.emit(.sessionReady(sessionId: sessionId), for: id)
+                }
+            },
+            transcriptItem: { [weak self] id, item in
+                Task { @MainActor in
+                    guard let self else { return }
+                    self.transcriptItems[id, default: []].append(item)
+                    self.emitTranscriptItem(id, item: item)
+                }
+            },
+            approvalRequest: { [weak self] id, request in
+                Task { @MainActor in
+                    guard let self else { return }
+                    self.pendingApprovalRequests[id] = request
+                    self.emit(.promptPresented(.approval(Self.mapApprovalPrompt(request))), for: id)
+                }
+            },
+            approvalResolved: { [weak self] id in
+                Task { @MainActor in
+                    guard let self else { return }
+                    if let pending = self.pendingApprovalRequests[id] {
+                        self.emit(.promptResolved(id: pending.requestId), for: id)
+                    }
+                    self.pendingApprovalRequests.removeValue(forKey: id)
+                }
+            },
+            elicitationRequest: { [weak self] id, request in
+                Task { @MainActor in
+                    guard let self else { return }
+                    self.pendingElicitations[id] = request
+                    self.emit(.promptPresented(.userInput(Self.mapElicitationPrompt(request))), for: id)
+                }
+            },
+            elicitationResolved: { [weak self] id in
+                Task { @MainActor in
+                    guard let self else { return }
+                    if let pending = self.pendingElicitations[id] {
+                        self.emit(.promptResolved(id: pending.requestId), for: id)
+                    }
+                    self.pendingElicitations.removeValue(forKey: id)
+                }
+            },
+            streamingText: { [weak self] id, text in
+                Task { @MainActor in
+                    guard let self else { return }
+                    self.streamingText[id] = text
+                    self.emitStreamingText(text, for: id)
+                }
+            },
+            streamingFinished: { [weak self] id in
+                Task { @MainActor in
+                    guard let self else { return }
+                    self.streamingText.removeValue(forKey: id)
+                    self.emitStreamingFinalize(for: id)
+                }
+            },
+            activeToolChanged: { [weak self] id, name in
+                Task { @MainActor in self?.applyActiveTool(name, for: id) }
+            },
+            permissionModeChanged: { [weak self] id, mode in
+                Task { @MainActor in self?.applyPermissionMode(mode, for: id) }
+            },
+            modelInfo: { [weak self] id, model, contextPct in
+                Task { @MainActor in self?.applyModelInfo(id: id, model: model, contextPct: contextPct) }
+            },
+            slashCommands: { [weak self] commands in
+                Task { @MainActor in self?.applySlashCommands(commands) }
+            },
+            sessionConflict: { [weak self] id in
+                Task { @MainActor in self?.onSessionConflict?(id) }
+            }
+        )
+    }
+
+    private func applyActiveTool(_ name: String?, for agentId: UUID) {
+        var update = SessionMetadataUpdate()
+        if let name {
+            activeToolName[agentId] = name
+            update.activeToolName = .set(name)
+        } else {
+            activeToolName.removeValue(forKey: agentId)
+            update.activeToolName = .clear
+        }
+        emit(.metadataUpdated(update), for: agentId)
+    }
+
+    private func applyPermissionMode(_ mode: String, for agentId: UUID) {
+        permissionModes[agentId] = mode
+        var update = SessionMetadataUpdate()
+        update.permissionMode = .set(mode)
+        emit(.metadataUpdated(update), for: agentId)
+    }
+
+    private func applyModelInfo(id: UUID, model: String, contextPct: Double) {
+        if !model.isEmpty { modelNames[id] = model }
+        contextPercentUsed[id] = contextPct
+        var update = SessionMetadataUpdate()
+        if !model.isEmpty { update.displayModelName = .set(model) }
+        update.contextPercentUsed = .set(contextPct)
+        emit(.metadataUpdated(update), for: id)
+    }
+
+    private func applySlashCommands(_ commands: [[String: Any]]) {
+        slashCommands = commands.compactMap { dict in
+            guard let name = dict["name"] as? String else { return nil }
+            return SlashCommand(
+                name: name,
+                description: dict["description"] as? String ?? "",
+                argumentHint: dict["argumentHint"] as? String ?? ""
+            )
+        }.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+        // Fan out to every monitored agent — Claude's slash-command list is
+        // monitor-wide, but the normalized snapshot is per-agent.
+        let names = slashCommands.map(\.name)
+        var update = SessionMetadataUpdate()
+        update.slashCommands = .set(names)
+        for agentId in observers.keys {
+            emit(.metadataUpdated(update), for: agentId)
+        }
     }
 
     nonisolated static func hydrateTranscriptItems(
@@ -257,6 +333,9 @@ final class ClaudeStreamMonitor {
         modelNames.removeValue(forKey: agentId)
         contextPercentUsed.removeValue(forKey: agentId)
         permissionModes.removeValue(forKey: agentId)
+        activeStreamingId.removeValue(forKey: agentId)
+        lastStreamingText.removeValue(forKey: agentId)
+        lastFinalizedStreamId.removeValue(forKey: agentId)
     }
 
     func interrupt(for agentId: UUID) {
@@ -272,17 +351,24 @@ final class ClaudeStreamMonitor {
         var items = transcriptItems[agentId, default: []]
         items.append(item)
         transcriptItems[agentId] = items
+        emit(.transcriptUpsert(Self.mapTranscriptItem(item)), for: agentId)
     }
 
     func sendMessage(for agentId: UUID, text: String, images: [(Data, String)] = []) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
-        transcriptItems[agentId, default: []].append(
-            CodexTranscriptItem(id: UUID().uuidString, role: .user, text: trimmed, images: images.map(\.0))
+        let userItem = CodexTranscriptItem(
+            id: UUID().uuidString,
+            role: .user,
+            text: trimmed,
+            images: images.map(\.0)
         )
+        transcriptItems[agentId, default: []].append(userItem)
+        emit(.transcriptUpsert(Self.mapTranscriptItem(userItem)), for: agentId)
         // Immediately show "thinking" — don't wait for the first stream event.
         runtimeStates[agentId] = .active
         onStateChange?(agentId, .active)
+        emitRunStateChanged(agentId, state: .active)
         observers[agentId]?.sendMessage(trimmed, images: images)
     }
 
@@ -297,13 +383,15 @@ final class ClaudeStreamMonitor {
 
     func respondToElicitation(for agentId: UUID, answer: String) {
         guard let request = pendingElicitations[agentId] else { return }
-        transcriptItems[agentId, default: []].append(
-            CodexTranscriptItem(id: UUID().uuidString, role: .user, text: answer)
-        )
+        let userItem = CodexTranscriptItem(id: UUID().uuidString, role: .user, text: answer)
+        transcriptItems[agentId, default: []].append(userItem)
+        emit(.transcriptUpsert(Self.mapTranscriptItem(userItem)), for: agentId)
         observers[agentId]?.respondToElicitation(requestId: request.requestId, answer: answer)
+        emit(.promptResolved(id: request.requestId), for: agentId)
         pendingElicitations.removeValue(forKey: agentId)
         runtimeStates[agentId] = .active
         onStateChange?(agentId, .active)
+        emitRunStateChanged(agentId, state: .active)
     }
 
     // MARK: - Static Parsing Helpers
