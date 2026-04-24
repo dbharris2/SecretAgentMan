@@ -27,13 +27,17 @@ final class FileSystemWatcher {
     }
 
     private var debounceTasks: [URL: Task<Void, Never>] = [:]
-    private let debounceInterval: UInt64 = 300_000_000 // 300ms in nanoseconds
+    private let debounceInterval: UInt64
 
     /// Called when a watched directory has meaningful file changes (working copy).
     var onDirectoryChanged: ((URL) -> Void)?
 
     /// Called when VCS metadata changes (.git/ or .jj/) — e.g. jj describe, git commit.
     var onVCSMetadataChanged: ((URL) -> Void)?
+
+    init(debounceInterval: UInt64 = 300_000_000) {
+        self.debounceInterval = debounceInterval
+    }
 
     /// Start watching a directory. Reference-counted — safe to call multiple
     /// times for the same URL (e.g. multiple agents sharing a folder).
@@ -139,6 +143,15 @@ final class FileSystemWatcher {
                 } catch { return }
                 self?.onVCSMetadataChanged?(directory)
             }
+        }
+    }
+
+    /// Awaits any in-flight debounce tasks. Intended for tests so they can
+    /// assert callback behavior without sleeping a fixed wall-clock duration.
+    func waitForPendingEvents() async {
+        let tasks = Array(debounceTasks.values)
+        for task in tasks {
+            _ = await task.value
         }
     }
 
