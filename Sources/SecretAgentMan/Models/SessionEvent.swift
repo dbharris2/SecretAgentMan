@@ -193,4 +193,18 @@ extension AgentSessionSnapshot {
     var finalizedTranscript: [SessionTranscriptItem] {
         transcript.filter { !$0.isStreaming }
     }
+
+    /// The active approval prompt, or nil if the active prompt is a user-input
+    /// request (or no prompt is active).
+    var approvalPrompt: ApprovalPrompt? {
+        if case let .approval(prompt) = activePrompt { return prompt }
+        return nil
+    }
+
+    /// The active user-input prompt, or nil if the active prompt is an approval
+    /// (or no prompt is active).
+    var userInputPrompt: UserInputPrompt? {
+        if case let .userInput(prompt) = activePrompt { return prompt }
+        return nil
+    }
 }

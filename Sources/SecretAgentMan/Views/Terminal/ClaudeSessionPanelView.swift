@@ -21,17 +21,11 @@ struct ClaudeSessionPanelView: View {
     }
 
     private var pendingApproval: ApprovalPrompt? {
-        guard case let .approval(prompt) = snapshot?.activePrompt else {
-            return nil
-        }
-        return prompt
+        snapshot?.approvalPrompt
     }
 
     private var pendingElicitation: UserInputPrompt? {
-        guard case let .userInput(prompt) = snapshot?.activePrompt else {
-            return nil
-        }
-        return prompt
+        snapshot?.userInputPrompt
     }
 
     private var streaming: String? {
@@ -56,7 +50,7 @@ struct ClaudeSessionPanelView: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
+        SessionPanelShell(agent: agent, composerFocused: $composerFocused) {
             SessionChatView(
                 providerName: "Claude",
                 transcript: transcript,
@@ -83,34 +77,14 @@ struct ClaudeSessionPanelView: View {
                     }
                 })
             }
-
-            Divider()
-
+        } composer: {
             composer
-        }
-        .background(theme.background)
-        .id(agent.id)
-        .onKeyPress(phases: .down) { keyPress in
-            if keyPress.key == .init("c"), keyPress.modifiers.contains(.control) {
-                coordinator.interruptAgent(for: agent.id)
-                return .handled
-            }
-            return .ignored
-        }
-        .onAppear {
-            coordinator.ensureClaudeSession(for: agent.id)
-        }
-        .onChange(of: agent.id) { _, newId in
-            coordinator.ensureClaudeSession(for: newId)
         }
         .onChange(of: coordinator.composerInsert) { _, text in
             if let text {
                 draft = text
                 coordinator.composerInsert = nil
             }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .focusComposer)) { _ in
-            composerFocused = true
         }
     }
 

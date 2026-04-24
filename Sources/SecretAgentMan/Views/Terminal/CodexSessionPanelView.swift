@@ -20,17 +20,11 @@ struct CodexSessionPanelView: View {
     }
 
     private var pendingInput: UserInputPrompt? {
-        guard case let .userInput(prompt) = snapshot?.activePrompt else {
-            return nil
-        }
-        return prompt
+        snapshot?.userInputPrompt
     }
 
     private var pendingApproval: ApprovalPrompt? {
-        guard case let .approval(prompt) = snapshot?.activePrompt else {
-            return nil
-        }
-        return prompt
+        snapshot?.approvalPrompt
     }
 
     private var debugMessage: String? {
@@ -58,7 +52,7 @@ struct CodexSessionPanelView: View {
     @State private var showingUsagePopover = false
 
     var body: some View {
-        VStack(spacing: 0) {
+        SessionPanelShell(agent: agent, composerFocused: $composerFocused) {
             SessionChatView(
                 providerName: "Codex",
                 transcript: transcript,
@@ -90,28 +84,8 @@ struct CodexSessionPanelView: View {
                     }
                 })
             }
-
-            Divider()
-
+        } composer: {
             composer
-        }
-        .background(theme.background)
-        .id(agent.id)
-        .onKeyPress(phases: .down) { keyPress in
-            if keyPress.key == .init("c"), keyPress.modifiers.contains(.control) {
-                coordinator.interruptAgent(for: agent.id)
-                return .handled
-            }
-            return .ignored
-        }
-        .onAppear {
-            coordinator.ensureCodexSession(for: agent.id)
-        }
-        .onChange(of: agent.id) { _, newId in
-            coordinator.ensureCodexSession(for: newId)
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .focusComposer)) { _ in
-            composerFocused = true
         }
     }
 

@@ -109,6 +109,13 @@ final class AppCoordinator {
         usageMonitor.refreshSelectedAgent()
     }
 
+    func ensureSession(for agent: Agent) {
+        switch agent.provider {
+        case .claude: ensureClaudeSession(for: agent.id)
+        case .codex: ensureCodexSession(for: agent.id)
+        }
+    }
+
     func ensureCodexSession(for agentId: UUID) {
         agentSessions.ensureCodexSession(for: agentId)
     }
