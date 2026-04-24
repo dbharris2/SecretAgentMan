@@ -294,6 +294,21 @@ struct AgentSessionReducerTests {
         #expect(snap.metadata.contextPercentUsed == 42.5)
     }
 
+    @Test func slashCommandsPreserveDescriptions() {
+        var snap = AgentSessionSnapshot()
+
+        var update = SessionMetadataUpdate()
+        update.slashCommands = .set([
+            SessionSlashCommand(name: "clear", description: "Clear conversation"),
+            SessionSlashCommand(name: "help", description: "Show help"),
+        ])
+        snap = AgentSessionReducer.reduce(snap, event: .metadataUpdated(update))
+
+        #expect(snap.metadata.slashCommands?.count == 2)
+        #expect(snap.metadata.slashCommands?[0].name == "clear")
+        #expect(snap.metadata.slashCommands?[0].description == "Clear conversation")
+    }
+
     @Test func metadataUnchangedPreservesExisting() {
         var snap = AgentSessionSnapshot()
 

@@ -46,11 +46,11 @@ struct ClaudeSessionPanelView: View {
         agent.state == .active && streaming == nil
     }
 
-    private var slashSuggestions: [ClaudeStreamMonitor.SlashCommand] {
+    private var slashSuggestions: [SessionSlashCommand] {
         let stripped = draft.replacingOccurrences(of: "\n", with: "")
         guard stripped.hasPrefix("/"), !stripped.contains(" ") else { return [] }
         let query = String(stripped.dropFirst()).lowercased()
-        let commands = coordinator.claudeMonitor.slashCommands
+        let commands = snapshot?.metadata.slashCommands ?? []
         if query.isEmpty { return commands }
         return commands.filter { $0.name.lowercased().hasPrefix(query) }
     }

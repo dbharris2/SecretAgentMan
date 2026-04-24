@@ -250,9 +250,11 @@ final class ClaudeStreamMonitor {
         }.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
         // Fan out to every monitored agent — Claude's slash-command list is
         // monitor-wide, but the normalized snapshot is per-agent.
-        let names = slashCommands.map(\.name)
+        let normalized = slashCommands.map {
+            SessionSlashCommand(name: $0.name, description: $0.description)
+        }
         var update = SessionMetadataUpdate()
-        update.slashCommands = .set(names)
+        update.slashCommands = .set(normalized)
         for agentId in observers.keys {
             emit(.metadataUpdated(update), for: agentId)
         }

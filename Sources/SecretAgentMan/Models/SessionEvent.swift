@@ -117,6 +117,16 @@ enum SessionPromptRequest: Equatable, Identifiable {
     }
 }
 
+struct SessionSlashCommand: Equatable {
+    let name: String
+    let description: String
+
+    init(name: String, description: String = "") {
+        self.name = name
+        self.description = description
+    }
+}
+
 struct SessionMetadataSnapshot: Equatable {
     var sessionId: String?
     var displayModelName: String?
@@ -125,7 +135,7 @@ struct SessionMetadataSnapshot: Equatable {
     var permissionMode: String?
     var collaborationMode: String?
     var activeToolName: String?
-    var slashCommands: [String]?
+    var slashCommands: [SessionSlashCommand]?
 }
 
 enum MetadataFieldUpdate<Value: Equatable>: Equatable {
@@ -141,7 +151,7 @@ struct SessionMetadataUpdate: Equatable {
     var permissionMode: MetadataFieldUpdate<String> = .unchanged
     var collaborationMode: MetadataFieldUpdate<String> = .unchanged
     var activeToolName: MetadataFieldUpdate<String> = .unchanged
-    var slashCommands: MetadataFieldUpdate<[String]> = .unchanged
+    var slashCommands: MetadataFieldUpdate<[SessionSlashCommand]> = .unchanged
 }
 
 /// Monitors emit these; the reducer consumes them.
