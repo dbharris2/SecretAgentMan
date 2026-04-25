@@ -29,6 +29,10 @@ enum SessionFileDetector {
             claudeProjectDir(for: agent.folder)
         case .codex:
             codexSessionsDir()
+        case .gemini:
+            // Gemini sessions live behind ACP `session/load`; SAM doesn't
+            // detect or list them on disk in V1.
+            URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent(".gemini/tmp")
         }
     }
 
@@ -43,6 +47,10 @@ enum SessionFileDetector {
             sessionFileExists(sessionId, inDirectory: claudeProjectDir(for: agent.folder))
         case .codex:
             codexSessionFile(for: sessionId) != nil
+        case .gemini:
+            // Existence is decided by the agent's `loadSession` capability +
+            // ACP response, not the local filesystem.
+            false
         }
     }
 
@@ -63,6 +71,9 @@ enum SessionFileDetector {
             sessions(inDirectory: claudeProjectDir(for: agent.folder))
         case .codex:
             codexSessions(for: agent.folder)
+        case .gemini:
+            // No local session enumeration in V1.
+            []
         }
     }
 
@@ -279,6 +290,10 @@ enum SessionFileDetector {
         case .codex:
             guard let url = codexSessionFileURL(for: sessionId) else { return nil }
             return firstCodexUserMessage(at: url)
+        case .gemini:
+            // Loaded history reaches the snapshot via ACP `session/update`
+            // notifications instead of disk scraping.
+            return nil
         }
     }
 }

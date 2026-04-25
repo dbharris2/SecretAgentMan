@@ -62,19 +62,29 @@ final class GeminiAcpMonitor {
     func syncMonitoredAgents(_ agents: [Agent]) {
         let desired = Dictionary(
             uniqueKeysWithValues: agents.compactMap { agent -> (UUID, Agent)? in
-                guard agent.provider == .codex || agent.provider == .claude else {
-                    // Provider-enum doesn't include `.gemini` until PR 4. The
-                    // monitor remains dormant until then; tests drive `apply*`
-                    // entry points directly without a real Observer.
-                    return nil
-                }
-                return nil
+                guard agent.provider == .gemini, agent.hasLaunched else { return nil }
+                return (agent.id, agent)
             }
         )
 
         for agentId in observers.keys where desired[agentId] == nil {
             observers.removeValue(forKey: agentId)?.stop()
         }
+        for (_, agent) in desired {
+            ensureSession(for: agent)
+        }
+    }
+
+    func ensureSession(for agent: Agent) {
+        guard agent.provider == .gemini else { return }
+        if let existing = observers[agent.id] {
+            existing.update(agent: agent)
+            existing.start()
+            return
+        }
+        let observer = Observer(agent: agent, monitor: self)
+        observers[agent.id] = observer
+        observer.start()
     }
 
     func stopAll() {
@@ -156,6 +166,59 @@ final class GeminiAcpMonitor {
             )),
             for: agentId
         )
+    }
+
+    /// Called by the Observer with raw stderr lines from `gemini --acp`. The
+    /// monitor surfaces them as system transcript items so a user-visible
+    /// error message ("auth required", "rate limit", etc.) doesn't get
+    /// swallowed silently. Also stashed in `debugMessages` for any panel that
+    /// wants to display them inline.
+    func recordStderr(for agentId: UUID, line: String) {
+        debugMessages[agentId] = line
+        recordSystemTranscript(for: agentId, text: "[gemini stderr] \(line)")
+    }
+
+    /// Called by the Observer just before sending a `session/prompt`. Bumps
+    /// agent state to `.active` so the panel renders its "thinking" UI before
+    /// the first `agent_message_chunk` arrives.
+    func beginTurn(for agentId: UUID) {
+        onStateChange?(agentId, .active)
+        emit(.runStateChanged(.running), for: agentId)
+    }
+
+    /// Called by the Observer when the prompt response decode fails or some
+    /// other terminal error short-circuits the turn. Mirrors what
+    /// `applyPromptResponse` does on success so the agent doesn't stay stuck
+    /// in `.active` forever.
+    func endTurn(for agentId: UUID) {
+        onStateChange?(agentId, .idle)
+    }
+
+    /// Called by the Observer when the underlying `gemini --acp` process
+    /// exits. Clears prompt state and surfaces a system message.
+    func handleProcessExit(for agentId: UUID) {
+        pendingApprovalRequests.removeValue(forKey: agentId)
+        pendingLocalUserMessages.removeValue(forKey: agentId)
+        activeAssistantStreamId.removeValue(forKey: agentId)
+        activeThoughtStreamId.removeValue(forKey: agentId)
+        toolCallSnapshots.removeValue(forKey: agentId)
+        emit(.runStateChanged(.error(message: "Gemini ACP process exited.")), for: agentId)
+        recordSystemTranscript(for: agentId, text: "Gemini agent disconnected.")
+        observers.removeValue(forKey: agentId)
+    }
+
+    /// Called by the Observer when `Process.run()` throws (binary missing,
+    /// not executable, etc.).
+    func handleSpawnFailure(for agentId: UUID, message: String) {
+        emit(
+            .runStateChanged(.error(message: "Could not start gemini --acp: \(message)")),
+            for: agentId
+        )
+        recordSystemTranscript(
+            for: agentId,
+            text: "Could not start gemini --acp. Authenticate Gemini CLI in a terminal first."
+        )
+        observers.removeValue(forKey: agentId)
     }
 
     func recordSystemTranscript(for agentId: UUID, text: String) {
@@ -267,18 +330,17 @@ struct ToolCallSnapshot: Equatable {
 
 // MARK: - Observer (private)
 
-/// Wraps one `gemini --acp` process. Owns the JSON-RPC client and routes
-/// incoming protocol events back to the monitor via injected callbacks.
+/// Wraps one `gemini --acp` process. Owns the JSON-RPC client (pending
+/// request map, ND-JSON framing) and routes incoming protocol events back to
+/// the monitor by calling its `apply*` methods on the main actor.
 ///
-/// This class is not actively wired into the production app yet; the
-/// `AgentProvider.gemini` case lands in PR 4 along with coordinator routing.
-/// Tests drive the monitor's `apply*` entry points directly without spawning
-/// a process.
+/// Lifecycle: `start()` spawns the process, sends `initialize`, then either
+/// `session/load` (if the agent advertises it and we have a stored sessionId)
+/// or `session/new`. After the session is ready, `sendPrompt`, `cancel`,
+/// `setMode`, and `setModel` operate on the live session.
 private final class Observer: @unchecked Sendable {
-    let agent: Agent
-    private let onIncomingFrame: (UUID, GeminiAcpRpc.IncomingFrame) -> Void
-    private let onProcessExit: (UUID) -> Void
-    private let onSpawnError: (UUID, Error) -> Void
+    private(set) var agent: Agent
+    private weak var monitor: GeminiAcpMonitor?
 
     private let process = Process()
     private let stdoutPipe = Pipe()
@@ -288,17 +350,27 @@ private final class Observer: @unchecked Sendable {
     private var stdoutBuffer = Data()
     private var didStart = false
 
-    init(
-        agent: Agent,
-        onIncomingFrame: @escaping (UUID, GeminiAcpRpc.IncomingFrame) -> Void,
-        onProcessExit: @escaping (UUID) -> Void,
-        onSpawnError: @escaping (UUID, Error) -> Void
-    ) {
+    /// Pending JSON-RPC requests keyed by integer id. The completion runs on
+    /// the Observer's queue; per-method handlers re-dispatch to MainActor
+    /// before touching monitor state.
+    private var pendingResponses: [Int: (GeminiAcpRpc.IncomingResponse) -> Void] = [:]
+    private var nextRequestId = 1
+
+    private var loadSessionAvailable = false
+    /// Set after the `initialize` exchange so `sendPrompt`/etc. know whether
+    /// the prompt-time session/new lookup has completed.
+    private var sessionEstablished = false
+    private var queuedPrompts: [(text: String, imageData: [Data])] = []
+    private var inFlightPromptId: Int?
+
+    init(agent: Agent, monitor: GeminiAcpMonitor) {
         self.agent = agent
-        self.onIncomingFrame = onIncomingFrame
-        self.onProcessExit = onProcessExit
-        self.onSpawnError = onSpawnError
+        self.monitor = monitor
         self.queue = DispatchQueue(label: "GeminiAcpMonitor.\(agent.id.uuidString)")
+    }
+
+    func update(agent: Agent) {
+        self.agent = agent
     }
 
     func start() {
@@ -315,69 +387,280 @@ private final class Observer: @unchecked Sendable {
         stdoutPipe.fileHandleForReading.readabilityHandler = { [weak self] handle in
             self?.consumeStdout(handle.availableData)
         }
-        stderrPipe.fileHandleForReading.readabilityHandler = { [weak self] _ in
-            // Drained for backpressure; debug capture not implemented yet.
+        stderrPipe.fileHandleForReading.readabilityHandler = { [weak self] handle in
+            self?.consumeStderr(handle.availableData)
         }
         process.terminationHandler = { [weak self] _ in
-            guard let self else { return }
-            queue.async {
-                self.handleProcessExit()
-            }
+            self?.queue.async { self?.handleProcessExit() }
         }
 
         do {
             try process.run()
         } catch {
-            onSpawnError(agent.id, error)
+            reportSpawnFailure(error: error)
+            return
         }
+
+        sendInitialize()
     }
 
     func stop() {
         stdoutPipe.fileHandleForReading.readabilityHandler = nil
         stderrPipe.fileHandleForReading.readabilityHandler = nil
+        queue.async { [weak self] in
+            self?.pendingResponses.removeAll()
+            self?.queuedPrompts.removeAll()
+            self?.inFlightPromptId = nil
+        }
         if process.isRunning {
             process.terminate()
         }
     }
 
-    func sendRequest(method: String, params: some Encodable, id: GeminiAcpRpc.Id) {
-        let request = GeminiAcpRpc.Request(id: id, method: method, params: params)
-        writeFrame(request)
-    }
-
-    func sendNotification(method: String, params: some Encodable) {
-        let note = GeminiAcpRpc.Notification(method: method, params: params)
-        writeFrame(note)
-    }
-
-    func sendResponse(id: GeminiAcpRpc.Id, result: some Encodable) {
-        let response = GeminiAcpRpc.Response(id: id, result: result)
-        writeFrame(response)
-    }
-
     func sendPrompt(text: String, imageData: [Data]) {
-        // Wired up in PR 4 along with coordinator integration.
-        _ = (text, imageData)
+        queue.async { [weak self] in
+            guard let self else { return }
+            guard sessionEstablished, let sessionId = agent.sessionId else {
+                queuedPrompts.append((text, imageData))
+                return
+            }
+            dispatchPrompt(sessionId: sessionId, text: text, imageData: imageData)
+        }
     }
 
     func cancel() {
-        // Wired up in PR 4.
+        queue.async { [weak self] in
+            guard let self, let sessionId = agent.sessionId else { return }
+            sendNotification(
+                method: GeminiAcpProtocol.Method.sessionCancel,
+                params: GeminiAcpProtocol.CancelNotification(sessionId: sessionId)
+            )
+        }
     }
 
     func setMode(modeId: String) {
-        _ = modeId
+        queue.async { [weak self] in
+            guard let self, let sessionId = agent.sessionId else { return }
+            sendRequest(
+                method: GeminiAcpProtocol.Method.sessionSetMode,
+                params: GeminiAcpProtocol.SetSessionModeRequest(sessionId: sessionId, modeId: modeId),
+                completion: { _ in }
+            )
+        }
     }
 
     func setModel(modelId: String) {
-        _ = modelId
+        queue.async { [weak self] in
+            guard let self, let sessionId = agent.sessionId else { return }
+            sendRequest(
+                method: GeminiAcpProtocol.Method.sessionSetModel,
+                params: GeminiAcpProtocol.SetSessionModelRequest(sessionId: sessionId, modelId: modelId),
+                completion: { _ in }
+            )
+        }
     }
 
     func respondToPermission(
         acpRequestId: GeminiAcpRpc.Id,
         outcome: GeminiAcpProtocol.RequestPermissionOutcome
     ) {
-        let response = GeminiAcpProtocol.RequestPermissionResponse(outcome: outcome)
-        sendResponse(id: acpRequestId, result: response)
+        queue.async { [weak self] in
+            guard let self else { return }
+            let response = GeminiAcpProtocol.RequestPermissionResponse(outcome: outcome)
+            writeFrame(GeminiAcpRpc.Response(id: acpRequestId, result: response))
+        }
+    }
+
+    // MARK: - Lifecycle
+
+    private func sendInitialize() {
+        let params = GeminiAcpProtocol.InitializeRequest(
+            clientInfo: GeminiAcpProtocol.Implementation(
+                name: "secret-agent-man",
+                title: "SecretAgentMan",
+                version: "0.1.0"
+            )
+        )
+        sendRequest(method: GeminiAcpProtocol.Method.initialize, params: params) { [weak self] response in
+            guard let self else { return }
+            queue.async {
+                self.handleInitializeResponse(response)
+            }
+        }
+    }
+
+    private func handleInitializeResponse(_ response: GeminiAcpRpc.IncomingResponse) {
+        if let result = response.result,
+           let init_ = try? result.decode(as: GeminiAcpProtocol.InitializeResponse.self) {
+            loadSessionAvailable = init_.agentCapabilities?.loadSession ?? false
+        }
+
+        // ACP-mode sessions are persisted to `~/.gemini/tmp/<project>/chats/
+        // session-*.json` by gemini-cli's `ChatRecordingService`. The ACP
+        // `session/load` handler resolves through the same on-disk
+        // `SessionSelector` that backs `gemini --resume <id>` in the TUI, so
+        // a session with at least one user/assistant exchange is loadable
+        // across processes.
+        //
+        // Sessions with zero user/assistant messages (e.g. spawned via
+        // `session/new` then closed before any prompt) get filtered by
+        // `getAllSessionFiles`, causing `session/load` to throw and surface
+        // as JSON-RPC -32603. We treat that as a benign "stale stored id"
+        // signal and silently fall back to `session/new` rather than nagging
+        // the user every launch.
+        if loadSessionAvailable, let stored = agent.sessionId, !stored.isEmpty {
+            sendLoadSession(sessionId: stored)
+        } else {
+            sendNewSession()
+        }
+    }
+
+    private func sendNewSession() {
+        let params = GeminiAcpProtocol.NewSessionRequest(cwd: agent.folder.path)
+        sendRequest(method: GeminiAcpProtocol.Method.sessionNew, params: params) { [weak self] response in
+            self?.queue.async { self?.handleNewSessionResponse(response) }
+        }
+    }
+
+    private func sendLoadSession(sessionId: String) {
+        let params = GeminiAcpProtocol.LoadSessionRequest(sessionId: sessionId, cwd: agent.folder.path)
+        sendRequest(method: GeminiAcpProtocol.Method.sessionLoad, params: params) { [weak self] response in
+            self?.queue.async {
+                guard let self else { return }
+                if response.error != nil {
+                    // Most common failure mode: the stored sessionId points
+                    // at a chats file with zero user/assistant messages, so
+                    // `getAllSessionFiles` filters it out and ACP wraps the
+                    // resulting SessionError as -32603. Silently fall back —
+                    // the user doesn't need a system banner for stale ids.
+                    self.sendNewSession()
+                    return
+                }
+                self.handleLoadSessionResponse(response, sessionId: sessionId)
+            }
+        }
+    }
+
+    private func handleNewSessionResponse(_ response: GeminiAcpRpc.IncomingResponse) {
+        guard let result = response.result,
+              let parsed = try? result.decode(as: GeminiAcpProtocol.NewSessionResponse.self)
+        else { return }
+
+        sessionEstablished = true
+        let agentId = agent.id
+        let monitor = self.monitor
+        let queued = queuedPrompts
+        queuedPrompts.removeAll()
+        DispatchQueue.main.async {
+            monitor?.applyNewSessionResponse(parsed, for: agentId)
+        }
+        for prompt in queued {
+            dispatchPrompt(sessionId: parsed.sessionId, text: prompt.text, imageData: prompt.imageData)
+        }
+    }
+
+    private func handleLoadSessionResponse(
+        _ response: GeminiAcpRpc.IncomingResponse,
+        sessionId: String
+    ) {
+        guard let result = response.result,
+              let parsed = try? result.decode(as: GeminiAcpProtocol.LoadSessionResponse.self)
+        else { return }
+
+        sessionEstablished = true
+        let agentId = agent.id
+        let monitor = self.monitor
+        let queued = queuedPrompts
+        queuedPrompts.removeAll()
+        DispatchQueue.main.async {
+            monitor?.applyLoadSessionResponse(parsed, sessionId: sessionId, for: agentId)
+        }
+        for prompt in queued {
+            dispatchPrompt(sessionId: sessionId, text: prompt.text, imageData: prompt.imageData)
+        }
+    }
+
+    // MARK: - Prompt dispatch
+
+    private func dispatchPrompt(sessionId: String, text: String, imageData: [Data]) {
+        var blocks: [GeminiAcpProtocol.ContentBlock] = []
+        if !text.isEmpty {
+            blocks.append(.text(GeminiAcpProtocol.TextContent(text: text)))
+        }
+        for data in imageData {
+            blocks.append(.image(GeminiAcpProtocol.ImageContent(
+                data: data.base64EncodedString(),
+                mimeType: "image/png"
+            )))
+        }
+        let messageId = "client-\(UUID().uuidString)"
+        let params = GeminiAcpProtocol.PromptRequest(
+            sessionId: sessionId,
+            prompt: blocks,
+            messageId: messageId
+        )
+
+        // Surface that a turn has started — drives the "thinking" UI before
+        // the first agent_message_chunk arrives. The matching `.idle` is
+        // emitted from `monitor.applyPromptResponse` when the turn ends.
+        let agentId = agent.id
+        let monitor = self.monitor
+        DispatchQueue.main.async {
+            monitor?.beginTurn(for: agentId)
+        }
+
+        let promptIdGuess = nextRequestId
+        sendRequest(method: GeminiAcpProtocol.Method.sessionPrompt, params: params) { [weak self] response in
+            self?.queue.async {
+                guard let self else { return }
+                if self.inFlightPromptId == promptIdGuess {
+                    self.inFlightPromptId = nil
+                }
+                guard let result = response.result,
+                      let parsed = try? result.decode(as: GeminiAcpProtocol.PromptResponse.self)
+                else {
+                    if let err = response.error {
+                        self.surfaceDebug(
+                            prefix: "session/prompt error",
+                            text: "code=\(err.code) message=\(err.message)"
+                        )
+                    }
+                    let agentId = self.agent.id
+                    let monitor = self.monitor
+                    DispatchQueue.main.async {
+                        monitor?.endTurn(for: agentId)
+                    }
+                    return
+                }
+                let agentId = self.agent.id
+                let monitor = self.monitor
+                DispatchQueue.main.async {
+                    monitor?.applyPromptResponse(parsed, for: agentId)
+                }
+            }
+        }
+        inFlightPromptId = promptIdGuess
+    }
+
+    // MARK: - JSON-RPC framing
+
+    /// Always called on `queue`.
+    private func sendRequest(
+        method: String,
+        params: some Encodable,
+        completion: @escaping (GeminiAcpRpc.IncomingResponse) -> Void
+    ) {
+        let id = nextRequestId
+        nextRequestId += 1
+        pendingResponses[id] = completion
+        let request = GeminiAcpRpc.Request(id: .int(id), method: method, params: params)
+        writeFrame(request)
+    }
+
+    /// Always called on `queue`.
+    private func sendNotification(method: String, params: some Encodable) {
+        let note = GeminiAcpRpc.Notification(method: method, params: params)
+        writeFrame(note)
     }
 
     private func writeFrame(_ value: some Encodable) {
@@ -385,7 +668,7 @@ private final class Observer: @unchecked Sendable {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.withoutEscapingSlashes]
         guard var data = try? encoder.encode(value) else { return }
-        data.append(0x0A) // newline
+        data.append(0x0A)
         stdinPipe.fileHandleForWriting.write(data)
     }
 
@@ -398,32 +681,137 @@ private final class Observer: @unchecked Sendable {
         }
     }
 
+    private func consumeStderr(_ data: Data) {
+        guard !data.isEmpty,
+              let raw = String(data: data, encoding: .utf8)
+        else { return }
+        let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return }
+        let agentId = agent.id
+        let monitor = self.monitor
+        DispatchQueue.main.async {
+            monitor?.recordStderr(for: agentId, line: text)
+        }
+    }
+
     private func processBufferedLines() {
         while let newlineIndex = stdoutBuffer.firstIndex(of: 0x0A) {
             let lineData = stdoutBuffer.prefix(upTo: newlineIndex)
             stdoutBuffer.removeSubrange(...newlineIndex)
             guard !lineData.isEmpty else { continue }
-            handleLine(Data(lineData))
+            dispatchFrame(Data(lineData))
         }
     }
 
-    private func handleLine(_ data: Data) {
-        let decoded = try? GeminiAcpRpc.decodeIncoming(data)
-        guard let frame = decoded ?? nil else { return }
+    private func dispatchFrame(_ data: Data) {
+        do {
+            guard let frame = try GeminiAcpRpc.decodeIncoming(data) else {
+                surfaceDebug(prefix: "unrecognized frame", data: data)
+                return
+            }
+            switch frame {
+            case let .response(resp):
+                guard case let .int(rawId) = resp.id else {
+                    surfaceDebug(prefix: "response with non-int id", data: data)
+                    return
+                }
+                // Per-method completion handlers decide whether an error
+                // is expected (e.g. session/load failure → graceful
+                // fallback) or surface-worthy. Don't auto-surface here.
+                let completion = pendingResponses.removeValue(forKey: rawId)
+                completion?(resp)
+            case let .request(req):
+                handleIncomingRequest(req)
+            case let .notification(note):
+                handleIncomingNotification(note)
+            }
+        } catch {
+            surfaceDebug(prefix: "decode failed: \(error.localizedDescription)", data: data)
+        }
+    }
+
+    private func surfaceDebug(prefix: String, data: Data) {
+        let text = String(data: data, encoding: .utf8)?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? "<\(data.count) bytes>"
+        surfaceDebug(prefix: prefix, text: text)
+    }
+
+    private func surfaceDebug(prefix: String, text: String) {
+        let line = "\(prefix): \(text)"
         let agentId = agent.id
-        DispatchQueue.main.async { [weak self] in
-            guard let self else { return }
-            onIncomingFrame(agentId, frame)
+        let monitor = self.monitor
+        DispatchQueue.main.async {
+            monitor?.recordStderr(for: agentId, line: line)
+        }
+    }
+
+    private func handleIncomingRequest(_ req: GeminiAcpRpc.IncomingRequest) {
+        guard req.method == GeminiAcpProtocol.Method.sessionRequestPermission,
+              let params = req.params,
+              let parsed = try? params.decode(as: GeminiAcpProtocol.RequestPermissionRequest.self)
+        else {
+            // Method we don't implement: respond with an error so the agent
+            // doesn't hang on a missing handler.
+            let response = GeminiAcpRpc.ErrorResponse(
+                id: req.id,
+                error: GeminiAcpRpc.ErrorObject(
+                    code: -32601,
+                    message: "Method not supported by SecretAgentMan: \(req.method)",
+                    data: nil
+                )
+            )
+            writeFrame(response)
+            return
+        }
+        let agentId = agent.id
+        let acpId = req.id
+        DispatchQueue.main.async { [weak monitor] in
+            monitor?.applyPermissionRequest(parsed, acpRequestId: acpId, for: agentId)
+        }
+    }
+
+    private func handleIncomingNotification(_ note: GeminiAcpRpc.IncomingNotification) {
+        guard note.method == GeminiAcpProtocol.Method.sessionUpdate else {
+            surfaceDebug(prefix: "unknown notification method", text: note.method)
+            return
+        }
+        guard let params = note.params else {
+            surfaceDebug(prefix: "session/update without params", text: note.method)
+            return
+        }
+        do {
+            let parsed = try params.decode(as: GeminiAcpProtocol.SessionNotification.self)
+            let agentId = agent.id
+            let monitor = self.monitor
+            DispatchQueue.main.async {
+                monitor?.applySessionUpdate(parsed.update, sessionId: parsed.sessionId, for: agentId)
+            }
+        } catch {
+            surfaceDebug(
+                prefix: "session/update decode failed: \(error.localizedDescription)",
+                text: "(see log)"
+            )
         }
     }
 
     private func handleProcessExit() {
         stdoutPipe.fileHandleForReading.readabilityHandler = nil
         stderrPipe.fileHandleForReading.readabilityHandler = nil
+        pendingResponses.removeAll()
+        queuedPrompts.removeAll()
+        inFlightPromptId = nil
+        sessionEstablished = false
         let agentId = agent.id
-        DispatchQueue.main.async { [weak self] in
-            guard let self else { return }
-            onProcessExit(agentId)
+        DispatchQueue.main.async { [weak monitor] in
+            monitor?.handleProcessExit(for: agentId)
+        }
+    }
+
+    private func reportSpawnFailure(error: Error) {
+        let agentId = agent.id
+        let message = error.localizedDescription
+        DispatchQueue.main.async { [weak monitor] in
+            monitor?.handleSpawnFailure(for: agentId, message: message)
         }
     }
 

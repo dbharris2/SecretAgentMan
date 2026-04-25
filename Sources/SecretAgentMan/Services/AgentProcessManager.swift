@@ -59,6 +59,15 @@ final class AgentProcessManager {
                 executable: executablePath(for: .codex),
                 args: codexArgs(folder: folder, initialPrompt: initialPrompt, sessionId: sessionId, hasLaunched: hasLaunched)
             )
+        case .gemini:
+            // The terminal-launched path doesn't run gemini --acp; that flow
+            // is owned by `GeminiAcpMonitor`. Falling back to a plain `gemini`
+            // invocation lets users still spawn an interactive shell session
+            // from the same UI.
+            (
+                executable: executablePath(for: .gemini),
+                args: []
+            )
         }
     }
 
@@ -75,6 +84,12 @@ final class AgentProcessManager {
                 NSHomeDirectory() + "/.local/bin/codex",
                 "/usr/local/bin/codex",
                 "/opt/homebrew/bin/codex",
+            ]
+        case .gemini:
+            [
+                NSHomeDirectory() + "/.local/bin/gemini",
+                "/usr/local/bin/gemini",
+                "/opt/homebrew/bin/gemini",
             ]
         }
 

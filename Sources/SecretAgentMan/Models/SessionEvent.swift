@@ -267,8 +267,10 @@ struct AgentSessionSnapshot: Equatable {
 extension AgentSessionSnapshot {
     /// Text of the most recent still-streaming assistant message, if any.
     /// Views render this separately from `finalizedTranscript` as a live bubble.
+    /// Filters to `.assistantMessage` specifically so streaming `.thought`
+    /// content doesn't get promoted into the primary live-response bubble.
     var streamingAssistantText: String? {
-        transcript.last { $0.isStreaming }?.text
+        transcript.last { $0.isStreaming && $0.kind == .assistantMessage }?.text
     }
 
     /// Transcript items excluding any still-streaming placeholder.

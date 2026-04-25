@@ -271,7 +271,8 @@ extension GeminiAcpMonitor {
 
     /// Apply a `session/prompt` JSON-RPC response. Finalizes any active
     /// assistant/thought streams, then emits `turnCompleted` last per the
-    /// shared contract's ordering rule.
+    /// shared contract's ordering rule. Also bumps `agent.state` back to
+    /// `.idle` so the panel's thinking UI clears.
     func applyPromptResponse(
         _ response: GeminiAcpProtocol.PromptResponse,
         for agentId: UUID
@@ -288,6 +289,7 @@ extension GeminiAcpMonitor {
             unknown: response.unknownStopReason
         )
         emit(.turnCompleted(SessionTurnCompletion(stopReason: stopReason)), for: agentId)
+        onStateChange?(agentId, stopReason == .refusal ? .error : .idle)
     }
 
     // MARK: - Permission request

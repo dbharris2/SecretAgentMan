@@ -15,6 +15,7 @@ final class AppCoordinator {
     let eventBus: AgentEventBus
     let codexMonitor: CodexAppServerMonitor
     let claudeMonitor: ClaudeStreamMonitor
+    let geminiMonitor: GeminiAcpMonitor
     let reviewerGroupStore = ReviewerGroupStore()
     @ObservationIgnored private let userDefaults: UserDefaults
 
@@ -57,6 +58,7 @@ final class AppCoordinator {
         eventBus = agentSessions.eventBus
         codexMonitor = agentSessions.codexMonitor
         claudeMonitor = agentSessions.claudeMonitor
+        geminiMonitor = agentSessions.geminiMonitor
         self.userDefaults = userDefaults
         activeSidebarPanel = Self.restoreActiveSidebarPanel(from: userDefaults)
 
@@ -113,6 +115,7 @@ final class AppCoordinator {
         switch agent.provider {
         case .claude: ensureClaudeSession(for: agent.id)
         case .codex: ensureCodexSession(for: agent.id)
+        case .gemini: ensureGeminiSession(for: agent.id)
         }
     }
 
@@ -167,6 +170,34 @@ final class AppCoordinator {
         claudeMonitor.respondToElicitation(for: agentId, answer: answer)
     }
 
+    // MARK: - Gemini Actions
+
+    func ensureGeminiSession(for agentId: UUID) {
+        agentSessions.ensureGeminiSession(for: agentId)
+    }
+
+    func sendGeminiMessage(for agentId: UUID, text: String, imageData: [Data] = []) {
+        agentSessions.ensureGeminiSession(for: agentId)
+        geminiMonitor.recordSentUserMessage(for: agentId, text: text, imageData: imageData)
+        geminiMonitor.sendMessage(for: agentId, text: text, imageData: imageData)
+    }
+
+    func answerGeminiApproval(for agentId: UUID, optionId: String) {
+        geminiMonitor.respondToApproval(for: agentId, optionId: optionId)
+    }
+
+    func cancelGeminiApproval(for agentId: UUID) {
+        geminiMonitor.cancelApproval(for: agentId)
+    }
+
+    func setGeminiMode(for agentId: UUID, modeId: String) {
+        geminiMonitor.setMode(for: agentId, modeId: modeId)
+    }
+
+    func setGeminiModel(for agentId: UUID, modelId: String) {
+        geminiMonitor.setModel(for: agentId, modelId: modelId)
+    }
+
     func interruptAgent(for agentId: UUID) {
         guard let agent = store.agents.first(where: { $0.id == agentId }) else { return }
         let isInFlight = switch agent.state {
@@ -185,6 +216,11 @@ final class AppCoordinator {
                 codexMonitor.recordSystemTranscript(for: agentId, text: interruptMessage)
             }
             codexMonitor.interrupt(for: agentId)
+        case .gemini:
+            if isInFlight {
+                geminiMonitor.recordSystemTranscript(for: agentId, text: interruptMessage)
+            }
+            geminiMonitor.interrupt(for: agentId)
         }
     }
 
