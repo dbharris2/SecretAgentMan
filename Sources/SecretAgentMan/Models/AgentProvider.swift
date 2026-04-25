@@ -3,6 +3,7 @@ import Foundation
 enum AgentProvider: String, CaseIterable, Codable, Hashable, Identifiable {
     case claude
     case codex
+    case gemini
 
     var id: String {
         rawValue
@@ -14,6 +15,8 @@ enum AgentProvider: String, CaseIterable, Codable, Hashable, Identifiable {
             "Claude"
         case .codex:
             "Codex"
+        case .gemini:
+            "Gemini"
         }
     }
 
@@ -23,6 +26,8 @@ enum AgentProvider: String, CaseIterable, Codable, Hashable, Identifiable {
             "claude"
         case .codex:
             "codex"
+        case .gemini:
+            "gemini"
         }
     }
 
@@ -32,6 +37,8 @@ enum AgentProvider: String, CaseIterable, Codable, Hashable, Identifiable {
             ".claude"
         case .codex:
             ".codex"
+        case .gemini:
+            ".gemini"
         }
     }
 
@@ -41,6 +48,10 @@ enum AgentProvider: String, CaseIterable, Codable, Hashable, Identifiable {
             "ClaudeIcon"
         case .codex:
             "CodexIcon"
+        case .gemini:
+            // Gemini ships without a bundled icon asset; the symbol fallback
+            // below renders instead. Add a `GeminiIcon` asset to swap in.
+            nil
         }
     }
 
@@ -50,6 +61,8 @@ enum AgentProvider: String, CaseIterable, Codable, Hashable, Identifiable {
             "brain"
         case .codex:
             "chevron.left.forwardslash.chevron.right"
+        case .gemini:
+            "sparkles"
         }
     }
 }

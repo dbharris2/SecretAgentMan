@@ -33,6 +33,8 @@ enum AgentSessionReducer {
             applyPromptResolved(id: id, to: &snapshot)
         case let .metadataUpdated(update):
             applyMetadataUpdate(update, to: &snapshot.metadata)
+        case let .turnCompleted(completion):
+            applyTurnCompleted(completion, to: &snapshot)
         }
     }
 
@@ -169,6 +171,26 @@ enum AgentSessionReducer {
         apply(update.collaborationMode, to: &metadata.collaborationMode)
         apply(update.activeToolName, to: &metadata.activeToolName)
         apply(update.slashCommands, to: &metadata.slashCommands)
+        apply(update.availableModes, to: &metadata.availableModes)
+        apply(update.currentModeId, to: &metadata.currentModeId)
+        apply(update.availableModels, to: &metadata.availableModels)
+        apply(update.currentModelId, to: &metadata.currentModelId)
+    }
+
+    private static func applyTurnCompleted(
+        _ completion: SessionTurnCompletion,
+        to snapshot: inout AgentSessionSnapshot
+    ) {
+        switch completion.stopReason {
+        case .endTurn, .maxTokens, .maxTurnRequests, .cancelled:
+            snapshot.runState = .idle
+        case .refusal:
+            snapshot.runState = .error(message: "Model declined to respond.")
+        case .unknown:
+            // Conservative default: treat a future unrecognized stopReason as
+            // end-of-turn idle rather than wedging the session.
+            snapshot.runState = .idle
+        }
     }
 
     private static func apply<Value: Equatable>(

@@ -65,7 +65,9 @@ struct SessionChatView: View {
                         ForEach(displayedSections) { section in
                             switch section {
                             case let .single(item):
-                                if item.metadata?.toolName == "TodoWrite" {
+                                if item.kind == .thought {
+                                    thoughtDisclosureView(items: [item], groupId: "thought-\(item.id)")
+                                } else if item.metadata?.toolName == "TodoWrite" {
                                     SessionTodoCard(text: item.text, fontScale: fontScale)
                                 } else {
                                     SessionTranscriptBubble(
@@ -78,6 +80,8 @@ struct SessionChatView: View {
                                 }
                             case let .systemGroup(items, groupId):
                                 systemGroupView(items: items, groupId: groupId)
+                            case let .thoughtGroup(items, groupId):
+                                thoughtDisclosureView(items: items, groupId: groupId)
                             }
                         }
                     }
@@ -102,6 +106,49 @@ struct SessionChatView: View {
             .onChange(of: transcript.count) { _, _ in scrollToBottom() }
             .onChange(of: isThinking) { _, thinking in if thinking { scrollToBottom() } }
             .onChange(of: hasPendingCard) { _, has in if has { scrollToBottom() } }
+        }
+    }
+
+    /// Collapsed-by-default disclosure for `agent_thought_chunk` content.
+    /// Mirrors the Gemini CLI's default of hiding internal reasoning unless
+    /// the user opts in to see it.
+    @ViewBuilder
+    private func thoughtDisclosureView(items: [SessionTranscriptItem], groupId: String) -> some View {
+        let isExpanded = expandedGroups.contains(groupId)
+        let combinedText = items.map(\.text).joined(separator: "\n\n")
+        let lineCount = combinedText.split(whereSeparator: \.isNewline).count
+
+        VStack(alignment: .leading, spacing: Spacing.sm) {
+            Button {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    if isExpanded {
+                        expandedGroups.remove(groupId)
+                    } else {
+                        expandedGroups.insert(groupId)
+                    }
+                }
+            } label: {
+                HStack(spacing: Spacing.md) {
+                    Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
+                        .scaledFont(size: 10)
+                        .foregroundStyle(.tertiary)
+                        .frame(width: 12)
+                    Image(systemName: "brain")
+                        .scaledFont(size: 10)
+                        .foregroundStyle(.tertiary)
+                    Text(isExpanded ? "Hide reasoning" : "Show reasoning (\(lineCount) lines)")
+                        .scaledFont(size: 11)
+                        .foregroundStyle(.secondary)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            if isExpanded {
+                SessionMarkdownText(text: combinedText, fontScale: fontScale)
+                    .padding(.leading, 24)
+                    .opacity(0.85)
+            }
         }
     }
 
@@ -237,17 +284,23 @@ struct SessionChatView: View {
 private enum TranscriptSection: Identifiable {
     case single(SessionTranscriptItem)
     case systemGroup([SessionTranscriptItem], groupId: String)
+    /// Runs of `.thought` items are kept in a dedicated bucket so they render
+    /// as a quiet collapsed reasoning disclosure rather than mixing into the
+    /// "saved tool actions" group with system/tool/plan items.
+    case thoughtGroup([SessionTranscriptItem], groupId: String)
 
     var id: String {
         switch self {
         case let .single(item): item.id
         case let .systemGroup(_, groupId): groupId
+        case let .thoughtGroup(_, groupId): groupId
         }
     }
 
     static func group(_ items: [SessionTranscriptItem]) -> [TranscriptSection] {
         var sections: [TranscriptSection] = []
         var systemRun: [SessionTranscriptItem] = []
+        var thoughtRun: [SessionTranscriptItem] = []
 
         func flushSystemRun() {
             guard !systemRun.isEmpty else { return }
@@ -260,25 +313,46 @@ private enum TranscriptSection: Identifiable {
             systemRun.removeAll()
         }
 
+        func flushThoughtRun() {
+            guard !thoughtRun.isEmpty else { return }
+            if thoughtRun.count == 1 {
+                // Single-thought sections still render through the dedicated
+                // disclosure path via the .single(.thought) branch upstream.
+                sections.append(.single(thoughtRun[0]))
+            } else {
+                let groupId = "thought-group-\(thoughtRun[0].id)"
+                sections.append(.thoughtGroup(thoughtRun, groupId: groupId))
+            }
+            thoughtRun.removeAll()
+        }
+
         for item in items {
-            if isGroupableKind(item.kind) {
+            if item.kind == .thought {
+                flushSystemRun()
+                thoughtRun.append(item)
+            } else if isGroupableKind(item.kind) {
+                flushThoughtRun()
                 systemRun.append(item)
             } else {
                 flushSystemRun()
+                flushThoughtRun()
                 sections.append(.single(item))
             }
         }
         flushSystemRun()
+        flushThoughtRun()
 
         return sections
     }
 
     /// System messages, tool activity, plan, diff summaries, and errors all
     /// render outside the primary conversation flow; consecutive runs collapse
-    /// into a single expandable "saved tool actions" block.
+    /// into a single expandable "saved tool actions" block. `.thought` items
+    /// have their own dedicated grouping path (above) so they don't mix into
+    /// that bucket.
     private static func isGroupableKind(_ kind: TranscriptItemKind) -> Bool {
         switch kind {
-        case .userMessage, .assistantMessage: false
+        case .userMessage, .assistantMessage, .thought: false
         case .systemMessage, .toolActivity, .plan, .diffSummary, .error: true
         }
     }

@@ -131,6 +131,8 @@ struct ContentView: View {
                     CodexSessionPanelView(agent: agent)
                 case .claude:
                     ClaudeSessionPanelView(agent: agent)
+                case .gemini:
+                    GeminiSessionPanelView(agent: agent)
                 }
             } else {
                 VStack(spacing: Spacing.lg) {

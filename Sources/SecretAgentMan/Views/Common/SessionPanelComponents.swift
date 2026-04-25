@@ -434,7 +434,7 @@ enum SessionPanelTheme {
             theme.accent.opacity(0.08)
         case .assistantMessage:
             theme.foreground.opacity(0.04)
-        case .systemMessage, .toolActivity, .plan, .diffSummary, .error:
+        case .systemMessage, .toolActivity, .plan, .diffSummary, .error, .thought:
             theme.yellow.opacity(0.08)
         }
     }
@@ -443,7 +443,7 @@ enum SessionPanelTheme {
         switch kind {
         case .userMessage: "You"
         case .assistantMessage: providerName
-        case .systemMessage, .toolActivity, .plan, .diffSummary, .error: "System"
+        case .systemMessage, .toolActivity, .plan, .diffSummary, .error, .thought: "System"
         }
     }
 }
