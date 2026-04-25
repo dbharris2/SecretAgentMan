@@ -168,16 +168,12 @@ struct CodexSessionPanelView: View {
     }
 
     private func approvalCard(_ prompt: ApprovalPrompt) -> some View {
-        // Codex's approval mapper encodes "supports decisions" in options:
-        // ["allow","deny"] means standard approve/deny; ["dismiss"] means
-        // the request kind (e.g. unsupportedPermissions) can't be answered.
-        let supportsDecisions = prompt.options.contains("allow")
-        return SessionApprovalCard(
+        SessionApprovalCard(
             title: prompt.title,
             detail: prompt.message,
             approveTitle: "Approve",
             declineTitle: "Decline",
-            supportsDecisions: supportsDecisions,
+            supportsDecisions: prompt.supportsDecisions,
             unsupportedText: "This permission request is not supported by the current UI yet."
         ) {
             coordinator.answerCodexApproval(for: agent.id, accept: true)

@@ -37,7 +37,13 @@ struct AgentSessionCoordinatorSnapshotTests {
         codexEmit?(
             agentId,
             .promptPresented(.approval(ApprovalPrompt(
-                id: "a1", title: "Approval", message: "OK?", options: ["allow", "deny"]
+                id: "a1",
+                title: "Approval",
+                message: "OK?",
+                actions: [
+                    ApprovalAction(id: "allow", label: "Allow"),
+                    ApprovalAction(id: "deny", label: "Deny", isDestructive: true),
+                ]
             )))
         )
 

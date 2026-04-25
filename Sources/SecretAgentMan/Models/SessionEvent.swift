@@ -91,11 +91,39 @@ struct PromptQuestion: Equatable, Identifiable {
     let options: [PromptOption]
 }
 
+enum ApprovalActionKind: String, Equatable {
+    case allowOnce
+    case allowAlways
+    case rejectOnce
+    case rejectAlways
+}
+
+struct ApprovalAction: Equatable, Identifiable {
+    let id: String
+    let label: String
+    let kind: ApprovalActionKind?
+    let isDestructive: Bool
+
+    init(id: String, label: String, kind: ApprovalActionKind? = nil, isDestructive: Bool = false) {
+        self.id = id
+        self.label = label
+        self.kind = kind
+        self.isDestructive = isDestructive
+    }
+}
+
 struct ApprovalPrompt: Equatable, Identifiable {
     let id: String
     let title: String
     let message: String
-    let options: [String]
+    let actions: [ApprovalAction]
+
+    /// True when the prompt offers real approve/decline choices. False for
+    /// dismiss-only prompts (e.g. Codex `unsupportedPermissions`) where the UI
+    /// can only acknowledge the request.
+    var supportsDecisions: Bool {
+        actions.count > 1
+    }
 }
 
 struct UserInputPrompt: Equatable, Identifiable {

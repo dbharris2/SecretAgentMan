@@ -109,7 +109,10 @@ extension ClaudeStreamMonitor {
             id: request.requestId,
             title: request.displayName,
             message: request.inputDescription,
-            options: ["allow", "deny"]
+            actions: [
+                ApprovalAction(id: "allow", label: "Allow"),
+                ApprovalAction(id: "deny", label: "Deny", isDestructive: true),
+            ]
         )
     }
 

@@ -25,7 +25,7 @@ struct AgentSessionReducerTests {
         )
         snap = AgentSessionReducer.reduce(
             snap,
-            event: .promptPresented(.approval(ApprovalPrompt(id: "a1", title: "t", message: "m", options: ["ok"])))
+            event: .promptPresented(.approval(ApprovalPrompt(id: "a1", title: "t", message: "m", actions: [ApprovalAction(id: "ok", label: "OK")])))
         )
 
         snap = AgentSessionReducer.reduce(snap, event: .runStateChanged(.error(message: "x")))
@@ -189,7 +189,7 @@ struct AgentSessionReducerTests {
     @Test func firstPromptBecomesActive() {
         var snap = AgentSessionSnapshot()
         let prompt: SessionPromptRequest = .approval(
-            ApprovalPrompt(id: "a1", title: "t", message: "m", options: ["ok"])
+            ApprovalPrompt(id: "a1", title: "t", message: "m", actions: [ApprovalAction(id: "ok", label: "OK")])
         )
 
         snap = AgentSessionReducer.reduce(snap, event: .promptPresented(prompt))
@@ -201,10 +201,10 @@ struct AgentSessionReducerTests {
     @Test func secondPromptIsQueued() {
         var snap = AgentSessionSnapshot()
         let first: SessionPromptRequest = .approval(
-            ApprovalPrompt(id: "a1", title: "t", message: "m", options: ["ok"])
+            ApprovalPrompt(id: "a1", title: "t", message: "m", actions: [ApprovalAction(id: "ok", label: "OK")])
         )
         let second: SessionPromptRequest = .approval(
-            ApprovalPrompt(id: "a2", title: "t", message: "m", options: ["ok"])
+            ApprovalPrompt(id: "a2", title: "t", message: "m", actions: [ApprovalAction(id: "ok", label: "OK")])
         )
 
         snap = AgentSessionReducer.reduce(snap, event: .promptPresented(first))
@@ -217,10 +217,10 @@ struct AgentSessionReducerTests {
     @Test func resolvingActivePromotesQueued() {
         var snap = AgentSessionSnapshot()
         let first: SessionPromptRequest = .approval(
-            ApprovalPrompt(id: "a1", title: "t", message: "m", options: ["ok"])
+            ApprovalPrompt(id: "a1", title: "t", message: "m", actions: [ApprovalAction(id: "ok", label: "OK")])
         )
         let second: SessionPromptRequest = .approval(
-            ApprovalPrompt(id: "a2", title: "t", message: "m", options: ["ok"])
+            ApprovalPrompt(id: "a2", title: "t", message: "m", actions: [ApprovalAction(id: "ok", label: "OK")])
         )
 
         snap = AgentSessionReducer.reduce(snap, event: .promptPresented(first))
@@ -234,7 +234,7 @@ struct AgentSessionReducerTests {
     @Test func resolvingActiveWithEmptyQueueClearsActive() {
         var snap = AgentSessionSnapshot()
         let prompt: SessionPromptRequest = .approval(
-            ApprovalPrompt(id: "a1", title: "t", message: "m", options: ["ok"])
+            ApprovalPrompt(id: "a1", title: "t", message: "m", actions: [ApprovalAction(id: "ok", label: "OK")])
         )
 
         snap = AgentSessionReducer.reduce(snap, event: .promptPresented(prompt))
@@ -246,10 +246,10 @@ struct AgentSessionReducerTests {
     @Test func resolvingQueuedPromptRemovesInPlace() {
         var snap = AgentSessionSnapshot()
         let active: SessionPromptRequest = .approval(
-            ApprovalPrompt(id: "a1", title: "t", message: "m", options: ["ok"])
+            ApprovalPrompt(id: "a1", title: "t", message: "m", actions: [ApprovalAction(id: "ok", label: "OK")])
         )
         let queued: SessionPromptRequest = .approval(
-            ApprovalPrompt(id: "a2", title: "t", message: "m", options: ["ok"])
+            ApprovalPrompt(id: "a2", title: "t", message: "m", actions: [ApprovalAction(id: "ok", label: "OK")])
         )
 
         snap = AgentSessionReducer.reduce(snap, event: .promptPresented(active))
@@ -263,7 +263,7 @@ struct AgentSessionReducerTests {
     @Test func resolvingUnknownPromptIsNoOp() {
         var snap = AgentSessionSnapshot()
         let active: SessionPromptRequest = .approval(
-            ApprovalPrompt(id: "a1", title: "t", message: "m", options: ["ok"])
+            ApprovalPrompt(id: "a1", title: "t", message: "m", actions: [ApprovalAction(id: "ok", label: "OK")])
         )
 
         snap = AgentSessionReducer.reduce(snap, event: .promptPresented(active))
@@ -377,7 +377,7 @@ struct AgentSessionReducerTests {
         snap = AgentSessionReducer.reduce(
             snap,
             event: .promptPresented(.approval(
-                ApprovalPrompt(id: "a1", title: "t", message: "m", options: ["ok"])
+                ApprovalPrompt(id: "a1", title: "t", message: "m", actions: [ApprovalAction(id: "ok", label: "OK")])
             ))
         )
         var meta = SessionMetadataUpdate()

@@ -78,7 +78,10 @@ struct CodexAppServerMonitorSessionEventTests {
         let prompt = CodexAppServerMonitor.mapApprovalPrompt(request)
         #expect(prompt.id == "item-1")
         #expect(prompt.title == "Command Approval")
-        #expect(prompt.options == ["allow", "deny"])
+        #expect(prompt.actions.map(\.id) == ["allow", "deny"])
+        #expect(prompt.actions.map(\.label) == ["Allow", "Deny"])
+        #expect(prompt.actions.map(\.isDestructive) == [false, true])
+        #expect(prompt.supportsDecisions)
     }
 
     @Test func mapApprovalPromptForUnsupportedPermissionsIsDismissOnly() {
@@ -91,7 +94,8 @@ struct CodexAppServerMonitorSessionEventTests {
             kind: .unsupportedPermissions(reason: "explain")
         )
         let prompt = CodexAppServerMonitor.mapApprovalPrompt(request)
-        #expect(prompt.options == ["dismiss"])
+        #expect(prompt.actions.map(\.id) == ["dismiss"])
+        #expect(prompt.supportsDecisions == false)
     }
 
     // MARK: - mapUserInputPrompt

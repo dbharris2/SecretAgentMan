@@ -86,7 +86,13 @@ struct SessionReplayTests {
 
     @Test func codexApprovalFlowFromRunningToResolved() {
         let approval = ApprovalPrompt(
-            id: "approve-1", title: "Run rm -rf?", message: "OK?", options: ["allow", "deny"]
+            id: "approve-1",
+            title: "Run rm -rf?",
+            message: "OK?",
+            actions: [
+                ApprovalAction(id: "allow", label: "Allow"),
+                ApprovalAction(id: "deny", label: "Deny", isDestructive: true),
+            ]
         )
         let events: [SessionEvent] = [
             .sessionReady(sessionId: "thread-1"),
@@ -152,7 +158,12 @@ struct SessionReplayTests {
         // state must clear; metadata that's session-scoped (sessionId)
         // updates; agent-level metadata (model name, permission mode)
         // is intentionally preserved unless the monitor re-clears it.
-        let pending = ApprovalPrompt(id: "a", title: "T", message: "M", options: ["allow"])
+        let pending = ApprovalPrompt(
+            id: "a",
+            title: "T",
+            message: "M",
+            actions: [ApprovalAction(id: "allow", label: "Allow")]
+        )
         var update = SessionMetadataUpdate()
         update.displayModelName = .set("Claude Sonnet")
         update.permissionMode = .set("acceptEdits")
@@ -231,8 +242,18 @@ struct SessionReplayTests {
         // queues. If the *queued* prompt's id resolves (out-of-band, e.g.
         // protocol cancel), it must drop from the queue without disturbing
         // the active prompt.
-        let active = ApprovalPrompt(id: "a", title: "A", message: "", options: ["allow"])
-        let queued = ApprovalPrompt(id: "q", title: "Q", message: "", options: ["allow"])
+        let active = ApprovalPrompt(
+            id: "a",
+            title: "A",
+            message: "",
+            actions: [ApprovalAction(id: "allow", label: "Allow")]
+        )
+        let queued = ApprovalPrompt(
+            id: "q",
+            title: "Q",
+            message: "",
+            actions: [ApprovalAction(id: "allow", label: "Allow")]
+        )
 
         let events: [SessionEvent] = [
             .promptPresented(.approval(active)),
@@ -309,7 +330,13 @@ struct SessionReplayTests {
         // alongside the active prompt. This is the snapshot-level analog of
         // the coordinator's terminal-state suppression rule.
         let approval = ApprovalPrompt(
-            id: "a", title: "T", message: "M", options: ["allow", "deny"]
+            id: "a",
+            title: "T",
+            message: "M",
+            actions: [
+                ApprovalAction(id: "allow", label: "Allow"),
+                ApprovalAction(id: "deny", label: "Deny", isDestructive: true),
+            ]
         )
         let events: [SessionEvent] = [
             .runStateChanged(.running),

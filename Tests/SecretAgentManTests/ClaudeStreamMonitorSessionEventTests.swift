@@ -79,7 +79,10 @@ struct ClaudeStreamMonitorSessionEventTests {
         #expect(prompt.id == "req-1")
         #expect(prompt.title == "Write File")
         #expect(prompt.message == "file_path: /tmp/x")
-        #expect(prompt.options == ["allow", "deny"])
+        #expect(prompt.actions.map(\.id) == ["allow", "deny"])
+        #expect(prompt.actions.map(\.label) == ["Allow", "Deny"])
+        #expect(prompt.actions.map(\.isDestructive) == [false, true])
+        #expect(prompt.supportsDecisions)
     }
 
     @Test func mapElicitationPromptWithoutOptionsAllowsFreeform() {
