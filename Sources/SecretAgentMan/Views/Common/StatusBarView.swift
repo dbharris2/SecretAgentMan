@@ -433,6 +433,7 @@ private struct SessionActionRow: View {
         .padding(.horizontal, Spacing.xl)
         .padding(.vertical, Spacing.sm)
         .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(Rectangle())
         .hoverHighlight(cornerRadius: 0)
     }
 }
