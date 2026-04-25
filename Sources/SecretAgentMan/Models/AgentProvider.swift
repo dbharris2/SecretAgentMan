@@ -41,28 +41,4 @@ enum AgentProvider: String, CaseIterable, Codable, Hashable, Identifiable {
             ".gemini"
         }
     }
-
-    var iconAssetName: String? {
-        switch self {
-        case .claude:
-            "ClaudeIcon"
-        case .codex:
-            "CodexIcon"
-        case .gemini:
-            // Gemini ships without a bundled icon asset; the symbol fallback
-            // below renders instead. Add a `GeminiIcon` asset to swap in.
-            nil
-        }
-    }
-
-    var symbolName: String {
-        switch self {
-        case .claude:
-            "brain"
-        case .codex:
-            "chevron.left.forwardslash.chevron.right"
-        case .gemini:
-            "sparkles"
-        }
-    }
 }
