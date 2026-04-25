@@ -464,4 +464,158 @@ struct AgentSessionReducerTests {
         #expect(snap.finalizedTranscript.count == 1)
         #expect(snap.finalizedTranscript[0].id == "a1")
     }
+
+    // MARK: - turnCompleted
+
+    @Test func turnCompletedEndTurnSetsIdle() {
+        var snap = AgentSessionSnapshot()
+        snap.runState = .running
+        snap = AgentSessionReducer.reduce(
+            snap,
+            event: .turnCompleted(SessionTurnCompletion(stopReason: .endTurn))
+        )
+        #expect(snap.runState == .idle)
+    }
+
+    @Test func turnCompletedMaxTokensSetsIdle() {
+        var snap = AgentSessionSnapshot()
+        snap.runState = .running
+        snap = AgentSessionReducer.reduce(
+            snap,
+            event: .turnCompleted(SessionTurnCompletion(stopReason: .maxTokens))
+        )
+        #expect(snap.runState == .idle)
+    }
+
+    @Test func turnCompletedMaxTurnRequestsSetsIdle() {
+        var snap = AgentSessionSnapshot()
+        snap.runState = .running
+        snap = AgentSessionReducer.reduce(
+            snap,
+            event: .turnCompleted(SessionTurnCompletion(stopReason: .maxTurnRequests))
+        )
+        #expect(snap.runState == .idle)
+    }
+
+    @Test func turnCompletedCancelledSetsIdle() {
+        var snap = AgentSessionSnapshot()
+        snap.runState = .running
+        snap = AgentSessionReducer.reduce(
+            snap,
+            event: .turnCompleted(SessionTurnCompletion(stopReason: .cancelled))
+        )
+        #expect(snap.runState == .idle)
+    }
+
+    @Test func turnCompletedRefusalSetsError() {
+        var snap = AgentSessionSnapshot()
+        snap.runState = .running
+        snap = AgentSessionReducer.reduce(
+            snap,
+            event: .turnCompleted(SessionTurnCompletion(stopReason: .refusal))
+        )
+        if case let .error(message) = snap.runState {
+            #expect(message != nil)
+        } else {
+            Issue.record("Expected .error run state, got \(snap.runState)")
+        }
+    }
+
+    @Test func turnCompletedUnknownSetsIdle() {
+        // Guards against a future ACP stopReason addition wedging the session.
+        var snap = AgentSessionSnapshot()
+        snap.runState = .running
+        snap = AgentSessionReducer.reduce(
+            snap,
+            event: .turnCompleted(SessionTurnCompletion(stopReason: .unknown("future_reason")))
+        )
+        #expect(snap.runState == .idle)
+    }
+
+    @Test func turnCompletedAfterTranscriptFinishedPreservesTranscript() {
+        // Contract: monitors emit transcriptFinished first, then turnCompleted.
+        // The reducer must not alter transcript contents when handling
+        // turnCompleted — it only transitions run state.
+        var snap = AgentSessionSnapshot()
+        snap = AgentSessionReducer.reduce(
+            snap,
+            event: .transcriptUpsert(SessionTranscriptItem(
+                id: "a1", kind: .assistantMessage, text: "hello", isStreaming: true
+            ))
+        )
+        snap = AgentSessionReducer.reduce(snap, event: .transcriptFinished(id: "a1"))
+        snap = AgentSessionReducer.reduce(
+            snap,
+            event: .turnCompleted(SessionTurnCompletion(stopReason: .endTurn))
+        )
+        #expect(snap.runState == .idle)
+        #expect(snap.finalizedTranscript.count == 1)
+        #expect(snap.finalizedTranscript[0].isStreaming == false)
+    }
+
+    // MARK: - Dynamic mode/model metadata
+
+    @Test func metadataUpdateAppliesAvailableModesAndCurrentModeId() {
+        var snap = AgentSessionSnapshot()
+        var update = SessionMetadataUpdate()
+        update.availableModes = .set([
+            SessionModeInfo(id: "default", name: "Default"),
+            SessionModeInfo(id: "auto", name: "Auto", description: "Auto-approve edits"),
+        ])
+        update.currentModeId = .set("auto")
+        snap = AgentSessionReducer.reduce(snap, event: .metadataUpdated(update))
+
+        #expect(snap.metadata.availableModes?.count == 2)
+        #expect(snap.metadata.availableModes?[1].description == "Auto-approve edits")
+        #expect(snap.metadata.currentModeId == "auto")
+    }
+
+    @Test func metadataUpdateAppliesAvailableModelsAndCurrentModelId() {
+        var snap = AgentSessionSnapshot()
+        var update = SessionMetadataUpdate()
+        update.availableModels = .set([
+            SessionModelInfo(id: "gemini-2.5-pro", name: "Gemini 2.5 Pro"),
+            SessionModelInfo(id: "gemini-2.5-flash", name: "Gemini 2.5 Flash"),
+        ])
+        update.currentModelId = .set("gemini-2.5-pro")
+        snap = AgentSessionReducer.reduce(snap, event: .metadataUpdated(update))
+
+        #expect(snap.metadata.availableModels?.count == 2)
+        #expect(snap.metadata.currentModelId == "gemini-2.5-pro")
+    }
+
+    @Test func metadataUpdateCanClearDynamicFields() {
+        var snap = AgentSessionSnapshot()
+        snap.metadata.availableModes = [SessionModeInfo(id: "x", name: "X")]
+        snap.metadata.currentModeId = "x"
+        snap.metadata.availableModels = [SessionModelInfo(id: "m", name: "M")]
+        snap.metadata.currentModelId = "m"
+
+        var update = SessionMetadataUpdate()
+        update.availableModes = .clear
+        update.currentModeId = .clear
+        update.availableModels = .clear
+        update.currentModelId = .clear
+        snap = AgentSessionReducer.reduce(snap, event: .metadataUpdated(update))
+
+        #expect(snap.metadata.availableModes == nil)
+        #expect(snap.metadata.currentModeId == nil)
+        #expect(snap.metadata.availableModels == nil)
+        #expect(snap.metadata.currentModelId == nil)
+    }
+
+    @Test func metadataUpdatePreservesUntouchedDynamicFields() {
+        var snap = AgentSessionSnapshot()
+        snap.metadata.availableModes = [SessionModeInfo(id: "x", name: "X")]
+        snap.metadata.currentModelId = "gemini-2.5-pro"
+
+        // Only touch one unrelated field.
+        var update = SessionMetadataUpdate()
+        update.displayModelName = .set("Gemini 2.5 Pro")
+        snap = AgentSessionReducer.reduce(snap, event: .metadataUpdated(update))
+
+        #expect(snap.metadata.availableModes?.count == 1)
+        #expect(snap.metadata.currentModelId == "gemini-2.5-pro")
+        #expect(snap.metadata.displayModelName == "Gemini 2.5 Pro")
+    }
 }

@@ -279,7 +279,7 @@ private enum TranscriptSection: Identifiable {
     private static func isGroupableKind(_ kind: TranscriptItemKind) -> Bool {
         switch kind {
         case .userMessage, .assistantMessage: false
-        case .systemMessage, .toolActivity, .plan, .diffSummary, .error: true
+        case .systemMessage, .toolActivity, .plan, .diffSummary, .error, .thought: true
         }
     }
 }

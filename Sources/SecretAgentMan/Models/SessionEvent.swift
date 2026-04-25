@@ -17,6 +17,9 @@ enum TranscriptItemKind: Equatable {
     case plan
     case diffSummary
     case error
+    /// Provider-emitted reasoning or "thinking" content. Views group these
+    /// alongside system/tool/plan items rather than the primary assistant stream.
+    case thought
 }
 
 struct TranscriptItemMetadata: Equatable {
@@ -155,6 +158,45 @@ struct SessionSlashCommand: Equatable {
     }
 }
 
+struct SessionModeInfo: Equatable, Identifiable {
+    let id: String
+    let name: String
+    let description: String?
+
+    init(id: String, name: String, description: String? = nil) {
+        self.id = id
+        self.name = name
+        self.description = description
+    }
+}
+
+struct SessionModelInfo: Equatable, Identifiable {
+    let id: String
+    let name: String
+    let description: String?
+
+    init(id: String, name: String, description: String? = nil) {
+        self.id = id
+        self.name = name
+        self.description = description
+    }
+}
+
+enum SessionStopReason: Equatable {
+    case endTurn
+    case maxTokens
+    case maxTurnRequests
+    case refusal
+    case cancelled
+    /// Unknown stop reason from a future ACP revision. Reducer treats this
+    /// as end-of-turn idle so a new stopReason addition doesn't wedge sessions.
+    case unknown(String)
+}
+
+struct SessionTurnCompletion: Equatable {
+    let stopReason: SessionStopReason
+}
+
 struct SessionMetadataSnapshot: Equatable {
     var sessionId: String?
     var displayModelName: String?
@@ -164,6 +206,10 @@ struct SessionMetadataSnapshot: Equatable {
     var collaborationMode: String?
     var activeToolName: String?
     var slashCommands: [SessionSlashCommand]?
+    var availableModes: [SessionModeInfo]?
+    var currentModeId: String?
+    var availableModels: [SessionModelInfo]?
+    var currentModelId: String?
 }
 
 enum MetadataFieldUpdate<Value: Equatable>: Equatable {
@@ -180,6 +226,10 @@ struct SessionMetadataUpdate: Equatable {
     var collaborationMode: MetadataFieldUpdate<String> = .unchanged
     var activeToolName: MetadataFieldUpdate<String> = .unchanged
     var slashCommands: MetadataFieldUpdate<[SessionSlashCommand]> = .unchanged
+    var availableModes: MetadataFieldUpdate<[SessionModeInfo]> = .unchanged
+    var currentModeId: MetadataFieldUpdate<String> = .unchanged
+    var availableModels: MetadataFieldUpdate<[SessionModelInfo]> = .unchanged
+    var currentModelId: MetadataFieldUpdate<String> = .unchanged
 }
 
 /// Monitors emit these; the reducer consumes them.
@@ -189,6 +239,10 @@ struct SessionMetadataUpdate: Equatable {
 ///   - `transcriptFinished` is the authoritative way to flip `isStreaming` to false.
 ///   - A second `sessionReady` with a different sessionId is a session-replacement event.
 ///     Same sessionId is a no-op.
+///   - `turnCompleted` is the authoritative end-of-turn signal for providers that
+///     emit one. Monitors must emit all final `transcriptFinished`, tool-state,
+///     prompt-resolution, and metadata events first, then emit `turnCompleted`
+///     last. It does not replace `transcriptFinished`.
 enum SessionEvent: Equatable {
     case sessionReady(sessionId: String)
     case runStateChanged(SessionRunState)
@@ -198,6 +252,7 @@ enum SessionEvent: Equatable {
     case promptPresented(SessionPromptRequest)
     case promptResolved(id: String)
     case metadataUpdated(SessionMetadataUpdate)
+    case turnCompleted(SessionTurnCompletion)
 }
 
 struct AgentSessionSnapshot: Equatable {
