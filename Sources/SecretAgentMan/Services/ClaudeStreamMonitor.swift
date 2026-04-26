@@ -379,22 +379,14 @@ final class ClaudeStreamMonitor {
     nonisolated static func approvalRequest(
         agentId: UUID,
         requestId: String,
-        request: [String: Any]
-    ) -> ClaudeApprovalRequest? {
-        guard request["subtype"] as? String == "can_use_tool",
-              let toolName = request["tool_name"] as? String
-        else { return nil }
-
-        let displayName = request["display_name"] as? String ?? toolName
-        let input = request["input"] as? [String: Any]
-        let inputDescription = input.map { formatToolInput($0) } ?? ""
-
-        return ClaudeApprovalRequest(
+        permission: ClaudeProtocol.PermissionRequest
+    ) -> ClaudeApprovalRequest {
+        ClaudeApprovalRequest(
             agentId: agentId,
             requestId: requestId,
-            toolName: toolName,
-            displayName: displayName,
-            inputDescription: inputDescription
+            toolName: permission.toolName,
+            displayName: permission.displayName ?? permission.toolName,
+            inputDescription: formatToolInput(permission.input)
         )
     }
 
@@ -563,9 +555,10 @@ final class ClaudeStreamMonitor {
         return name.capitalized + contextSuffix
     }
 
-    private nonisolated static func formatToolInput(_ input: [String: Any]) -> String {
-        input.map { key, value in
-            let valueStr = if let str = value as? String {
+    private nonisolated static func formatToolInput(_ input: JSONValue) -> String {
+        guard case let .object(dict) = input else { return "" }
+        return dict.map { key, value in
+            let valueStr: String = if case let .string(str) = value {
                 str.count > 200 ? String(str.prefix(200)) + "..." : str
             } else {
                 String(describing: value)
@@ -597,12 +590,12 @@ private struct ObserverDelegate {
 
 private struct PendingApproval {
     let requestId: String
-    let toolInput: [String: Any]
+    let toolInput: JSONValue
 }
 
 private struct PendingElicitation {
     let requestId: String
-    let toolInput: [String: Any]
+    let toolInput: JSONValue
     let questionText: String
 }
 
@@ -778,7 +771,7 @@ private final class Observer: @unchecked Sendable {
         }
     }
 
-    private func sendPermissionResponse(requestId: String, allow: Bool, toolInput: [String: Any]) {
+    private func sendPermissionResponse(requestId: String, allow: Bool, toolInput: JSONValue) {
         let message = if allow {
             ClaudeProtocol.PermissionResponse.allow(requestId: requestId, updatedInput: toolInput)
         } else {
@@ -906,8 +899,8 @@ private final class Observer: @unchecked Sendable {
             handleUserEvent(raw.legacyDictionary())
         case let .streamEvent(raw):
             handleStreamEvent(raw.legacyDictionary())
-        case let .controlRequest(raw):
-            handleControlRequest(raw.legacyDictionary())
+        case let .controlRequest(controlEvent):
+            handleControlRequest(controlEvent)
         case let .controlResponse(raw):
             handleControlResponse(raw.legacyDictionary())
         case let .result(raw):
@@ -1007,29 +1000,21 @@ private final class Observer: @unchecked Sendable {
         }
     }
 
-    private func handleControlRequest(_ event: [String: Any]) {
-        guard let requestId = event["request_id"] as? String,
-              let request = event["request"] as? [String: Any],
-              let subtype = request["subtype"] as? String
-        else { return }
+    private func handleControlRequest(_ event: ClaudeProtocol.ControlRequestEvent) {
+        let requestId = event.requestId
 
-        switch subtype {
-        case "can_use_tool":
-            let toolName = request["tool_name"] as? String ?? ""
-            let toolInput = request["input"] as? [String: Any] ?? [:]
-
+        switch event.request {
+        case let .canUseTool(permission):
             // AskUserQuestion: show options as buttons, fall back to composer for freeform
-            if toolName == "AskUserQuestion" {
-                let questions = toolInput["questions"] as? [[String: Any]] ?? []
-                let firstQuestion = questions.first ?? [:]
-                let questionText = firstQuestion["question"] as? String ?? "Input requested"
-                let optionDicts = firstQuestion["options"] as? [[String: Any]] ?? []
-                let options = optionDicts.compactMap { dict -> CodexUserInputOption? in
-                    guard let label = dict["label"] as? String else { return nil }
-                    return CodexUserInputOption(label: label, description: dict["description"] as? String ?? "")
+            if permission.toolName == "AskUserQuestion" {
+                let parsed = try? permission.input.decode(as: ClaudeProtocol.AskUserQuestionInput.self)
+                let firstQuestion = parsed?.questions.first
+                let questionText = firstQuestion?.question ?? "Input requested"
+                let options = (firstQuestion?.options ?? []).map { option in
+                    CodexUserInputOption(label: option.label, description: option.description ?? "")
                 }
                 pendingElicitation = PendingElicitation(
-                    requestId: requestId, toolInput: toolInput, questionText: questionText
+                    requestId: requestId, toolInput: permission.input, questionText: questionText
                 )
                 let elicitation = ClaudeElicitationRequest(
                     agentId: agent.id,
@@ -1042,27 +1027,26 @@ private final class Observer: @unchecked Sendable {
                 return
             }
 
-            guard let approval = ClaudeStreamMonitor.approvalRequest(
+            let approval = ClaudeStreamMonitor.approvalRequest(
                 agentId: agent.id,
                 requestId: requestId,
-                request: request
-            ) else { return }
-            pendingApproval = PendingApproval(requestId: requestId, toolInput: toolInput)
+                permission: permission
+            )
+            pendingApproval = PendingApproval(requestId: requestId, toolInput: permission.input)
             delegate.approvalRequest(agent.id, approval)
             publishIfChanged(.needsPermission)
 
-        case "elicitation":
-            let message = request["message"] as? String ?? "Input requested"
+        case let .elicitation(elic):
             let elicitation = ClaudeElicitationRequest(
                 agentId: agent.id,
                 requestId: requestId,
-                message: message,
+                message: elic.message,
                 options: []
             )
             delegate.elicitationRequest(agent.id, elicitation)
             publishIfChanged(.needsPermission)
 
-        default:
+        case .unknown:
             break
         }
     }
@@ -1071,8 +1055,18 @@ private final class Observer: @unchecked Sendable {
         queue.async { [weak self] in
             guard let self, let pending = self.pendingElicitation else { return }
 
+            // Echo Claude's original input verbatim, with `answers` merged in.
+            // Tool input is always an `.object` from Claude — fall back to a
+            // fresh object if it's not, so a misshapen input still produces a
+            // valid permission response.
+            let answers = JSONValue.object([pending.questionText: .string(answer)])
             var modified = pending.toolInput
-            modified["answers"] = [pending.questionText: answer]
+            if case var .object(dict) = modified {
+                dict["answers"] = answers
+                modified = .object(dict)
+            } else {
+                modified = .object(["answers": answers])
+            }
 
             self.pendingElicitation = nil
             self.sendPermissionResponse(requestId: requestId, allow: true, toolInput: modified)

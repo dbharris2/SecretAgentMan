@@ -101,7 +101,7 @@ enum ClaudeProtocol {
         }
 
         enum Decision: Encodable {
-            case allow(updatedInput: [String: Any])
+            case allow(updatedInput: JSONValue)
             case deny(message: String)
 
             func encode(to encoder: Encoder) throws {
@@ -109,9 +109,7 @@ enum ClaudeProtocol {
                 switch self {
                 case let .allow(updatedInput):
                     try container.encode("allow", forKey: .behavior)
-                    let data = try JSONSerialization.data(withJSONObject: updatedInput)
-                    let raw = try JSONDecoder().decode(JSONValue.self, from: data)
-                    try container.encode(raw, forKey: .updatedInput)
+                    try container.encode(updatedInput, forKey: .updatedInput)
                 case let .deny(message):
                     try container.encode("deny", forKey: .behavior)
                     try container.encode(message, forKey: .message)
@@ -123,7 +121,7 @@ enum ClaudeProtocol {
             }
         }
 
-        static func allow(requestId: String, updatedInput: [String: Any]) -> PermissionResponse {
+        static func allow(requestId: String, updatedInput: JSONValue) -> PermissionResponse {
             PermissionResponse(
                 response: ResponseBody(
                     request_id: requestId,
@@ -156,7 +154,7 @@ enum ClaudeProtocol {
         case assistant(JSONValue)
         case user(JSONValue)
         case streamEvent(JSONValue)
-        case controlRequest(JSONValue)
+        case controlRequest(ControlRequestEvent)
         case controlResponse(JSONValue)
         case result(JSONValue)
         case unknown(type: String, raw: JSONValue)
@@ -168,16 +166,16 @@ enum ClaudeProtocol {
         init(from decoder: Decoder) throws {
             let keyed = try decoder.container(keyedBy: CodingKeys.self)
             let type = try keyed.decode(String.self, forKey: .type)
-            let raw = try decoder.singleValueContainer().decode(JSONValue.self)
+            let single = try decoder.singleValueContainer()
             switch type {
-            case "system": self = .system(raw)
-            case "assistant": self = .assistant(raw)
-            case "user": self = .user(raw)
-            case "stream_event": self = .streamEvent(raw)
-            case "control_request": self = .controlRequest(raw)
-            case "control_response": self = .controlResponse(raw)
-            case "result": self = .result(raw)
-            default: self = .unknown(type: type, raw: raw)
+            case "system": self = try .system(single.decode(JSONValue.self))
+            case "assistant": self = try .assistant(single.decode(JSONValue.self))
+            case "user": self = try .user(single.decode(JSONValue.self))
+            case "stream_event": self = try .streamEvent(single.decode(JSONValue.self))
+            case "control_request": self = try .controlRequest(single.decode(ControlRequestEvent.self))
+            case "control_response": self = try .controlResponse(single.decode(JSONValue.self))
+            case "result": self = try .result(single.decode(JSONValue.self))
+            default: self = try .unknown(type: type, raw: single.decode(JSONValue.self))
             }
         }
 
@@ -209,6 +207,92 @@ enum ClaudeProtocol {
         let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
         return try JSONDecoder().decode(Event.self, from: Data(trimmed.utf8))
+    }
+
+    // MARK: - Control Requests (typed)
+
+    /// Wire shape: `{type: "control_request", request_id: ..., request: {...}}`.
+    /// The inner `request` is discriminated on `subtype`.
+    struct ControlRequestEvent: Decodable, Equatable {
+        let requestId: String
+        let request: ControlRequestSubtype
+
+        private enum CodingKeys: String, CodingKey {
+            case requestId = "request_id"
+            case request
+        }
+    }
+
+    /// Discriminated on `subtype`. Forward-compatible subtypes preserve their
+    /// raw payload via `.unknown` so logs can attribute them to a wire shape.
+    enum ControlRequestSubtype: Decodable, Equatable {
+        case canUseTool(PermissionRequest)
+        case elicitation(ElicitationRequest)
+        case unknown(subtype: String, raw: JSONValue)
+
+        private enum CodingKeys: String, CodingKey {
+            case subtype
+        }
+
+        init(from decoder: Decoder) throws {
+            let keyed = try decoder.container(keyedBy: CodingKeys.self)
+            let subtype = try keyed.decode(String.self, forKey: .subtype)
+            let single = try decoder.singleValueContainer()
+            switch subtype {
+            case "can_use_tool":
+                self = try .canUseTool(single.decode(PermissionRequest.self))
+            case "elicitation":
+                self = try .elicitation(single.decode(ElicitationRequest.self))
+            default:
+                self = try .unknown(subtype: subtype, raw: single.decode(JSONValue.self))
+            }
+        }
+
+        var subtypeName: String {
+            switch self {
+            case .canUseTool: "can_use_tool"
+            case .elicitation: "elicitation"
+            case let .unknown(subtype, _): subtype
+            }
+        }
+    }
+
+    /// `can_use_tool`: Claude is asking permission to invoke a tool. Tool
+    /// `input` is left as raw `JSONValue` so the monitor can echo it back in
+    /// the permission response unchanged, and decode tool-specific shapes on
+    /// demand (e.g. `AskUserQuestionInput`).
+    struct PermissionRequest: Decodable, Equatable {
+        let toolName: String
+        let displayName: String?
+        let input: JSONValue
+
+        private enum CodingKeys: String, CodingKey {
+            case toolName = "tool_name"
+            case displayName = "display_name"
+            case input
+        }
+    }
+
+    /// `elicitation`: freeform prompt to the user, no tool involvement.
+    struct ElicitationRequest: Decodable, Equatable {
+        let message: String
+    }
+
+    /// Tool-input projection for the `AskUserQuestion` tool. Decoded from
+    /// `PermissionRequest.input` on demand when the monitor sees that tool.
+    struct AskUserQuestionInput: Decodable, Equatable {
+        let questions: [Question]
+
+        struct Question: Decodable, Equatable {
+            let question: String
+            let header: String?
+            let options: [Option]?
+        }
+
+        struct Option: Decodable, Equatable {
+            let label: String
+            let description: String?
+        }
     }
 
     // MARK: - Encoding Helpers

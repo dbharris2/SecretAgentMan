@@ -6,41 +6,27 @@ struct ClaudeStreamMonitorTests {
     // MARK: - Approval Request Parsing
 
     @Test
-    func parsesApprovalRequestFromControlRequest() {
+    func parsesApprovalRequestFromPermissionRequest() {
         let agentId = UUID()
         let request = ClaudeStreamMonitor.approvalRequest(
             agentId: agentId,
             requestId: "req-123",
-            request: [
-                "subtype": "can_use_tool",
-                "tool_name": "Write",
-                "display_name": "Write",
-                "input": [
-                    "file_path": "/tmp/test.txt",
-                    "content": "hello",
-                ],
-                "tool_use_id": "toolu_abc",
-            ]
+            permission: ClaudeProtocol.PermissionRequest(
+                toolName: "Write",
+                displayName: "Write",
+                input: .object([
+                    "file_path": .string("/tmp/test.txt"),
+                    "content": .string("hello"),
+                ])
+            )
         )
 
-        #expect(request?.agentId == agentId)
-        #expect(request?.requestId == "req-123")
-        #expect(request?.toolName == "Write")
-        #expect(request?.displayName == "Write")
-        #expect(request?.inputDescription.contains("file_path") == true)
-        #expect(request?.inputDescription.contains("/tmp/test.txt") == true)
-    }
-
-    @Test
-    func returnsNilForNonToolApprovalRequest() {
-        let request = ClaudeStreamMonitor.approvalRequest(
-            agentId: UUID(),
-            requestId: "req-456",
-            request: [
-                "subtype": "initialize",
-            ]
-        )
-        #expect(request == nil)
+        #expect(request.agentId == agentId)
+        #expect(request.requestId == "req-123")
+        #expect(request.toolName == "Write")
+        #expect(request.displayName == "Write")
+        #expect(request.inputDescription.contains("file_path") == true)
+        #expect(request.inputDescription.contains("/tmp/test.txt") == true)
     }
 
     @Test
@@ -48,14 +34,15 @@ struct ClaudeStreamMonitorTests {
         let request = ClaudeStreamMonitor.approvalRequest(
             agentId: UUID(),
             requestId: "req-789",
-            request: [
-                "subtype": "can_use_tool",
-                "tool_name": "Bash",
-            ]
+            permission: ClaudeProtocol.PermissionRequest(
+                toolName: "Bash",
+                displayName: nil,
+                input: .object([:])
+            )
         )
 
-        #expect(request?.displayName == "Bash")
-        #expect(request?.inputDescription == "")
+        #expect(request.displayName == "Bash")
+        #expect(request.inputDescription == "")
     }
 
     // MARK: - Assistant Event Parsing
