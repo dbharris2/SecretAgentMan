@@ -58,4 +58,17 @@ enum JSONValue: Codable, Equatable {
         let data = try JSONEncoder().encode(self)
         return try JSONDecoder().decode(T.self, from: data)
     }
+
+    /// Re-serializes through `JSONSerialization` to recover the
+    /// `NSNumber`-bridged `[String: Any]` shape that pre-typed-event
+    /// handlers depend on (`as? Double` on integer values, etc.).
+    ///
+    /// Phase-1b boundary helper — call sites should disappear as the Claude
+    /// event handlers migrate off `[String: Any]` in subsequent phases.
+    func legacyDictionary() -> [String: Any] {
+        guard let data = try? JSONEncoder().encode(self),
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else { return [:] }
+        return object
+    }
 }

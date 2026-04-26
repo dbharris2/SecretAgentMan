@@ -142,66 +142,73 @@ enum ClaudeProtocol {
         }
     }
 
-    // MARK: - Incoming Events (parsed from [String: Any])
+    // MARK: - Incoming Events
 
-    enum Event {
-        case system(sessionId: String?, model: String?, permissionMode: String?)
-        case assistant(uuid: String, contentBlocks: [[String: Any]])
-        case user(uuid: String, contentBlocks: [[String: Any]])
-        case streamEvent(innerType: String, delta: [String: Any]?)
-        case controlRequest(requestId: String, request: [String: Any])
-        case controlResponse(response: [String: Any])
-        case result(isError: Bool, modelUsage: [String: Any]?, sessionId: String?)
-        case rateLimitEvent(utilization: Double, resetsAt: TimeInterval?)
-        case unknown(type: String)
+    /// Top-level event from Claude's stream-json output. The known cases
+    /// each carry the full event JSON as a `JSONValue`; phases beyond 1b
+    /// will narrow the inner payload to typed structs case by case.
+    ///
+    /// `.unknown(type:raw:)` preserves both the discriminator and the raw
+    /// payload so future-compatibility logging has the full body to work
+    /// with.
+    enum Event: Decodable, Equatable {
+        case system(JSONValue)
+        case assistant(JSONValue)
+        case user(JSONValue)
+        case streamEvent(JSONValue)
+        case controlRequest(JSONValue)
+        case controlResponse(JSONValue)
+        case result(JSONValue)
+        case unknown(type: String, raw: JSONValue)
 
-        static func parse(_ object: [String: Any]) -> Event? {
-            guard let type = object["type"] as? String else { return nil }
+        private enum CodingKeys: String, CodingKey {
+            case type
+        }
+
+        init(from decoder: Decoder) throws {
+            let keyed = try decoder.container(keyedBy: CodingKeys.self)
+            let type = try keyed.decode(String.self, forKey: .type)
+            let raw = try decoder.singleValueContainer().decode(JSONValue.self)
             switch type {
-            case "system":
-                return .system(
-                    sessionId: object["session_id"] as? String,
-                    model: object["model"] as? String,
-                    permissionMode: object["permissionMode"] as? String
-                )
-            case "assistant":
-                let message = object["message"] as? [String: Any] ?? [:]
-                let content = message["content"] as? [[String: Any]] ?? []
-                return .assistant(
-                    uuid: object["uuid"] as? String ?? UUID().uuidString,
-                    contentBlocks: content
-                )
-            case "user":
-                let message = object["message"] as? [String: Any] ?? [:]
-                let content = message["content"] as? [[String: Any]] ?? []
-                return .user(uuid: object["uuid"] as? String ?? UUID().uuidString, contentBlocks: content)
-            case "stream_event":
-                let inner = object["event"] as? [String: Any] ?? [:]
-                return .streamEvent(innerType: inner["type"] as? String ?? "", delta: inner["delta"] as? [String: Any])
-            case "control_request":
-                guard let requestId = object["request_id"] as? String,
-                      let request = object["request"] as? [String: Any]
-                else { return nil }
-                return .controlRequest(requestId: requestId, request: request)
-            case "control_response":
-                let resp = object["response"] as? [String: Any] ?? [:]
-                let inner = resp["response"] as? [String: Any] ?? [:]
-                return .controlResponse(response: inner)
-            case "result":
-                return .result(
-                    isError: object["is_error"] as? Bool ?? false,
-                    modelUsage: object["modelUsage"] as? [String: Any],
-                    sessionId: object["session_id"] as? String
-                )
-            case "rate_limit_event":
-                let info = object["rate_limit_info"] as? [String: Any] ?? [:]
-                let utilization = info["utilization"] as? Double ?? 0
-                let resetsAt = info["resetsAt"] as? TimeInterval
-                return .rateLimitEvent(utilization: utilization, resetsAt: resetsAt)
-            default:
-                return .unknown(type: type)
+            case "system": self = .system(raw)
+            case "assistant": self = .assistant(raw)
+            case "user": self = .user(raw)
+            case "stream_event": self = .streamEvent(raw)
+            case "control_request": self = .controlRequest(raw)
+            case "control_response": self = .controlResponse(raw)
+            case "result": self = .result(raw)
+            default: self = .unknown(type: type, raw: raw)
             }
         }
+
+        /// Wire-format discriminator. Useful for logging when downstream
+        /// payload decoding fails — callers can still attribute the bad
+        /// frame to a known event type.
+        var typeName: String {
+            switch self {
+            case .system: "system"
+            case .assistant: "assistant"
+            case .user: "user"
+            case .streamEvent: "stream_event"
+            case .controlRequest: "control_request"
+            case .controlResponse: "control_response"
+            case .result: "result"
+            case let .unknown(type, _): type
+            }
+        }
+    }
+
+    /// Decodes one JSONL line from Claude's stream-json output.
+    ///
+    /// Returns `nil` for empty or whitespace-only lines.
+    /// Throws for malformed JSON, missing top-level `type`, or anything else
+    /// that fails `Event.init(from:)`.
+    /// Unknown event types decode to `.unknown(type:raw:)` rather than
+    /// throwing, so forward-compatible types don't kill the stream.
+    static func decodeLine(_ line: String) throws -> Event? {
+        let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        return try JSONDecoder().decode(Event.self, from: Data(trimmed.utf8))
     }
 
     // MARK: - Encoding Helpers

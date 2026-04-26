@@ -884,27 +884,35 @@ private final class Observer: @unchecked Sendable {
     }
 
     private func handleJSONLine(_ line: String) {
-        guard let data = line.data(using: .utf8),
-              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let eventType = object["type"] as? String
-        else { return }
+        let event: ClaudeProtocol.Event?
+        do {
+            event = try ClaudeProtocol.decodeLine(line)
+        } catch {
+            // Skip and log — one bad line shouldn't kill the stream.
+            // Note: malformed control_request frames can leave the user waiting
+            // on an approval that never arrives; surface those explicitly when
+            // typed payloads land in Phase 2.
+            NSLog("[Claude] dropped malformed JSONL: \(error)")
+            return
+        }
+        guard let event else { return }
 
-        switch eventType {
-        case "system":
-            handleSystemEvent(object)
-        case "assistant":
-            handleAssistantEvent(object)
-        case "user":
-            handleUserEvent(object)
-        case "stream_event":
-            handleStreamEvent(object)
-        case "control_request":
-            handleControlRequest(object)
-        case "control_response":
-            handleControlResponse(object)
-        case "result":
-            handleResultEvent(object)
-        default:
+        switch event {
+        case let .system(raw):
+            handleSystemEvent(raw.legacyDictionary())
+        case let .assistant(raw):
+            handleAssistantEvent(raw.legacyDictionary())
+        case let .user(raw):
+            handleUserEvent(raw.legacyDictionary())
+        case let .streamEvent(raw):
+            handleStreamEvent(raw.legacyDictionary())
+        case let .controlRequest(raw):
+            handleControlRequest(raw.legacyDictionary())
+        case let .controlResponse(raw):
+            handleControlResponse(raw.legacyDictionary())
+        case let .result(raw):
+            handleResultEvent(raw.legacyDictionary())
+        case .unknown:
             break
         }
     }

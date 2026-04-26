@@ -116,62 +116,91 @@ struct ClaudeProtocolTests {
         #expect(request["mode"] as? String == "plan")
     }
 
-    // MARK: - Event Parsing
+    // MARK: - decodeLine
 
     @Test
-    func parsesSystemEvent() {
-        let event = ClaudeProtocol.Event.parse([
-            "type": "system",
-            "session_id": "sess-1",
-            "model": "claude-opus-4-6[1m]",
-            "permissionMode": "default",
-        ])
-
-        guard case let .system(sessionId, model, mode) = event else {
-            Issue.record("Expected system event")
-            return
-        }
-        #expect(sessionId == "sess-1")
-        #expect(model == "claude-opus-4-6[1m]")
-        #expect(mode == "default")
+    func decodeLineReturnsNilForEmptyLine() throws {
+        #expect(try ClaudeProtocol.decodeLine("") == nil)
+        #expect(try ClaudeProtocol.decodeLine("   \t  ") == nil)
     }
 
     @Test
-    func parsesResultEvent() {
-        let event = ClaudeProtocol.Event.parse([
-            "type": "result",
-            "is_error": true,
-            "session_id": "sess-2",
-        ])
-
-        guard case let .result(isError, _, sessionId) = event else {
-            Issue.record("Expected result event")
-            return
+    func decodeLineThrowsOnMalformedJSON() {
+        #expect(throws: (any Error).self) {
+            try ClaudeProtocol.decodeLine("{not json")
         }
-        #expect(isError == true)
-        #expect(sessionId == "sess-2")
     }
 
     @Test
-    func parsesControlRequestEvent() {
-        let event = ClaudeProtocol.Event.parse([
-            "type": "control_request",
-            "request_id": "req-5",
-            "request": ["subtype": "can_use_tool", "tool_name": "Bash"],
-        ])
+    func decodeLineThrowsOnMissingType() {
+        #expect(throws: (any Error).self) {
+            try ClaudeProtocol.decodeLine(#"{"no_type": true}"#)
+        }
+    }
 
-        guard case let .controlRequest(requestId, request) = event else {
-            Issue.record("Expected control_request event")
+    @Test
+    func decodeLineParsesSystemEvent() throws {
+        let line = #"""
+        {"type":"system","session_id":"sess-1","model":"claude-opus-4-6[1m]","permissionMode":"default"}
+        """#
+        let event = try #require(try ClaudeProtocol.decodeLine(line))
+        guard case let .system(raw) = event else {
+            Issue.record("expected system, got \(event)")
             return
         }
-        #expect(requestId == "req-5")
+        let dict = raw.legacyDictionary()
+        #expect(dict["session_id"] as? String == "sess-1")
+        #expect(dict["model"] as? String == "claude-opus-4-6[1m]")
+        #expect(dict["permissionMode"] as? String == "default")
+    }
+
+    @Test
+    func decodeLineParsesControlRequestEvent() throws {
+        let line = #"""
+        {"type":"control_request","request_id":"req-5","request":{"subtype":"can_use_tool","tool_name":"Bash"}}
+        """#
+        let event = try #require(try ClaudeProtocol.decodeLine(line))
+        guard case let .controlRequest(raw) = event else {
+            Issue.record("expected control_request, got \(event)")
+            return
+        }
+        let dict = raw.legacyDictionary()
+        #expect(dict["request_id"] as? String == "req-5")
+        let request = try #require(dict["request"] as? [String: Any])
         #expect(request["subtype"] as? String == "can_use_tool")
     }
 
     @Test
-    func returnsNilForMissingType() {
-        let event = ClaudeProtocol.Event.parse(["no_type": true])
-        #expect(event == nil)
+    func decodeLineYieldsUnknownForUnrecognizedType() throws {
+        let line = #"{"type":"some_future_event","payload":{"x":1}}"#
+        let event = try #require(try ClaudeProtocol.decodeLine(line))
+        guard case let .unknown(type, raw) = event else {
+            Issue.record("expected unknown, got \(event)")
+            return
+        }
+        #expect(type == "some_future_event")
+        let dict = raw.legacyDictionary()
+        let payload = try #require(dict["payload"] as? [String: Any])
+        #expect(payload["x"] as? Int == 1)
+    }
+
+    /// Regression guard: each known wire-level `type` value must map to a
+    /// non-`.unknown` case. If someone reorders or removes a switch arm in
+    /// `Event.init(from:)`, this catches it before it ships.
+    @Test
+    func decodeLinePinsKnownTypesToTypedCases() throws {
+        let knownTypes = [
+            "system", "assistant", "user", "stream_event",
+            "control_request", "control_response", "result",
+        ]
+        for type in knownTypes {
+            let line = #"{"type":"\#(type)"}"#
+            let event = try #require(try ClaudeProtocol.decodeLine(line), "decoding \(type)")
+            if case .unknown = event {
+                Issue.record("\(type) decoded as .unknown — discriminator dispatch broken")
+            }
+            #expect(event.typeName == type)
+        }
     }
 
     // MARK: - Helpers
