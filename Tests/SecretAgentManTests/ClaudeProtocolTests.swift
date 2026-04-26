@@ -181,7 +181,7 @@ struct ClaudeProtocolTests {
             ("system", ""),
             ("assistant", ""),
             ("user", ""),
-            ("stream_event", ""),
+            ("stream_event", #","event":{"type":"message_stop"}"#),
             ("control_request", #","request_id":"r","request":{"subtype":"elicitation","message":"x"}"#),
             ("control_response", ""),
             ("result", ""),
@@ -317,6 +317,97 @@ struct ClaudeProtocolTests {
         #expect(flags.count == 2)
         #expect(flags[0] as? String == "-x")
         #expect(flags[1] as? Bool == true)
+    }
+
+    // MARK: - Stream Events
+
+    @Test
+    func decodeLineParsesContentBlockStartToolUse() throws {
+        let line = #"""
+        {"type":"stream_event","event":{"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"toolu_a","name":"Bash","input":{}}}}
+        """#
+        let event = try #require(try ClaudeProtocol.decodeLine(line))
+        guard case let .streamEvent(.contentBlockStart(start)) = event else {
+            Issue.record("expected streamEvent(.contentBlockStart), got \(event)")
+            return
+        }
+        guard case let .toolUse(name) = start.contentBlock else {
+            Issue.record("expected .toolUse, got \(start.contentBlock)")
+            return
+        }
+        #expect(name == "Bash")
+    }
+
+    @Test
+    func decodeLineParsesContentBlockStartText() throws {
+        let line = #"""
+        {"type":"stream_event","event":{"type":"content_block_start","index":1,"content_block":{"type":"text","text":""}}}
+        """#
+        let event = try #require(try ClaudeProtocol.decodeLine(line))
+        guard case let .streamEvent(.contentBlockStart(start)) = event else {
+            Issue.record("expected streamEvent(.contentBlockStart), got \(event)")
+            return
+        }
+        #expect(start.contentBlock == .text)
+    }
+
+    @Test
+    func decodeLineParsesTextDelta() throws {
+        let line = #"""
+        {"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hello"}}}
+        """#
+        let event = try #require(try ClaudeProtocol.decodeLine(line))
+        guard case let .streamEvent(.textDelta(text)) = event else {
+            Issue.record("expected streamEvent(.textDelta), got \(event)")
+            return
+        }
+        #expect(text == "Hello")
+    }
+
+    @Test
+    func decodeLineParsesMessageStop() throws {
+        let line = #"{"type":"stream_event","event":{"type":"message_stop"}}"#
+        let event = try #require(try ClaudeProtocol.decodeLine(line))
+        guard case .streamEvent(.messageStop) = event else {
+            Issue.record("expected streamEvent(.messageStop), got \(event)")
+            return
+        }
+    }
+
+    @Test
+    func nonTextContentBlockDeltaPreservesRawAsUnknown() throws {
+        // input_json_delta is real Claude wire content — make sure forward-compat
+        // delta types don't get silently coerced into .textDelta.
+        let line = #"""
+        {"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{\"x\":1}"}}}
+        """#
+        let event = try #require(try ClaudeProtocol.decodeLine(line))
+        guard case let .streamEvent(.unknown(type, raw)) = event else {
+            Issue.record("expected streamEvent(.unknown), got \(event)")
+            return
+        }
+        #expect(type == "content_block_delta")
+        guard case let .object(rawObj) = raw else {
+            Issue.record("expected .object raw, got \(raw)")
+            return
+        }
+        // Raw payload preserves the inner delta verbatim for diagnostics.
+        guard case let .object(deltaObj) = rawObj["delta"] ?? .null else {
+            Issue.record("expected raw.delta to be .object")
+            return
+        }
+        #expect(deltaObj["type"] == .string("input_json_delta"))
+    }
+
+    @Test
+    func unknownStreamEventTypeIsForwardCompatible() throws {
+        let line = #"{"type":"stream_event","event":{"type":"future_event","payload":42}}"#
+        let event = try #require(try ClaudeProtocol.decodeLine(line))
+        guard case let .streamEvent(.unknown(type, _)) = event else {
+            Issue.record("expected streamEvent(.unknown), got \(event)")
+            return
+        }
+        #expect(type == "future_event")
     }
 
     // MARK: - Helpers

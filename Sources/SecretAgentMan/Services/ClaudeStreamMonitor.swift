@@ -897,8 +897,8 @@ private final class Observer: @unchecked Sendable {
             handleAssistantEvent(raw.legacyDictionary())
         case let .user(raw):
             handleUserEvent(raw.legacyDictionary())
-        case let .streamEvent(raw):
-            handleStreamEvent(raw.legacyDictionary())
+        case let .streamEvent(stream):
+            handleStreamEvent(stream)
         case let .controlRequest(controlEvent):
             handleControlRequest(controlEvent)
         case let .controlResponse(raw):
@@ -958,39 +958,35 @@ private final class Observer: @unchecked Sendable {
         }
     }
 
-    private func handleStreamEvent(_ event: [String: Any]) {
-        guard let inner = event["event"] as? [String: Any],
-              let innerType = inner["type"] as? String
-        else { return }
-
-        // Track active tool from content_block_start events
-        if innerType == "content_block_start",
-           let block = inner["content_block"] as? [String: Any],
-           let blockType = block["type"] as? String {
-            if blockType == "tool_use", let name = block["name"] as? String {
-                delegate.activeToolChanged(agent.id, name)
-            } else if blockType == "text" {
+    private func handleStreamEvent(_ stream: ClaudeProtocol.StreamEvent) {
+        switch stream {
+        case let .contentBlockStart(start):
+            switch start.contentBlock {
+            case .text:
                 delegate.activeToolChanged(agent.id, nil)
+            case let .toolUse(name):
+                if let name {
+                    delegate.activeToolChanged(agent.id, name)
+                }
+            case .unknown:
+                break
             }
-        }
 
-        if innerType == "content_block_delta",
-           let delta = inner["delta"] as? [String: Any],
-           let deltaType = delta["type"] as? String,
-           deltaType == "text_delta",
-           let text = delta["text"] as? String {
+        case let .textDelta(text):
+            guard !text.isEmpty else { break }
             currentStreamingText.append(text)
-
             let now = Date()
             if now.timeIntervalSince(lastStreamingFlush) > 0.05 {
                 lastStreamingFlush = now
                 delegate.streamingText(agent.id, currentStreamingText)
             }
-        }
 
-        if innerType == "message_stop" {
+        case .messageStop:
             finalizeStreaming()
             delegate.activeToolChanged(agent.id, nil)
+
+        case .unknown:
+            break
         }
 
         // Don't overwrite needsPermission/awaitingResponse — stream events

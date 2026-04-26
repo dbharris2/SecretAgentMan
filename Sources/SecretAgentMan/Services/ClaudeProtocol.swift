@@ -153,7 +153,7 @@ enum ClaudeProtocol {
         case system(JSONValue)
         case assistant(JSONValue)
         case user(JSONValue)
-        case streamEvent(JSONValue)
+        case streamEvent(StreamEvent)
         case controlRequest(ControlRequestEvent)
         case controlResponse(JSONValue)
         case result(JSONValue)
@@ -161,6 +161,11 @@ enum ClaudeProtocol {
 
         private enum CodingKeys: String, CodingKey {
             case type
+        }
+
+        /// Outer envelope around a stream event: `{type: "stream_event", event: ...}`.
+        private struct StreamEventEnvelope: Decodable {
+            let event: StreamEvent
         }
 
         init(from decoder: Decoder) throws {
@@ -171,7 +176,7 @@ enum ClaudeProtocol {
             case "system": self = try .system(single.decode(JSONValue.self))
             case "assistant": self = try .assistant(single.decode(JSONValue.self))
             case "user": self = try .user(single.decode(JSONValue.self))
-            case "stream_event": self = try .streamEvent(single.decode(JSONValue.self))
+            case "stream_event": self = try .streamEvent(single.decode(StreamEventEnvelope.self).event)
             case "control_request": self = try .controlRequest(single.decode(ControlRequestEvent.self))
             case "control_response": self = try .controlResponse(single.decode(JSONValue.self))
             case "result": self = try .result(single.decode(JSONValue.self))
@@ -292,6 +297,110 @@ enum ClaudeProtocol {
         struct Option: Decodable, Equatable {
             let label: String
             let description: String?
+        }
+    }
+
+    // MARK: - Stream Events (typed)
+
+    /// Inner stream event from Claude's incremental output. The wire shape
+    /// is `{type: "stream_event", event: <StreamEvent>}`; this enum models
+    /// just the inner `event` field.
+    ///
+    /// V1 only acts on three shapes (active tool tracking, text deltas, and
+    /// message_stop). Everything else preserves its raw payload via
+    /// `.unknown` for forward-compat.
+    enum StreamEvent: Decodable, Equatable {
+        case contentBlockStart(ContentBlockStart)
+        case textDelta(String)
+        case messageStop
+        case unknown(type: String, raw: JSONValue)
+
+        private enum CodingKeys: String, CodingKey {
+            case type, delta
+        }
+
+        init(from decoder: Decoder) throws {
+            let keyed = try decoder.container(keyedBy: CodingKeys.self)
+            let type = try keyed.decode(String.self, forKey: .type)
+            switch type {
+            case "content_block_start":
+                self = try .contentBlockStart(ContentBlockStart(from: decoder))
+            case "content_block_delta":
+                // Only `text_delta` deltas are surfaced as `.textDelta`.
+                // Any other delta type (input_json_delta, etc.) preserves
+                // its raw frame so future debugging has the full shape.
+                if let inner = try? keyed.decode(InnerDelta.self, forKey: .delta),
+                   case let .text(text) = inner {
+                    self = .textDelta(text)
+                } else {
+                    let raw = try decoder.singleValueContainer().decode(JSONValue.self)
+                    self = .unknown(type: "content_block_delta", raw: raw)
+                }
+            case "message_stop":
+                self = .messageStop
+            default:
+                let raw = try decoder.singleValueContainer().decode(JSONValue.self)
+                self = .unknown(type: type, raw: raw)
+            }
+        }
+
+        private enum InnerDelta: Decodable, Equatable {
+            case text(String)
+
+            private enum CodingKeys: String, CodingKey {
+                case type, text
+            }
+
+            init(from decoder: Decoder) throws {
+                let keyed = try decoder.container(keyedBy: CodingKeys.self)
+                let type = try keyed.decode(String.self, forKey: .type)
+                guard type == "text_delta" else {
+                    throw DecodingError.dataCorruptedError(
+                        forKey: .type,
+                        in: keyed,
+                        debugDescription: "Unsupported delta type: \(type)"
+                    )
+                }
+                self = try .text(keyed.decode(String.self, forKey: .text))
+            }
+        }
+    }
+
+    /// Payload of a `content_block_start` stream event. Carries just the
+    /// `content_block` projection the monitor cares about (active tool
+    /// tracking) — additional wire fields are ignored.
+    struct ContentBlockStart: Decodable, Equatable {
+        let contentBlock: ContentBlockHeader
+
+        private enum CodingKeys: String, CodingKey {
+            case contentBlock = "content_block"
+        }
+    }
+
+    /// `content_block` header. The monitor uses this to set/clear the
+    /// active tool indicator.
+    enum ContentBlockHeader: Decodable, Equatable {
+        case text
+        case toolUse(name: String?)
+        case unknown(type: String, raw: JSONValue)
+
+        private enum CodingKeys: String, CodingKey {
+            case type, name
+        }
+
+        init(from decoder: Decoder) throws {
+            let keyed = try decoder.container(keyedBy: CodingKeys.self)
+            let type = try keyed.decode(String.self, forKey: .type)
+            switch type {
+            case "text":
+                self = .text
+            case "tool_use":
+                let name = try keyed.decodeIfPresent(String.self, forKey: .name)
+                self = .toolUse(name: name)
+            default:
+                let raw = try decoder.singleValueContainer().decode(JSONValue.self)
+                self = .unknown(type: type, raw: raw)
+            }
         }
     }
 
