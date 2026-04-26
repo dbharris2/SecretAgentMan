@@ -155,8 +155,8 @@ enum ClaudeProtocol {
         case user(MessageEvent)
         case streamEvent(StreamEvent)
         case controlRequest(ControlRequestEvent)
-        case controlResponse(JSONValue)
-        case result(JSONValue)
+        case controlResponse(ControlResponseEvent)
+        case result(ResultEvent)
         case unknown(type: String, raw: JSONValue)
 
         private enum CodingKeys: String, CodingKey {
@@ -178,8 +178,8 @@ enum ClaudeProtocol {
             case "user": self = try .user(single.decode(MessageEvent.self))
             case "stream_event": self = try .streamEvent(single.decode(StreamEventEnvelope.self).event)
             case "control_request": self = try .controlRequest(single.decode(ControlRequestEvent.self))
-            case "control_response": self = try .controlResponse(single.decode(JSONValue.self))
-            case "result": self = try .result(single.decode(JSONValue.self))
+            case "control_response": self = try .controlResponse(single.decode(ControlResponseEvent.self))
+            case "result": self = try .result(single.decode(ResultEvent.self))
             default: self = try .unknown(type: type, raw: single.decode(JSONValue.self))
             }
         }
@@ -516,6 +516,96 @@ enum ClaudeProtocol {
                 assembled = fallback
             }
             text = assembled
+        }
+    }
+
+    // MARK: - Control Responses (typed)
+
+    /// Wire shape: `{type: "control_response", response: {subtype, request_id, response: {...}}}`.
+    /// V1 only reads `commands` from the deeply nested inner body, so this
+    /// type collapses the envelope down to that.
+    struct ControlResponseEvent: Decodable, Equatable {
+        let commands: [SlashCommand]?
+
+        private enum CodingKeys: String, CodingKey {
+            case response
+        }
+
+        init(from decoder: Decoder) throws {
+            let keyed = try decoder.container(keyedBy: CodingKeys.self)
+            commands = try keyed
+                .decodeIfPresent(Body.self, forKey: .response)?
+                .response?.commands
+        }
+
+        private struct Body: Decodable {
+            let response: InnerResponse?
+
+            struct InnerResponse: Decodable {
+                let commands: [SlashCommand]?
+            }
+        }
+    }
+
+    /// Slash command metadata as advertised by Claude Code on initialize and
+    /// after permission-mode changes.
+    struct SlashCommand: Decodable, Equatable {
+        let name: String
+        let description: String?
+        let argumentHint: String?
+    }
+
+    // MARK: - Result Event (typed)
+
+    /// Terminal event for a turn. Carries error state, session id, and the
+    /// usage/modelUsage shapes that drive the context-window indicator.
+    struct ResultEvent: Decodable, Equatable {
+        let isError: Bool?
+        let sessionId: String?
+        let modelUsage: [String: ModelUsage]?
+        let usage: Usage?
+
+        private enum CodingKeys: String, CodingKey {
+            case isError = "is_error"
+            case sessionId = "session_id"
+            case modelUsage, usage
+        }
+
+        struct ModelUsage: Decodable, Equatable {
+            let contextWindow: Double?
+        }
+
+        struct Usage: Decodable, Equatable {
+            let iterations: [Iteration]?
+
+            struct Iteration: Decodable, Equatable {
+                let inputTokens: Double?
+                let cacheReadInputTokens: Double?
+                let cacheCreationInputTokens: Double?
+                let outputTokens: Double?
+
+                private enum CodingKeys: String, CodingKey {
+                    case inputTokens = "input_tokens"
+                    case cacheReadInputTokens = "cache_read_input_tokens"
+                    case cacheCreationInputTokens = "cache_creation_input_tokens"
+                    case outputTokens = "output_tokens"
+                }
+            }
+        }
+
+        /// Context-window percentage for the last API call. `modelUsage` is
+        /// cumulative across the session, so we divide the last iteration's
+        /// token totals by the model's contextWindow.
+        var contextPercent: Double? {
+            guard let firstModel = modelUsage?.values.first,
+                  let window = firstModel.contextWindow, window > 0,
+                  let lastIter = usage?.iterations?.last
+            else { return nil }
+            let total = (lastIter.inputTokens ?? 0)
+                + (lastIter.cacheReadInputTokens ?? 0)
+                + (lastIter.cacheCreationInputTokens ?? 0)
+                + (lastIter.outputTokens ?? 0)
+            return total / window * 100
         }
     }
 

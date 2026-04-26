@@ -512,6 +512,115 @@ struct ClaudeProtocolTests {
         #expect(raw["payload"]?["x"]?.intValue == 1)
     }
 
+    // MARK: - Control Response (slash commands)
+
+    @Test
+    func decodeLineParsesSlashCommandsFromControlResponse() throws {
+        let line = #"""
+        {"type":"control_response","response":{"subtype":"success","request_id":"r1",
+         "response":{"commands":[
+           {"name":"clear","description":"Clear conversation","argumentHint":""},
+           {"name":"agents","description":"Manage subagents","argumentHint":"<name>"}
+         ]}}}
+        """#
+        let event = try #require(try ClaudeProtocol.decodeLine(line))
+        guard case let .controlResponse(response) = event else {
+            Issue.record("expected controlResponse, got \(event)")
+            return
+        }
+        let commands = try #require(response.commands)
+        #expect(commands.count == 2)
+        #expect(commands[0].name == "clear")
+        #expect(commands[0].description == "Clear conversation")
+        #expect(commands[0].argumentHint == "")
+        #expect(commands[1].name == "agents")
+        #expect(commands[1].argumentHint == "<name>")
+    }
+
+    @Test
+    func controlResponseWithoutCommandsLeavesNil() throws {
+        // Permission-mode acks share the control_response wire shape but
+        // don't carry a `commands` array. Make sure that's nil rather than
+        // throwing or yielding an empty list.
+        let line = #"""
+        {"type":"control_response","response":{"subtype":"success","request_id":"r2","response":{}}}
+        """#
+        let event = try #require(try ClaudeProtocol.decodeLine(line))
+        guard case let .controlResponse(response) = event else {
+            Issue.record("expected controlResponse, got \(event)")
+            return
+        }
+        #expect(response.commands == nil)
+    }
+
+    // MARK: - Result Event
+
+    @Test
+    func decodeLineParsesResultErrorAndSessionId() throws {
+        let line = #"""
+        {"type":"result","is_error":true,"session_id":"sess-9"}
+        """#
+        let event = try #require(try ClaudeProtocol.decodeLine(line))
+        guard case let .result(result) = event else {
+            Issue.record("expected result, got \(event)")
+            return
+        }
+        #expect(result.isError == true)
+        #expect(result.sessionId == "sess-9")
+        // No usage data → no context percent.
+        #expect(result.contextPercent == nil)
+    }
+
+    @Test
+    func resultContextPercentSumsLastIterationOverContextWindow() throws {
+        // 1000 + 2000 + 500 + 500 = 4000 / 8000 = 50%
+        let line = #"""
+        {"type":"result","is_error":false,
+         "modelUsage":{"claude-opus-4-7":{"contextWindow":8000}},
+         "usage":{"iterations":[
+           {"input_tokens":100,"output_tokens":100},
+           {"input_tokens":1000,"cache_read_input_tokens":2000,
+            "cache_creation_input_tokens":500,"output_tokens":500}
+         ]}}
+        """#
+        let event = try #require(try ClaudeProtocol.decodeLine(line))
+        guard case let .result(result) = event else {
+            Issue.record("expected result, got \(event)")
+            return
+        }
+        #expect(result.contextPercent == 50)
+    }
+
+    @Test
+    func resultContextPercentNilWhenContextWindowMissing() throws {
+        // Without a contextWindow we can't compute a percent — must be nil
+        // rather than dividing by zero or returning a junk value.
+        let line = #"""
+        {"type":"result","modelUsage":{"claude-opus-4-7":{}},"usage":{"iterations":[{"input_tokens":100}]}}
+        """#
+        let event = try #require(try ClaudeProtocol.decodeLine(line))
+        guard case let .result(result) = event else {
+            Issue.record("expected result, got \(event)")
+            return
+        }
+        #expect(result.contextPercent == nil)
+    }
+
+    @Test
+    func resultContextPercentTreatsMissingTokenFieldsAsZero() throws {
+        // Cache fields can be absent on cold iterations — they should default
+        // to 0 rather than making contextPercent nil.
+        let line = #"""
+        {"type":"result","modelUsage":{"m":{"contextWindow":1000}},"usage":{"iterations":[{"input_tokens":250}]}}
+        """#
+        let event = try #require(try ClaudeProtocol.decodeLine(line))
+        guard case let .result(result) = event else {
+            Issue.record("expected result, got \(event)")
+            return
+        }
+        #expect(result.contextPercent == 25)
+    }
+
     // MARK: - Helpers
 
     private func requireJSON(_ value: Encodable) throws -> [String: Any] {

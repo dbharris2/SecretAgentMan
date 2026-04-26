@@ -218,13 +218,12 @@ final class ClaudeStreamMonitor {
         emit(.metadataUpdated(update), for: id)
     }
 
-    private func applySlashCommands(_ commands: [[String: Any]]) {
-        slashCommands = commands.compactMap { dict in
-            guard let name = dict["name"] as? String else { return nil }
-            return SlashCommand(
-                name: name,
-                description: dict["description"] as? String ?? "",
-                argumentHint: dict["argumentHint"] as? String ?? ""
+    private func applySlashCommands(_ commands: [ClaudeProtocol.SlashCommand]) {
+        slashCommands = commands.map { command in
+            SlashCommand(
+                name: command.name,
+                description: command.description ?? "",
+                argumentHint: command.argumentHint ?? ""
             )
         }.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
         // Fan out to every monitored agent — Claude's slash-command list is
@@ -560,7 +559,7 @@ private struct ObserverDelegate {
     let activeToolChanged: (UUID, String?) -> Void
     let permissionModeChanged: (UUID, String) -> Void
     let modelInfo: (UUID, String, Double) -> Void
-    let slashCommands: ([[String: Any]]) -> Void
+    let slashCommands: ([ClaudeProtocol.SlashCommand]) -> Void
     let sessionConflict: (UUID) -> Void
 }
 
@@ -877,10 +876,10 @@ private final class Observer: @unchecked Sendable {
             handleStreamEvent(stream)
         case let .controlRequest(controlEvent):
             handleControlRequest(controlEvent)
-        case let .controlResponse(raw):
-            handleControlResponse(raw.legacyDictionary())
-        case let .result(raw):
-            handleResultEvent(raw.legacyDictionary())
+        case let .controlResponse(response):
+            handleControlResponse(response)
+        case let .result(result):
+            handleResultEvent(result)
         case .unknown:
             break
         }
@@ -1045,39 +1044,21 @@ private final class Observer: @unchecked Sendable {
         }
     }
 
-    private func handleControlResponse(_ event: [String: Any]) {
-        guard let response = event["response"] as? [String: Any],
-              let inner = response["response"] as? [String: Any]
-        else { return }
-
-        if let commands = inner["commands"] as? [[String: Any]] {
+    private func handleControlResponse(_ event: ClaudeProtocol.ControlResponseEvent) {
+        if let commands = event.commands {
             delegate.slashCommands(commands)
         }
     }
 
-    private func handleResultEvent(_ event: [String: Any]) {
+    private func handleResultEvent(_ event: ClaudeProtocol.ResultEvent) {
         finalizeStreaming()
 
-        // Context window % from the last API call's actual token consumption.
-        // modelUsage is cumulative across the session, so use usage.iterations instead.
-        if let modelUsage = event["modelUsage"] as? [String: Any],
-           let firstUsage = modelUsage.values.first as? [String: Any],
-           let contextWindow = firstUsage["contextWindow"] as? Double, contextWindow > 0,
-           let usage = event["usage"] as? [String: Any],
-           let iterations = usage["iterations"] as? [[String: Any]],
-           let lastIter = iterations.last {
-            let input = lastIter["input_tokens"] as? Double ?? 0
-            let cacheRead = lastIter["cache_read_input_tokens"] as? Double ?? 0
-            let cacheCreate = lastIter["cache_creation_input_tokens"] as? Double ?? 0
-            let output = lastIter["output_tokens"] as? Double ?? 0
-            let pct = (input + cacheRead + cacheCreate + output) / contextWindow * 100
+        if let pct = event.contextPercent {
             delegate.modelInfo(agent.id, "", pct)
         }
 
         delegate.activeToolChanged(agent.id, nil)
-
-        let isError = event["is_error"] as? Bool ?? false
-        publishIfChanged(isError ? .error : .awaitingInput)
+        publishIfChanged(event.isError == true ? .error : .awaitingInput)
     }
 
     // MARK: - Streaming Helpers
