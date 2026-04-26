@@ -190,7 +190,7 @@ final class AppCoordinator {
         case .active, .needsPermission, .awaitingResponse, .awaitingInput: true
         case .idle, .finished, .error: false
         }
-        let interruptMessage = "[Request interrupted by user]"
+        let interruptMessage = "🛑 **Request interrupted by user**"
         switch agent.provider {
         case .claude:
             if isInFlight {
