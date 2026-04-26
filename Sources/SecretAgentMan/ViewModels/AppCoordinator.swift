@@ -137,10 +137,6 @@ final class AppCoordinator {
         codexMonitor.setApprovalPolicy(for: agentId, policy: policy)
     }
 
-    func triggerCodexUserInputTest(for agentId: UUID) {
-        codexMonitor.debugTriggerUserInput(for: agentId)
-    }
-
     func answerCodexUserInput(for agentId: UUID, answers: [String: [String]]) {
         codexMonitor.respondToUserInput(for: agentId, answers: answers)
     }
@@ -184,16 +180,8 @@ final class AppCoordinator {
         geminiMonitor.respondToApproval(for: agentId, optionId: optionId)
     }
 
-    func cancelGeminiApproval(for agentId: UUID) {
-        geminiMonitor.cancelApproval(for: agentId)
-    }
-
     func setGeminiMode(for agentId: UUID, modeId: String) {
         geminiMonitor.setMode(for: agentId, modeId: modeId)
-    }
-
-    func setGeminiModel(for agentId: UUID, modelId: String) {
-        geminiMonitor.setModel(for: agentId, modelId: modelId)
     }
 
     func interruptAgent(for agentId: UUID) {

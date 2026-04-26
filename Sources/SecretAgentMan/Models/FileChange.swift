@@ -7,14 +7,6 @@ struct FileChange: Identifiable, Hashable {
     let deletions: Int
     let status: ChangeStatus
 
-    var fileName: String {
-        (path as NSString).lastPathComponent
-    }
-
-    var directoryPath: String {
-        (path as NSString).deletingLastPathComponent
-    }
-
     enum ChangeStatus: String, Hashable {
         case added
         case modified

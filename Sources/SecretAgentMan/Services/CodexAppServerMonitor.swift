@@ -213,11 +213,6 @@ final class CodexAppServerMonitor {
         observers[agentId]?.respondToApproval(accept: accept)
     }
 
-    func debugTriggerUserInput(for agentId: UUID) {
-        debugMessages.removeValue(forKey: agentId)
-        observers[agentId]?.debugTriggerUserInput()
-    }
-
     func interrupt(for agentId: UUID) {
         observers[agentId]?.interrupt()
     }
@@ -592,17 +587,6 @@ private final class Observer: @unchecked Sendable {
 
     func setApprovalPolicy(_ policy: CodexApprovalPolicy) {
         approvalPolicy = policy
-    }
-
-    func debugTriggerUserInput() {
-        sendMessage("""
-        Before doing any file or shell work, use the request_user_input tool to ask me one question with exactly two options:
-
-        - Alpha
-        - Beta
-
-        Wait for my answer before continuing. Do not replace this with a plain-text question.
-        """)
     }
 
     func respondToUserInput(answers: [String: [String]]) {

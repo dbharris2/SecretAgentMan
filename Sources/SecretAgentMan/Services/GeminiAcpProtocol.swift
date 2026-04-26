@@ -322,6 +322,4 @@ enum GeminiAcpProtocol {
         let sessionId: String
         let modelId: String
     }
-
-    struct SetSessionModelResponse: Codable, Equatable {}
 }

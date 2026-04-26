@@ -35,6 +35,10 @@ lint:
     swiftformat . --lint
     swiftlint
 
+# Scan for unused code with Periphery (config in .periphery.yml)
+periphery: generate
+    periphery scan
+
 # Build release configuration
 release: generate
     xcodebuild -scheme SecretAgentMan -configuration Release build

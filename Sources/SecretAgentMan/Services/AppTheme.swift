@@ -10,7 +10,6 @@ struct AppTheme: Equatable {
     let background: Color
     let foreground: Color
     let surface: Color
-    let overlay: Color
 
     // ANSI palette semantic colors
     let red: Color
@@ -21,9 +20,8 @@ struct AppTheme: Equatable {
     let cyan: Color
     let orange: Color
 
-    // UI accent (cursor color) and selection
+    /// UI accent (cursor color).
     let accent: Color
-    let selection: Color
 
     let isDark: Bool
     let highlightrTheme: String
@@ -41,11 +39,10 @@ struct AppTheme: Equatable {
         background = Color(nsColor: bg)
         foreground = Color(nsColor: fg)
 
-        // Surface/overlay: slightly elevated from background by blending toward foreground
+        // Surface: slightly elevated from background by blending toward foreground
         let bgSRGB = bg.usingColorSpace(NSColorSpace.sRGB) ?? bg
         let fgSRGB = fg.usingColorSpace(NSColorSpace.sRGB) ?? fg
         surface = Color(nsColor: bgSRGB.blended(withFraction: 0.06, of: fgSRGB) ?? bg)
-        overlay = Color(nsColor: bgSRGB.blended(withFraction: 0.12, of: fgSRGB) ?? bg)
 
         // ANSI palette → semantic colors
         red = Color(nsColor: ghostty.palette[1] ?? .systemRed)
@@ -58,7 +55,6 @@ struct AppTheme: Equatable {
         orange = Color(nsColor: ghostty.palette[9] ?? .systemOrange)
 
         accent = Color(nsColor: ghostty.cursorColor)
-        selection = Color(nsColor: ghostty.selectionBackground)
 
         // Background luminance determines dark/light mode
         var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0

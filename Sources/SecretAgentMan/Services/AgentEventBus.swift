@@ -96,10 +96,6 @@ final class AgentEventBus {
         saveSubscriptions()
     }
 
-    func clearLog() {
-        eventLog.removeAll()
-    }
-
     // MARK: - Private
 
     private func appendLog(_ entry: EventLogEntry) {

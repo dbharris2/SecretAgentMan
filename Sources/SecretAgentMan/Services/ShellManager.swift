@@ -68,11 +68,6 @@ final class ShellManager {
         terminal.send(source: terminal, data: ArraySlice(bytes))
     }
 
-    func focusShell(forFolder folder: URL) {
-        guard let terminal = terminals[Self.shellKey(forFolder: folder)] else { return }
-        terminal.window?.makeFirstResponder(terminal)
-    }
-
     func removeShell(forFolder folder: URL) {
         let key = Self.shellKey(forFolder: folder)
         if let terminal = terminals[key] {

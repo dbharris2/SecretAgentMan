@@ -1,0 +1,4 @@
+project: SecretAgentMan.xcodeproj
+schemes:
+  - SecretAgentMan
+retain_codable_properties: true

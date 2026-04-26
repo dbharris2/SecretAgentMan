@@ -159,14 +159,6 @@ final class AgentStore {
         agents[index].updatedAt = Date()
     }
 
-    var hasActiveAgents: Bool {
-        agents.contains { $0.state == .active || $0.state == .awaitingInput }
-    }
-
-    var awaitingInputCount: Int {
-        agents.count(where: { $0.state == .awaitingInput })
-    }
-
     // MARK: - Persistence
 
     private func save() {

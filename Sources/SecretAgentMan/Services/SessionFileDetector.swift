@@ -93,10 +93,6 @@ enum SessionFileDetector {
         sessions(inDirectory: dir).first?.id
     }
 
-    static func latestCodexSessionId(for folder: URL) -> String? {
-        latestCodexSessionId(for: folder, inDirectory: codexSessionsDir())
-    }
-
     static func latestCodexSessionId(for folder: URL, inDirectory dir: URL) -> String? {
         codexSessions(for: folder, inDirectory: dir).first?.id
     }
@@ -116,11 +112,6 @@ enum SessionFileDetector {
         else { return nil }
 
         return (id, cwd)
-    }
-
-    /// Returns the file URL for a Codex session with the given ID, or nil if not found.
-    static func codexSessionFileURL(for sessionId: String) -> URL? {
-        codexSessionFile(for: sessionId, inDirectory: codexSessionsDir())
     }
 
     private static func codexSessionFile(for sessionId: String) -> URL? {
@@ -356,22 +347,5 @@ enum SessionFileDetector {
             }.joined().trimmingCharacters(in: .whitespacesAndNewlines)
         }
         return ""
-    }
-
-    /// Look up the first user message for a specific session.
-    static func firstUserMessage(sessionId: String, for agent: Agent) -> String? {
-        switch agent.provider {
-        case .claude:
-            let dir = claudeProjectDir(for: agent.folder)
-            let url = dir.appendingPathComponent("\(sessionId).jsonl")
-            return firstClaudeUserMessage(at: url)
-        case .codex:
-            guard let url = codexSessionFileURL(for: sessionId) else { return nil }
-            return firstCodexUserMessage(at: url)
-        case .gemini:
-            let dir = geminiChatsDir(for: agent.folder)
-            guard let url = geminiSessionFile(for: sessionId, inDirectory: dir) else { return nil }
-            return firstGeminiUserMessage(at: url)
-        }
     }
 }

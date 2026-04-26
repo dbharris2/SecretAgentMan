@@ -32,20 +32,6 @@ enum CodexProtocol {
             ])
         }
 
-        static func threadResume(id: Int, threadId: String, cwd: String) -> RPCRequest {
-            RPCRequest(id: id, method: "thread/resume", params: [
-                "threadId": .string(threadId),
-                "cwd": .string(cwd),
-            ])
-        }
-
-        static func threadRead(id: Int, threadId: String) -> RPCRequest {
-            RPCRequest(id: id, method: "thread/read", params: [
-                "threadId": .string(threadId),
-                "includeTurns": .bool(false),
-            ])
-        }
-
         static func turnStart(
             id: Int,
             threadId: String,

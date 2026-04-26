@@ -72,7 +72,6 @@ struct SessionChatView: View {
                                 } else {
                                     SessionTranscriptBubble(
                                         kind: item.kind,
-                                        label: SessionPanelTheme.label(for: item.kind, providerName: providerName),
                                         text: item.text,
                                         fontScale: fontScale,
                                         images: item.imageData
@@ -87,7 +86,7 @@ struct SessionChatView: View {
                     }
 
                     if let text = streaming, !text.isEmpty {
-                        SessionStreamingBubble(providerName: providerName, text: text, fontScale: fontScale)
+                        SessionStreamingBubble(text: text, fontScale: fontScale)
                     } else if isThinking {
                         SessionThinkingBubble(providerName: providerName, activeTool: activeTool)
                     }

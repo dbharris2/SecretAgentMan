@@ -230,10 +230,6 @@ struct ReviewerGroupsSettingsView: View {
     @State private var selectedGroupId: UUID?
     @State private var newReviewerText = ""
 
-    private var selectedGroup: ReviewerGroup? {
-        store.groups.first { $0.id == selectedGroupId }
-    }
-
     var body: some View {
         HSplitView {
             // Group list

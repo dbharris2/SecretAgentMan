@@ -97,7 +97,6 @@ struct CodexSessionPanelView: View {
             fontScale: fontScale,
             statusText: "",
             statusColor: .secondary,
-            onSend: sendDraft,
             onKeyPress: handleComposerKeyPress,
             onDraftChange: {}
         ) {

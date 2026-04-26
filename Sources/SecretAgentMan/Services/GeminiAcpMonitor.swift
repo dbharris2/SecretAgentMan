@@ -127,17 +127,6 @@ final class GeminiAcpMonitor {
         onStateChange?(agentId, .active)
     }
 
-    func cancelApproval(for agentId: UUID) {
-        guard let pending = pendingApprovalRequests[agentId] else { return }
-        observers[agentId]?.respondToPermission(
-            acpRequestId: pending.acpRequestId,
-            outcome: .cancelled
-        )
-        emit(.promptResolved(id: pending.promptId), for: agentId)
-        pendingApprovalRequests.removeValue(forKey: agentId)
-        onStateChange?(agentId, .active)
-    }
-
     func setMode(for agentId: UUID, modeId: String) {
         observers[agentId]?.setMode(modeId: modeId)
         var update = SessionMetadataUpdate()
@@ -320,14 +309,6 @@ final class GeminiAcpMonitor {
         let popped = pending.remove(at: index)
         pendingLocalUserMessages[agentId] = pending.isEmpty ? nil : pending
         return popped
-    }
-
-    /// Mid-turn cancel: clears any active streaming ids so a fresh turn
-    /// allocates new transcript items rather than appending to the cancelled
-    /// stream's bubble.
-    func resetTurnState(for agentId: UUID) {
-        activeAssistantStreamId.removeValue(forKey: agentId)
-        activeThoughtStreamId.removeValue(forKey: agentId)
     }
 }
 

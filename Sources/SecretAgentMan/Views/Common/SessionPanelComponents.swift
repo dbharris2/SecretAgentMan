@@ -20,10 +20,7 @@ struct SessionMarkdownText: View {
 }
 
 struct SessionTranscriptBubble: View {
-    private static let maxBubbleWidth: CGFloat = 720
-
     let kind: TranscriptItemKind
-    let label: String
     let text: String
     let fontScale: Double
     var images: [Data] = []
@@ -31,14 +28,6 @@ struct SessionTranscriptBubble: View {
 
     private var isUser: Bool {
         kind == .userMessage
-    }
-
-    private var contentAlignment: HorizontalAlignment {
-        isUser ? .leading : .trailing
-    }
-
-    private var frameAlignment: Alignment {
-        isUser ? .leading : .trailing
     }
 
     var body: some View {
@@ -170,44 +159,6 @@ struct SessionApprovalCard: View {
     }
 }
 
-struct SessionLiveToolCard: View {
-    let title: String
-    let detail: String
-    @Environment(\.appTheme) private var theme
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: Spacing.xl) {
-            HStack(spacing: Spacing.lg) {
-                Text("Live")
-                    .scaledFont(size: 10, weight: .semibold)
-                    .foregroundStyle(theme.blue)
-                    .padding(.horizontal, Spacing.md)
-                    .padding(.vertical, 3)
-                    .background(theme.blue.opacity(0.12))
-                    .clipShape(Capsule())
-
-                Text(title)
-                    .scaledFont(size: 12, weight: .semibold)
-            }
-
-            ScrollView {
-                Text(detail)
-                    .scaledFont(size: 12)
-                    .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            .frame(minHeight: 120, maxHeight: 220)
-            .padding(Spacing.lg)
-            .background(theme.background.opacity(0.45))
-            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-        }
-        .padding(Spacing.xxl)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(theme.blue.opacity(0.08))
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-    }
-}
-
 struct SessionElicitationCard: View {
     let message: String
     var options: [PromptOption] = []
@@ -319,7 +270,6 @@ struct SessionComposer<Suggestions: View, TrailingControls: View>: View {
     let fontScale: Double
     let statusText: String
     let statusColor: Color
-    let onSend: () -> Void
     let onKeyPress: (KeyPress) -> KeyPress.Result
     let onDraftChange: () -> Void
     @ViewBuilder let suggestions: () -> Suggestions
@@ -438,18 +388,9 @@ enum SessionPanelTheme {
             theme.yellow.opacity(0.08)
         }
     }
-
-    static func label(for kind: TranscriptItemKind, providerName: String) -> String {
-        switch kind {
-        case .userMessage: "You"
-        case .assistantMessage: providerName
-        case .systemMessage, .toolActivity, .plan, .diffSummary, .error, .thought: "System"
-        }
-    }
 }
 
 struct SessionStreamingBubble: View {
-    let providerName: String
     let text: String
     let fontScale: Double
 

@@ -806,15 +806,6 @@ private final class Observer: @unchecked Sendable {
         stdinPipe.fileHandleForWriting.write(data)
     }
 
-    /// Fallback for cases still using [String: Any] (e.g. AskUserQuestion auto-allow with dynamic toolInput)
-    private func writeJSONObject(_ payload: [String: Any]) {
-        guard let data = try? JSONSerialization.data(withJSONObject: payload, options: []),
-              var line = String(data: data, encoding: .utf8)
-        else { return }
-        line.append("\n")
-        stdinPipe.fileHandleForWriting.write(Data(line.utf8))
-    }
-
     private func flushPendingMessages() {
         guard didLaunch, !pendingMessages.isEmpty else { return }
         let messages = pendingMessages
