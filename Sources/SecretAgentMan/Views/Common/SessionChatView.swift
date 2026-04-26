@@ -171,7 +171,7 @@ struct SessionChatView: View {
                         .foregroundStyle(.secondary)
                         .frame(width: 12)
 
-                    Text("\(items.count) saved tool actions")
+                    Text("\(items.count) tool actions")
                         .scaledFont(size: 12)
                         .foregroundStyle(.secondary)
 
@@ -285,7 +285,7 @@ private enum TranscriptSection: Identifiable {
     case systemGroup([SessionTranscriptItem], groupId: String)
     /// Runs of `.thought` items are kept in a dedicated bucket so they render
     /// as a quiet collapsed reasoning disclosure rather than mixing into the
-    /// "saved tool actions" group with system/tool/plan items.
+    /// "tool actions" group with system/tool/plan items.
     case thoughtGroup([SessionTranscriptItem], groupId: String)
 
     var id: String {
@@ -346,7 +346,7 @@ private enum TranscriptSection: Identifiable {
 
     /// System messages, tool activity, plan, diff summaries, and errors all
     /// render outside the primary conversation flow; consecutive runs collapse
-    /// into a single expandable "saved tool actions" block. `.thought` items
+    /// into a single expandable "tool actions" block. `.thought` items
     /// have their own dedicated grouping path (above) so they don't mix into
     /// that bucket.
     private static func isGroupableKind(_ kind: TranscriptItemKind) -> Bool {

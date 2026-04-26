@@ -280,7 +280,7 @@ final class ClaudeStreamMonitor {
                         guard case let .toolResult(result) = block, result.isError == true else { continue }
                         guard !result.text.isEmpty else { continue }
                         items.append(CodexTranscriptItem(
-                            id: UUID().uuidString, role: .system, text: "Error: \(result.text)"
+                            id: UUID().uuidString, role: .system, text: "🛑 **Error**: \(result.text)"
                         ))
                     }
                 }
@@ -923,7 +923,7 @@ private final class Observer: @unchecked Sendable {
             let item = CodexTranscriptItem(
                 id: UUID().uuidString,
                 role: .system,
-                text: "Error: \(truncated)"
+                text: "🛑 **Error**: \(truncated)"
             )
             delegate.transcriptItem(agent.id, item)
         }
