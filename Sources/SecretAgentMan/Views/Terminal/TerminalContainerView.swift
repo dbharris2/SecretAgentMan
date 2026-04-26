@@ -2,14 +2,15 @@ import SwiftTerm
 import SwiftUI
 
 /// A reusable NSViewRepresentable container that swaps terminal views when
-/// the selected agent changes. Used by both the agent terminal and shell panels.
+/// the terminal identity changes. Identity is a neutral string (e.g. a folder
+/// path) so the same terminal can be reused across agents that share it.
 ///
-/// IMPORTANT: This view takes a pre-resolved `terminal` and `selectedAgentId`
+/// IMPORTANT: This view takes a pre-resolved `terminal` and `terminalIdentity`
 /// from @State in the parent view. Do NOT read @Observable properties (like
 /// `store.agents`) in body or updateNSView — doing so creates an AttributeGraph
 /// cycle when combined with non-comparable reference-type parameters.
 struct TerminalContainerView: NSViewRepresentable {
-    let selectedAgentId: UUID?
+    let terminalIdentity: String?
     let terminal: LocalProcessTerminalView?
     var onEmbed: ((LocalProcessTerminalView) -> Void)?
 
@@ -17,7 +18,7 @@ struct TerminalContainerView: NSViewRepresentable {
         let container = TerminalHostView(frame: .zero)
         if let terminal {
             Self.embed(terminal, in: container)
-            context.coordinator.currentAgentId = selectedAgentId
+            context.coordinator.currentIdentity = terminalIdentity
             context.coordinator.currentTerminal = terminal
             container.pendingFocusTerminal = terminal
             container.onEmbed = onEmbed
@@ -28,28 +29,28 @@ struct TerminalContainerView: NSViewRepresentable {
     func updateNSView(_ container: TerminalHostView, context: Context) {
         container.onEmbed = onEmbed
 
-        let newId = selectedAgentId
-        let oldId = context.coordinator.currentAgentId
+        let newIdentity = terminalIdentity
+        let oldIdentity = context.coordinator.currentIdentity
 
         guard let terminal else {
-            if newId != oldId || context.coordinator.currentTerminal != nil {
+            if newIdentity != oldIdentity || context.coordinator.currentTerminal != nil {
                 for subview in container.subviews {
                     subview.removeFromSuperview()
                 }
-                context.coordinator.currentAgentId = newId
+                context.coordinator.currentIdentity = newIdentity
                 context.coordinator.currentTerminal = nil
                 container.pendingFocusTerminal = nil
             }
             return
         }
 
-        // Re-embed if agent changed or terminal instance changed (e.g. session restart)
-        guard newId != oldId || terminal !== context.coordinator.currentTerminal else { return }
+        // Re-embed if identity changed or terminal instance changed.
+        guard newIdentity != oldIdentity || terminal !== context.coordinator.currentTerminal else { return }
 
         for subview in container.subviews {
             subview.removeFromSuperview()
         }
-        context.coordinator.currentAgentId = newId
+        context.coordinator.currentIdentity = newIdentity
         context.coordinator.currentTerminal = terminal
 
         Self.embed(terminal, in: container)
@@ -78,7 +79,7 @@ struct TerminalContainerView: NSViewRepresentable {
     }
 
     final class Coordinator {
-        var currentAgentId: UUID?
+        var currentIdentity: String?
         weak var currentTerminal: LocalProcessTerminalView?
     }
 }

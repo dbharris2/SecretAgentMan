@@ -646,7 +646,7 @@ private final class Observer: @unchecked Sendable {
         let newStderr = Pipe()
         let newStdin = Pipe()
 
-        newProcess.executableURL = URL(fileURLWithPath: AgentProcessManager.executablePath(for: .claude))
+        newProcess.executableURL = URL(fileURLWithPath: ProviderExecutableLocator.executablePath(for: .claude))
         newProcess.arguments = buildArguments()
         newProcess.currentDirectoryURL = agent.folder
         newProcess.environment = ProcessInfo.processInfo.environment

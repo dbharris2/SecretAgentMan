@@ -10,7 +10,6 @@ final class AppCoordinator {
     let usageMonitor: UsageMonitor
 
     let store: AgentStore
-    let terminalManager: TerminalManager
     let shellManager: ShellManager
     let eventBus: AgentEventBus
     let codexMonitor: CodexAppServerMonitor
@@ -53,7 +52,6 @@ final class AppCoordinator {
         self.planStore = planStore
         self.usageMonitor = usageMonitor
         self.store = agentSessions.store
-        terminalManager = agentSessions.terminalManager
         shellManager = agentSessions.shellManager
         eventBus = agentSessions.eventBus
         codexMonitor = agentSessions.codexMonitor

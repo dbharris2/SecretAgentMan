@@ -351,7 +351,7 @@ private final class Observer: @unchecked Sendable {
     func start() {
         guard process.isRunning == false else { return }
 
-        process.executableURL = URL(fileURLWithPath: AgentProcessManager.executablePath(for: .codex))
+        process.executableURL = URL(fileURLWithPath: ProviderExecutableLocator.executablePath(for: .codex))
         process.arguments = ["app-server", "--enable", "default_mode_request_user_input"]
         process.standardInput = stdinPipe
         process.standardOutput = stdoutPipe

@@ -5,7 +5,6 @@ import SwiftUI
 @MainActor @Observable
 final class AgentSessionCoordinator {
     let store: AgentStore
-    let terminalManager: TerminalManager
     let shellManager: ShellManager
     let eventBus: AgentEventBus
     let codexMonitor: CodexAppServerMonitor
@@ -22,7 +21,6 @@ final class AgentSessionCoordinator {
 
     init(
         store: AgentStore = AgentStore(),
-        terminalManager: TerminalManager = TerminalManager(),
         shellManager: ShellManager = ShellManager(),
         eventBus: AgentEventBus = AgentEventBus(),
         codexMonitor: CodexAppServerMonitor = CodexAppServerMonitor(),
@@ -30,7 +28,6 @@ final class AgentSessionCoordinator {
         geminiMonitor: GeminiAcpMonitor = GeminiAcpMonitor()
     ) {
         self.store = store
-        self.terminalManager = terminalManager
         self.shellManager = shellManager
         self.eventBus = eventBus
         self.codexMonitor = codexMonitor
@@ -39,10 +36,6 @@ final class AgentSessionCoordinator {
     }
 
     func start() {
-        terminalManager.onStateChange = { [self] id, state in
-            handleAgentStateChange(agentId: id, state: state, source: .terminal)
-        }
-
         codexMonitor.onSessionReady = { [self] id, threadId in
             store.updateSessionId(id: id, sessionId: threadId)
             store.markLaunched(id: id)
@@ -50,7 +43,7 @@ final class AgentSessionCoordinator {
         }
 
         codexMonitor.onStateChange = { [self] id, state in
-            handleAgentStateChange(agentId: id, state: state, source: .codex)
+            handleAgentStateChange(agentId: id, state: state)
         }
 
         codexMonitor.onSessionEvent = { [self] id, event in
@@ -64,7 +57,7 @@ final class AgentSessionCoordinator {
         }
 
         claudeMonitor.onStateChange = { [self] id, state in
-            handleAgentStateChange(agentId: id, state: state, source: .claude)
+            handleAgentStateChange(agentId: id, state: state)
         }
 
         claudeMonitor.onSessionEvent = { [self] id, event in
@@ -87,40 +80,22 @@ final class AgentSessionCoordinator {
             syncSessionWatches()
         }
         geminiMonitor.onStateChange = { [self] id, state in
-            handleAgentStateChange(agentId: id, state: state, source: .gemini)
+            handleAgentStateChange(agentId: id, state: state)
         }
         geminiMonitor.onSessionEvent = { [self] id, event in
             reduceSessionEvent(agentId: id, event: event)
         }
 
         eventBus.onSendPrompt = { [self] agentId, prompt in
-            if let agent = store.agents.first(where: { $0.id == agentId }) {
-                switch agent.provider {
-                case .claude:
-                    claudeMonitor.sendMessage(for: agentId, text: prompt)
-                case .codex:
-                    codexMonitor.sendMessage(for: agentId, text: prompt)
-                case .gemini:
-                    geminiMonitor.sendMessage(for: agentId, text: prompt)
-                }
-            } else {
-                terminalManager.sendInput(to: agentId, text: prompt)
+            guard let agent = store.agents.first(where: { $0.id == agentId }) else { return }
+            switch agent.provider {
+            case .claude:
+                claudeMonitor.sendMessage(for: agentId, text: prompt)
+            case .codex:
+                codexMonitor.sendMessage(for: agentId, text: prompt)
+            case .gemini:
+                geminiMonitor.sendMessage(for: agentId, text: prompt)
             }
-        }
-
-        terminalManager.onLaunched = { [self] id in
-            store.markLaunched(id: id)
-            codexMonitor.syncMonitoredAgents(store.agents)
-        }
-
-        terminalManager.onSessionNotFound = { [self] id in
-            store.resetSession(id: id)
-            if let agent = store.agents.first(where: { $0.id == id }) {
-                terminalManager.restartAgent(agent) { agentId, state in
-                    self.store.updateState(id: agentId, state: state)
-                }
-            }
-            store.terminalRestartCount += 1
         }
 
         sessionWatcher.onDirectoryChanged = { [self] _ in
@@ -164,13 +139,15 @@ final class AgentSessionCoordinator {
     }
 
     func removeAgent(_ id: UUID) {
-        terminalManager.removeTerminal(for: id)
-        shellManager.removeTerminal(for: id)
+        let folder = store.agents.first(where: { $0.id == id })?.folder
         codexMonitor.removeObserver(for: id)
         claudeMonitor.removeObserver(for: id)
         geminiMonitor.removeObserver(for: id)
         snapshots.removeValue(forKey: id)
         store.removeAgent(id: id)
+        if let folder, !folderHasAgents(folder) {
+            shellManager.removeShell(forFolder: folder)
+        }
     }
 
     func removeAgents(in folder: URL) {
@@ -216,46 +193,13 @@ final class AgentSessionCoordinator {
         snapshots[agentId] = next
     }
 
-    private enum StateSource {
-        case terminal
-        case codex
-        case claude
-        case gemini
+    private func folderHasAgents(_ folder: URL) -> Bool {
+        let key = ShellManager.shellKey(forFolder: folder)
+        return store.agents.contains { ShellManager.shellKey(forFolder: $0.folder) == key }
     }
 
-    private func handleAgentStateChange(agentId: UUID, state: AgentState, source: StateSource) {
-        guard let agent = store.agents.first(where: { $0.id == agentId }) else { return }
-
-        // For Codex agents, terminal state is secondary to the monitor's runtime state.
-        if agent.provider == .codex, source == .terminal {
-            if state == .finished {
-                store.updateState(id: agentId, state: state)
-                return
-            }
-            if state == .active {
-                let runtimeState = codexMonitor.runtimeStates[agentId]
-                if runtimeState == .needsPermission || runtimeState == .awaitingInput
-                    || codexMonitor.pendingApprovalRequests[agentId] != nil
-                    || codexMonitor.pendingUserInputRequests[agentId] != nil {
-                    return
-                }
-                store.updateState(id: agentId, state: .active)
-                eventBus.publish(.agentActive(agentId: agentId))
-            }
-            return
-        }
-
-        // For Claude agents, the stream monitor is authoritative — ignore terminal state.
-        if agent.provider == .claude, source == .terminal {
-            return
-        }
-
-        // Gemini also has its own ACP-driven state; terminal events shouldn't
-        // override it.
-        if agent.provider == .gemini, source == .terminal {
-            return
-        }
-
+    private func handleAgentStateChange(agentId: UUID, state: AgentState) {
+        guard store.agents.contains(where: { $0.id == agentId }) else { return }
         store.updateState(id: agentId, state: state)
         if state == .awaitingInput {
             eventBus.publish(.agentIdle(agentId: agentId))

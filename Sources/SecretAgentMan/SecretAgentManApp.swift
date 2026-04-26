@@ -15,7 +15,6 @@ struct SecretAgentManApp: App {
                 .environment(\.appTheme, appTheme)
                 .preferredColorScheme(appTheme.isDark ? .dark : .light)
                 .onChange(of: fontScale) {
-                    coordinator.terminalManager.applyFontToAll()
                     coordinator.shellManager.applyFontToAll()
                 }
                 .onChange(of: themeName) {
@@ -27,7 +26,6 @@ struct SecretAgentManApp: App {
 
         Settings {
             SettingsView(
-                terminalManager: coordinator.terminalManager,
                 shellManager: coordinator.shellManager,
                 reviewerGroupStore: coordinator.reviewerGroupStore
             )

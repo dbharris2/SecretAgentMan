@@ -1,13 +1,12 @@
 import SwiftUI
 
 struct SettingsView: View {
-    let terminalManager: TerminalManager
     let shellManager: ShellManager
     let reviewerGroupStore: ReviewerGroupStore
 
     var body: some View {
         TabView {
-            GeneralSettingsView(terminalManager: terminalManager, shellManager: shellManager)
+            GeneralSettingsView(shellManager: shellManager)
                 .tabItem { Label("General", systemImage: "gear") }
             ReviewerGroupsSettingsView(store: reviewerGroupStore)
                 .tabItem { Label("Reviewers", systemImage: "person.2") }
@@ -17,7 +16,6 @@ struct SettingsView: View {
 }
 
 struct GeneralSettingsView: View {
-    let terminalManager: TerminalManager
     let shellManager: ShellManager
 
     @AppStorage(UserDefaultsKeys.terminalTheme) private var selectedTheme = "Catppuccin Mocha"
@@ -146,13 +144,12 @@ struct GeneralSettingsView: View {
             }
         }
         .onChange(of: selectedTheme) {
-            terminalManager.themeName = selectedTheme
             shellManager.themeName = selectedTheme
         }
         .onAppear {
             allThemes = GhosttyThemeLoader.availableThemes()
             listSelection = selectedTheme
-            terminalManager.themeName = selectedTheme
+            shellManager.themeName = selectedTheme
         }
     }
 

@@ -1,7 +1,7 @@
 import AppKit
 import SwiftTerm
 
-/// Shared terminal theme application logic used by both TerminalManager and ShellManager.
+/// Shared terminal theme application logic used by ShellManager.
 enum TerminalTheming {
     @MainActor static func applyTheme(_ theme: GhosttyTheme, to terminal: LocalProcessTerminalView) {
         terminal.nativeBackgroundColor = theme.background

@@ -12,10 +12,6 @@ final class AgentStore {
     var agents: [Agent] = []
     var selectedAgentId: UUID?
 
-    /// Bumped when a terminal session is restarted so panel views can re-sync
-    /// without needing to observe `agents` (which would cause an AttributeGraph cycle).
-    var terminalRestartCount = 0
-
     static func persistenceURL(appSupportRoot: URL? = nil) -> URL {
         let dir = (appSupportRoot ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0])
             .appendingPathComponent("SecretAgentMan", isDirectory: true)

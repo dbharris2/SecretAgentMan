@@ -213,7 +213,7 @@ struct StatusBarView: View {
 
     private func runScript(_ script: ProjectScript) {
         guard let agent = selectedAgent else { return }
-        coordinator.shellManager.sendCommand(script.command, for: agent)
+        coordinator.shellManager.sendCommand(script.command, inFolder: agent.folder)
         isShellPanelVisible = true
     }
 
