@@ -1,4 +1,11 @@
 // swiftlint:disable file_length
+//
+// Follow-up: extract the static parsing helpers (transcriptItems,
+// hydrateTranscriptItems, toolUseSummary, todoWriteSummary, formatToolInput,
+// unwrapSlashCommand, friendlyModelName) into ClaudeStreamMonitor+Parsing.swift.
+// They account for ~300 lines and are pure functions over typed
+// ClaudeProtocol values, so they extract cleanly. Out of scope for the
+// protocol-typing work tracked in docs/claude-protocol-sdk-plan.md.
 import Foundation
 import Observation
 
@@ -866,8 +873,8 @@ private final class Observer: @unchecked Sendable {
         guard let event else { return }
 
         switch event {
-        case let .system(raw):
-            handleSystemEvent(raw.legacyDictionary())
+        case let .system(system):
+            handleSystemEvent(system)
         case let .assistant(message):
             handleAssistantEvent(message)
         case let .user(message):
@@ -887,14 +894,14 @@ private final class Observer: @unchecked Sendable {
 
     // MARK: - Event Handlers
 
-    private func handleSystemEvent(_ event: [String: Any]) {
-        if let sessionId = event["session_id"] as? String, !sessionId.isEmpty {
+    private func handleSystemEvent(_ event: ClaudeProtocol.SystemEvent) {
+        if let sessionId = event.sessionId, !sessionId.isEmpty {
             delegate.sessionReady(agent.id, sessionId)
         }
-        if let model = event["model"] as? String {
+        if let model = event.model {
             delegate.modelInfo(agent.id, ClaudeStreamMonitor.friendlyModelName(model), 0)
         }
-        if let mode = event["permissionMode"] as? String {
+        if let mode = event.permissionMode {
             delegate.permissionModeChanged(agent.id, mode)
         }
         // Don't publish .active here — system events are metadata (session info,

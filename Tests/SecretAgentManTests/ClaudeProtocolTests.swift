@@ -146,14 +146,13 @@ struct ClaudeProtocolTests {
         {"type":"system","session_id":"sess-1","model":"claude-opus-4-6[1m]","permissionMode":"default"}
         """#
         let event = try #require(try ClaudeProtocol.decodeLine(line))
-        guard case let .system(raw) = event else {
+        guard case let .system(system) = event else {
             Issue.record("expected system, got \(event)")
             return
         }
-        let dict = raw.legacyDictionary()
-        #expect(dict["session_id"] as? String == "sess-1")
-        #expect(dict["model"] as? String == "claude-opus-4-6[1m]")
-        #expect(dict["permissionMode"] as? String == "default")
+        #expect(system.sessionId == "sess-1")
+        #expect(system.model == "claude-opus-4-6[1m]")
+        #expect(system.permissionMode == "default")
     }
 
     @Test
@@ -165,9 +164,7 @@ struct ClaudeProtocolTests {
             return
         }
         #expect(type == "some_future_event")
-        let dict = raw.legacyDictionary()
-        let payload = try #require(dict["payload"] as? [String: Any])
-        #expect(payload["x"] as? Int == 1)
+        #expect(raw["payload"]?["x"]?.intValue == 1)
     }
 
     /// Regression guard: each known wire-level `type` value must map to a
