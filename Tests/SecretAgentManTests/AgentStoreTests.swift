@@ -154,6 +154,93 @@ struct AgentStoreTests {
     }
 
     @Test
+    func removeAgentKeepsFolderInStore() {
+        let store = AgentStore(loadFromDisk: false)
+        let folder = URL(fileURLWithPath: "/tmp/keepme")
+        let agent = store.addAgent(name: "Solo", folder: folder, provider: .claude)
+
+        store.removeAgent(id: agent.id)
+
+        #expect(store.agents.isEmpty)
+        #expect(store.folders.map(\.standardizedFileURL) == [folder.standardizedFileURL])
+        let groups = store.agentsByFolder
+        #expect(groups.count == 1)
+        #expect(groups.first?.url.standardizedFileURL == folder.standardizedFileURL)
+        #expect(groups.first?.agents.isEmpty == true)
+    }
+
+    @Test
+    func addFolderCreatesEmptyFolderEntry() {
+        let store = AgentStore(loadFromDisk: false)
+        let folder = URL(fileURLWithPath: "/tmp/empty-from-the-start")
+
+        store.addFolder(folder)
+
+        #expect(store.agents.isEmpty)
+        #expect(store.folders.map(\.standardizedFileURL) == [folder.standardizedFileURL])
+        let groups = store.agentsByFolder
+        #expect(groups.count == 1)
+        #expect(groups.first?.agents.isEmpty == true)
+    }
+
+    @Test
+    func addFolderIsIdempotentOnStandardizedURL() {
+        let store = AgentStore(loadFromDisk: false)
+        let folder = URL(fileURLWithPath: "/tmp/dedup")
+
+        store.addFolder(folder)
+        store.addFolder(URL(fileURLWithPath: "/tmp/./dedup"))
+
+        #expect(store.folders.count == 1)
+    }
+
+    @Test
+    func loadDerivesFoldersFromAgentsWhenFoldersFileMissing() throws {
+        let suiteName = "AgentStoreTests.derive.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+
+        let appSupportRoot = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let saveURL = AgentStore.persistenceURL(appSupportRoot: appSupportRoot)
+        let foldersURL = saveURL.deletingLastPathComponent().appendingPathComponent("folders.json")
+
+        let folderA = URL(fileURLWithPath: "/tmp/projectA")
+        let folderB = URL(fileURLWithPath: "/tmp/projectB")
+        let agentA = Agent(name: "A", folder: folderA, provider: .claude, sessionId: "a")
+        let agentB = Agent(name: "B", folder: folderB, provider: .codex, sessionId: "b")
+        try JSONEncoder().encode([agentA, agentB]).write(to: saveURL, options: .atomic)
+        // No folders.json on disk — first load after upgrade.
+
+        let store = AgentStore(loadFromDisk: true, userDefaults: defaults, saveURL: saveURL)
+
+        let standardized = Set(store.folders.map(\.standardizedFileURL))
+        #expect(standardized == Set([folderA, folderB].map(\.standardizedFileURL)))
+        #expect(FileManager.default.fileExists(atPath: foldersURL.path))
+    }
+
+    @Test
+    func loadHonorsPersistedEmptyFolders() throws {
+        let suiteName = "AgentStoreTests.persist.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+
+        let appSupportRoot = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let saveURL = AgentStore.persistenceURL(appSupportRoot: appSupportRoot)
+        let foldersURL = saveURL.deletingLastPathComponent().appendingPathComponent("folders.json")
+
+        let emptyFolder = URL(fileURLWithPath: "/tmp/persisted-empty")
+        try JSONEncoder().encode([Agent]()).write(to: saveURL, options: .atomic)
+        try JSONEncoder().encode([emptyFolder]).write(to: foldersURL, options: .atomic)
+
+        let store = AgentStore(loadFromDisk: true, userDefaults: defaults, saveURL: saveURL)
+
+        #expect(store.agents.isEmpty)
+        #expect(store.folders.map(\.standardizedFileURL) == [emptyFolder.standardizedFileURL])
+    }
+
+    @Test
     func openSessionIdsIncludesOnlyMatchingProviderAndFolder() {
         let store = AgentStore(loadFromDisk: false)
         let folder = URL(fileURLWithPath: "/tmp/project")

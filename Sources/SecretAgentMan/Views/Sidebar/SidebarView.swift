@@ -11,14 +11,17 @@ struct SidebarView: View {
     @State private var renamingAgentId: UUID?
     @State private var renameText = ""
 
-    private var groupedAgents: [(folder: String, agents: [Agent])] {
+    private var groupedAgents: [AgentStore.FolderGroup] {
         coordinator.store.agentsByFolder
     }
 
     var body: some View {
         let collapsedSet = collapsedFolders
         VStack(spacing: 0) {
-            newAgentButton
+            HStack(spacing: 0) {
+                newAgentButton
+                addFolderButton
+            }
             Divider()
             agentList(collapsedSet: collapsedSet)
         }
@@ -67,103 +70,31 @@ struct SidebarView: View {
         .help("New Agent (⌘N)")
     }
 
-    private func agentList(collapsedSet: Set<String>) -> some View {
-        List {
-            ForEach(groupedAgents, id: \.folder) { group in
-                let isExpanded = folderExpandedBinding(for: group.folder, in: collapsedSet)
-
-                HStack(spacing: Spacing.xl) {
-                    Image(systemName: isExpanded.wrappedValue ? "folder.fill" : "folder")
-                        .scaledFont(size: 13)
-                        .foregroundStyle(theme.accent)
-                        .frame(width: 16)
-
-                    VStack(alignment: .leading, spacing: Spacing.xs) {
-                        Text(group.agents.first?.folderName ?? "")
-                            .scaledFont(size: 13, weight: .bold)
-                            .foregroundStyle(theme.foreground)
-
-                        if let branch = coordinator.repositoryMonitor.branchNames[group.folder] {
-                            BranchInfoView(branchName: branch)
-                        }
-                    }
-
-                    Spacer()
-
-                    Menu {
-                        Button("New agent in folder") {
-                            newAgentPrefillFolder = group.agents.first?.folder
-                            showingNewAgent = true
-                        }
-                        Divider()
-                        Button("Remove", role: .destructive) {
-                            if let folder = group.agents.first?.folder {
-                                removeFolder(folderURL: folder, folderKey: group.folder)
-                            }
-                        }
-                    } label: {
-                        Image(systemName: "ellipsis")
-                            .scaledFont(size: 13)
-                            .foregroundStyle(.secondary)
-                            .frame(width: 16, height: 16)
-                            .contentShape(Rectangle())
-                    }
-                    .menuStyle(.borderlessButton)
-                    .menuIndicator(.hidden)
-                    .fixedSize()
-                }
+    private var addFolderButton: some View {
+        Button {
+            chooseAndAddFolder()
+        } label: {
+            Image(systemName: "folder.badge.plus")
+                .scaledFont(size: 13)
+                .foregroundStyle(theme.accent)
+                .frame(width: 16, height: 16)
                 .padding(.horizontal, Spacing.xxl)
-                .padding(.vertical, Spacing.md)
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.vertical, Spacing.lg)
                 .contentShape(Rectangle())
                 .hoverHighlight(cornerRadius: 0)
-                .listRowInsets(EdgeInsets())
-                .listRowBackground(Color.clear)
-                .onTapGesture {
-                    withAnimation(.snappy(duration: 0.2)) {
-                        isExpanded.wrappedValue.toggle()
-                    }
-                }
-                .contextMenu {
-                    Button("New agent in folder") {
-                        newAgentPrefillFolder = group.agents.first?.folder
-                        showingNewAgent = true
-                    }
-                    Divider()
-                    Button("Remove", role: .destructive) {
-                        if let folder = group.agents.first?.folder {
-                            removeFolder(folderURL: folder, folderKey: group.folder)
-                        }
-                    }
-                }
+        }
+        .buttonStyle(.plain)
+        .help("Add Folder")
+    }
 
+    private func agentList(collapsedSet: Set<String>) -> some View {
+        List {
+            ForEach(groupedAgents) { group in
+                let isExpanded = folderExpandedBinding(for: group.key, in: collapsedSet)
+                folderHeaderRow(group: group, isExpanded: isExpanded)
                 if isExpanded.wrappedValue {
                     ForEach(group.agents) { agent in
-                        AgentRowView(
-                            agent: agent,
-                            isSelected: coordinator.store.selectedAgentId == agent.id
-                        )
-                        .listRowInsets(EdgeInsets())
-                        .listRowBackground(Color.clear)
-                        .onTapGesture {
-                            coordinator.store.selectAgent(id: agent.id)
-                        }
-                        .contextMenu {
-                            if let sessionId = agent.sessionId {
-                                Button("Copy session id") {
-                                    copyToPasteboard(sessionId)
-                                }
-                                Divider()
-                            }
-                            Button("Rename") {
-                                renameText = agent.name
-                                renamingAgentId = agent.id
-                            }
-                            Divider()
-                            Button("Remove", role: .destructive) {
-                                coordinator.removeAgent(agent.id)
-                            }
-                        }
+                        agentRow(agent)
                     }
                 }
             }
@@ -171,6 +102,102 @@ struct SidebarView: View {
         .listStyle(.sidebar)
         .scrollContentBackground(.hidden)
         .background(theme.surface)
+    }
+
+    private func folderHeaderRow(group: AgentStore.FolderGroup, isExpanded: Binding<Bool>) -> some View {
+        HStack(spacing: Spacing.xl) {
+            Image(systemName: folderIconName(isExpanded: isExpanded.wrappedValue, isEmpty: group.agents.isEmpty))
+                .scaledFont(size: 13)
+                .foregroundStyle(theme.accent)
+                .frame(width: 16)
+
+            VStack(alignment: .leading, spacing: Spacing.xs) {
+                HStack(spacing: Spacing.sm) {
+                    Text(group.url.lastPathComponent)
+                        .scaledFont(size: 13, weight: .bold)
+                        .foregroundStyle(theme.foreground)
+                    if group.agents.isEmpty {
+                        Text("(empty)")
+                            .scaledFont(size: 11)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                if let branch = coordinator.repositoryMonitor.branchNames[group.key] {
+                    BranchInfoView(branchName: branch)
+                }
+            }
+
+            Spacer()
+
+            Menu {
+                folderMenuContents(group: group)
+            } label: {
+                Image(systemName: "ellipsis")
+                    .scaledFont(size: 13)
+                    .foregroundStyle(.secondary)
+                    .frame(width: 16, height: 16)
+                    .contentShape(Rectangle())
+            }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .fixedSize()
+        }
+        .padding(.horizontal, Spacing.xxl)
+        .padding(.vertical, Spacing.md)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(Rectangle())
+        .hoverHighlight(cornerRadius: 0)
+        .listRowInsets(EdgeInsets())
+        .listRowBackground(Color.clear)
+        .onTapGesture {
+            withAnimation(.snappy(duration: 0.2)) {
+                isExpanded.wrappedValue.toggle()
+            }
+        }
+        .contextMenu {
+            folderMenuContents(group: group)
+        }
+    }
+
+    @ViewBuilder
+    private func folderMenuContents(group: AgentStore.FolderGroup) -> some View {
+        Button("New agent in folder") {
+            newAgentPrefillFolder = group.url
+            showingNewAgent = true
+        }
+        Divider()
+        Button("Remove", role: .destructive) {
+            removeFolder(folderURL: group.url, folderKey: group.key)
+        }
+    }
+
+    private func agentRow(_ agent: Agent) -> some View {
+        AgentRowView(
+            agent: agent,
+            isSelected: coordinator.store.selectedAgentId == agent.id
+        )
+        .listRowInsets(EdgeInsets())
+        .listRowBackground(Color.clear)
+        .onTapGesture {
+            coordinator.store.selectAgent(id: agent.id)
+        }
+        .contextMenu {
+            if let sessionId = agent.sessionId {
+                Button("Copy session id") {
+                    copyToPasteboard(sessionId)
+                }
+                Divider()
+            }
+            Button("Rename") {
+                renameText = agent.name
+                renamingAgentId = agent.id
+            }
+            Divider()
+            Button("Remove", role: .destructive) {
+                coordinator.removeAgent(agent.id)
+            }
+        }
     }
 
     private var collapsedFolders: Set<String> {
@@ -207,5 +234,22 @@ struct SidebarView: View {
         var updated = collapsedFolders
         updated.remove(folderKey)
         collapsedFoldersStorage = updated.sorted().joined(separator: "\n")
+    }
+
+    private func chooseAndAddFolder() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.allowsMultipleSelection = false
+        panel.message = "Add a project folder"
+
+        if panel.runModal() == .OK, let url = panel.url {
+            coordinator.store.addFolder(url)
+        }
+    }
+
+    private func folderIconName(isExpanded: Bool, isEmpty: Bool) -> String {
+        if isEmpty { return "folder" }
+        return isExpanded ? "folder.fill" : "folder"
     }
 }

@@ -10,6 +10,7 @@ final class AgentStore {
     }
 
     var agents: [Agent] = []
+    var folders: [URL] = []
     var selectedAgentId: UUID?
 
     static func persistenceURL(appSupportRoot: URL? = nil) -> URL {
@@ -22,6 +23,7 @@ final class AgentStore {
     private let persistsToFile: Bool
     private let userDefaults: UserDefaults
     private let saveURL: URL
+    private let foldersURL: URL
 
     init(
         loadFromDisk: Bool = true,
@@ -31,6 +33,7 @@ final class AgentStore {
         self.persistsToFile = loadFromDisk
         self.userDefaults = userDefaults
         self.saveURL = saveURL
+        foldersURL = saveURL.deletingLastPathComponent().appendingPathComponent("folders.json")
         if loadFromDisk {
             load()
         }
@@ -57,11 +60,27 @@ final class AgentStore {
         persistSelectedAgentId()
     }
 
-    var agentsByFolder: [(folder: String, agents: [Agent])] {
-        let grouped = Dictionary(grouping: agents) { $0.folderPath }
-        return grouped
+    struct FolderGroup: Identifiable {
+        var url: URL
+        var agents: [Agent]
+        var key: String {
+            url.tildeAbbreviatedPath
+        }
+
+        var id: String {
+            key
+        }
+    }
+
+    var agentsByFolder: [FolderGroup] {
+        let grouped = Dictionary(grouping: agents) { $0.folder.standardizedFileURL }
+        return folders
+            .map { url in
+                let inFolder = (grouped[url.standardizedFileURL] ?? [])
+                    .sorted { $0.createdAt < $1.createdAt }
+                return FolderGroup(url: url, agents: inFolder)
+            }
             .sorted { $0.key < $1.key }
-            .map { (folder: $0.key, agents: $0.value.sorted { $0.createdAt < $1.createdAt }) }
     }
 
     func addAgent(
@@ -77,10 +96,32 @@ final class AgentStore {
             sessionId: provider == .codex ? nil : UUID().uuidString,
             initialPrompt: initialPrompt
         )
+        registerFolder(folder)
         agents.append(agent)
         selectAgent(id: agent.id)
         save()
         return agent
+    }
+
+    func addFolder(_ url: URL) {
+        guard registerFolder(url) else { return }
+        save()
+    }
+
+    func removeFolder(_ url: URL) {
+        let target = url.standardizedFileURL
+        let countBefore = folders.count
+        folders.removeAll { $0.standardizedFileURL == target }
+        guard folders.count != countBefore else { return }
+        save()
+    }
+
+    @discardableResult
+    private func registerFolder(_ url: URL) -> Bool {
+        let target = url.standardizedFileURL
+        guard !folders.contains(where: { $0.standardizedFileURL == target }) else { return false }
+        folders.append(url)
+        return true
     }
 
     @discardableResult
@@ -110,6 +151,7 @@ final class AgentStore {
             sessionId: sessionId,
             hasLaunched: hasLaunched
         )
+        registerFolder(source.folder)
         agents.append(agent)
         selectAgent(id: agent.id)
         save()
@@ -169,6 +211,12 @@ final class AgentStore {
         } catch {
             print("Failed to save agents: \(error)")
         }
+        do {
+            let foldersData = try JSONEncoder().encode(folders)
+            try foldersData.write(to: foldersURL, options: .atomic)
+        } catch {
+            print("Failed to save folders: \(error)")
+        }
     }
 
     private func load() {
@@ -189,6 +237,23 @@ final class AgentStore {
         }
 
         agents = loaded
+
+        if let foldersData = try? Data(contentsOf: foldersURL),
+           let savedFolders = try? JSONDecoder().decode([URL].self, from: foldersData) {
+            folders = savedFolders
+            // Backfill any agent folders that aren't in the persisted set yet
+            // (e.g. an older agents.json paired with a stale folders.json).
+            for agent in agents where registerFolder(agent.folder) {
+                needsSave = true
+            }
+        } else {
+            // First load after upgrade: derive folder set from existing agents.
+            for agent in agents {
+                registerFolder(agent.folder)
+            }
+            needsSave = true
+        }
+
         if let saved = userDefaults.string(forKey: UserDefaultsKeys.selectedAgentId),
            let savedId = UUID(uuidString: saved),
            agents.contains(where: { $0.id == savedId }) {
