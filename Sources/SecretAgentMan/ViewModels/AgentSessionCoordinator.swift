@@ -160,6 +160,7 @@ final class AgentSessionCoordinator {
             removeAgent(id)
         }
 
+        store.removeFolder(folder)
         syncSessionWatches()
     }
 
