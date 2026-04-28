@@ -47,6 +47,7 @@ actor GitHubPRService {
         let updatedAt: Date
         let reviewers: [PRReviewer]
         let checkStatus: PRCheckStatus
+        let hasAnyApproval: Bool
     }
 
     // MARK: - Authored PRs → PRInfo (for agent sidebar)
@@ -109,7 +110,7 @@ actor GitHubPRService {
             ... on Team { name avatarUrl }
             ... on Mannequin { login avatarUrl }
         } } }
-        latestReviews(first: 5) { nodes { author { login avatarUrl } } }
+        latestReviews(first: 5) { nodes { state author { login avatarUrl } } }
         statusCheckRollup { state }
     """
 
@@ -125,7 +126,7 @@ actor GitHubPRService {
           authored: search(query: "is:pr is:open author:@me", type: ISSUE, first: 50) {
             nodes { ... on PullRequest { \(Self.prFields) } }
           }
-          reviewedByMe: search(query: "is:pr is:open reviewed-by:@me -author:@me", type: ISSUE, first: 50) {
+          reviewedByMe: search(query: "is:pr is:open -is:draft reviewed-by:@me -author:@me", type: ISSUE, first: 50) {
             nodes { ... on PullRequest { \(Self.prFields) } }
           }
         }
@@ -136,22 +137,49 @@ actor GitHubPRService {
               let data = payload.data
         else { return [:] }
 
-        let reviewPRs = data.needsReview.nodes.map(Self.makeGitHubPR)
-        let authoredPRs = data.authored.nodes.map(Self.makeGitHubPR)
-        let reviewedPRs = data.reviewedByMe.nodes.map(Self.makeGitHubPR)
+        return Self.categorize(
+            reviewRequested: data.needsReview.nodes.map(Self.makeGitHubPR),
+            authored: data.authored.nodes.map(Self.makeGitHubPR),
+            reviewedByMe: data.reviewedByMe.nodes.map(Self.makeGitHubPR)
+        )
+    }
+
+    /// Bucket the three GitHub search result sets into UI sections. Pure function — exposed
+    /// internally so tests can exercise the bucketing without spawning `gh`.
+    static func categorize(
+        reviewRequested: [GitHubPR],
+        authored: [GitHubPR],
+        reviewedByMe: [GitHubPR]
+    ) -> [PRSection: [GitHubPR]] {
+        // A requested-reviewer PR moves to "Reviewed" once it has a state-changing review
+        // (APPROVED / CHANGES_REQUESTED at PR level, or any APPROVED review when the repo
+        // lacks branch protection so reviewDecision stays nil).
+        let needsReviewPRs = reviewRequested.filter { pr in
+            pr.reviewDecision != "APPROVED"
+                && pr.reviewDecision != "CHANGES_REQUESTED"
+                && !pr.hasAnyApproval
+        }
+        let requestedWithStateChange = reviewRequested.filter { pr in
+            pr.reviewDecision == "APPROVED"
+                || pr.reviewDecision == "CHANGES_REQUESTED"
+                || pr.hasAnyApproval
+        }
 
         var sections: [PRSection: [GitHubPR]] = [:]
-        sections[.needsMyReview] = reviewPRs
+        sections[.needsMyReview] = needsReviewPRs
 
-        let needsReviewIds = Set(reviewPRs.map(\.id))
-        sections[.reviewed] = reviewedPRs.filter { !needsReviewIds.contains($0.id) }
+        let needsReviewIds = Set(needsReviewPRs.map(\.id))
+        var seenReviewedIds = Set<String>()
+        sections[.reviewed] = (reviewedByMe + requestedWithStateChange).filter { pr in
+            seenReviewedIds.insert(pr.id).inserted && !needsReviewIds.contains(pr.id)
+        }
 
         var returned: [GitHubPR] = []
         var approved: [GitHubPR] = []
         var waiting: [GitHubPR] = []
         var drafts: [GitHubPR] = []
 
-        for pr in authoredPRs {
+        for pr in authored {
             if pr.isDraft {
                 drafts.append(pr)
             } else if pr.reviewDecision == "CHANGES_REQUESTED" {
@@ -366,8 +394,15 @@ private extension GitHubPRService {
             mergeStateStatus: dto.mergeStateStatus,
             updatedAt: dto.updatedAt,
             reviewers: reviewers,
-            checkStatus: checkStatus
+            checkStatus: checkStatus,
+            hasAnyApproval: dto.hasAnyApproval
         )
+    }
+}
+
+private extension GitHubPRService.PRNode {
+    var hasAnyApproval: Bool {
+        latestReviews.nodes.contains { $0.state == "APPROVED" }
     }
 }
 
@@ -456,6 +491,7 @@ private extension GitHubPRService {
     }
 
     struct LatestReviewNode: Decodable {
+        let state: String?
         let author: Author?
     }
 

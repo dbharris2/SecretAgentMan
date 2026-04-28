@@ -95,7 +95,8 @@ struct PRStoreTests {
             mergeStateStatus: "CLEAN",
             updatedAt: Date(),
             reviewers: [],
-            checkStatus: .pending
+            checkStatus: .pending,
+            hasAnyApproval: false
         )
     }
 }
