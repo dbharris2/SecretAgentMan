@@ -292,24 +292,26 @@ struct SessionComposer<Suggestions: View, TrailingControls: View>: View {
             suggestions()
 
             VStack(alignment: .leading, spacing: Spacing.lg) {
-                TextEditor(text: $draft)
-                    .focused(composerFocused)
-                    .font(.system(size: 13 * fontScale, design: .monospaced))
-                    .scrollContentBackground(.hidden)
-                    .frame(minHeight: 80, maxHeight: 140)
-                    .padding(Spacing.lg)
-                    .background(theme.background)
-                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                    .onKeyPress(phases: .down) { keyPress in
-                        if keyPress.key == .init("v"), keyPress.modifiers.contains(.command),
-                           pasteImageFromClipboard() {
-                            return .handled
-                        }
-                        return onKeyPress(keyPress)
+                GrowingTextEditor(
+                    text: $draft,
+                    fontSize: 13 * fontScale,
+                    fontDesign: .monospaced,
+                    lineLimit: 1 ... 12,
+                    focused: composerFocused
+                )
+                .padding(Spacing.lg)
+                .background(theme.background)
+                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .onKeyPress(phases: .down) { keyPress in
+                    if keyPress.key == .init("v"), keyPress.modifiers.contains(.command),
+                       pasteImageFromClipboard() {
+                        return .handled
                     }
-                    .onChange(of: draft) { _, _ in
-                        onDraftChange()
-                    }
+                    return onKeyPress(keyPress)
+                }
+                .onChange(of: draft) { _, _ in
+                    onDraftChange()
+                }
 
                 if !pendingImages.isEmpty {
                     ScrollView(.horizontal, showsIndicators: false) {

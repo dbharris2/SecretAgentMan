@@ -41,6 +41,7 @@ struct AutoScrollingScrollView<Content: View, Overlay: View, Trigger: Equatable>
         // zero in macOS 14 + Swift 6 strict concurrency mode.
         GeometryReader { outer in
             let scrollBottomY = outer.frame(in: .global).maxY
+            let viewportHeight = outer.size.height
             ScrollViewReader { proxy in
                 let scrollToBottom: () -> Void = {
                     proxy.scrollTo(Self.bottomAnchor, anchor: .bottom)
@@ -78,6 +79,13 @@ struct AutoScrollingScrollView<Content: View, Overlay: View, Trigger: Equatable>
                     .defaultScrollAnchor(.bottom)
                     .onPreferenceChange(AutoScrollDistanceKey.self) { distanceFromBottom = $0 }
                     .onChange(of: trigger) { _, _ in
+                        if distanceFromBottom <= pinThreshold {
+                            scrollToBottom()
+                        }
+                    }
+                    // `defaultScrollAnchor` only reacts to content-size
+                    // changes, not viewport shrinks (e.g. composer growing).
+                    .onChange(of: viewportHeight) { _, _ in
                         if distanceFromBottom <= pinThreshold {
                             scrollToBottom()
                         }
