@@ -216,7 +216,7 @@ struct SessionChatView: View {
                         .foregroundStyle(.secondary)
                         .frame(width: 12)
 
-                    Text("\(items.count) tool actions")
+                    Text(systemGroupLabel(items: items))
                         .scaledFont(size: 12)
                         .foregroundStyle(.secondary)
 
@@ -224,7 +224,7 @@ struct SessionChatView: View {
                         Text("·")
                             .scaledFont(size: 12)
                             .foregroundStyle(.tertiary)
-                        Text(summary)
+                        Text(markdownAttributedString(summary))
                             .scaledFont(size: 12)
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
@@ -236,7 +236,7 @@ struct SessionChatView: View {
 
             if isExpanded {
                 VStack(alignment: .leading, spacing: Spacing.md) {
-                    ForEach(mergedExpandedSystemItems(items: items), id: \.id) { item in
+                    ForEach(items, id: \.id) { item in
                         SessionMarkdownText(text: item.text, fontScale: fontScale)
                             .padding(.leading, 18)
                     }
@@ -245,38 +245,25 @@ struct SessionChatView: View {
         }
     }
 
-    private func mergedExpandedSystemItems(items: [SessionTranscriptItem]) -> [SessionTranscriptItem] {
-        var merged: [SessionTranscriptItem] = []
-
-        for item in items {
-            guard let preview = systemPreview(item: item) else {
-                merged.append(item)
-                continue
-            }
-
-            let body = systemBody(item.text)
-            if let last = merged.last,
-               let lastPreview = systemPreview(item: last),
-               lastPreview.title == preview.title {
-                let mergedBody = [systemBody(last.text), body]
-                    .filter { !$0.isEmpty }
-                    .joined(separator: "\n\n")
-                let mergedText = mergedBody.isEmpty ? preview.title : "\(preview.title)\n\n\(mergedBody)"
-                merged[merged.count - 1] = SessionTranscriptItem(
-                    id: last.id,
-                    kind: last.kind,
-                    text: mergedText,
-                    isStreaming: last.isStreaming,
-                    createdAt: last.createdAt,
-                    imageData: last.imageData,
-                    metadata: last.metadata
-                )
-            } else {
-                merged.append(item)
-            }
+    private func systemGroupLabel(items: [SessionTranscriptItem]) -> String {
+        let kinds: [TranscriptItemKind] = [.toolActivity, .plan, .diffSummary, .systemMessage, .error]
+        let parts = kinds.compactMap { kind -> String? in
+            let count = items.count(where: { $0.kind == kind })
+            guard count > 0 else { return nil }
+            return "\(count) \(noun(for: kind, plural: count != 1))"
         }
+        return parts.isEmpty ? "\(items.count) items" : parts.joined(separator: ", ")
+    }
 
-        return merged
+    private func noun(for kind: TranscriptItemKind, plural: Bool) -> String {
+        switch kind {
+        case .toolActivity: plural ? "tools" : "tool"
+        case .plan: plural ? "plans" : "plan"
+        case .diffSummary: plural ? "diffs" : "diff"
+        case .systemMessage: plural ? "system messages" : "system message"
+        case .error: plural ? "errors" : "error"
+        default: "item"
+        }
     }
 
     private func collapsedSystemSummary(items: [SessionTranscriptItem]) -> String? {
@@ -304,6 +291,10 @@ struct SessionChatView: View {
         }
     }
 
+    private func markdownAttributedString(_ text: String) -> AttributedString {
+        (try? AttributedString(markdown: text)) ?? AttributedString(text)
+    }
+
     private func systemPreview(item: SessionTranscriptItem) -> (title: String, details: [String])? {
         let lines = item.text
             .split(separator: "\n")
@@ -314,12 +305,6 @@ struct SessionChatView: View {
         guard let title = lines.first else { return nil }
         let details = lines.dropFirst().filter { !$0.hasSuffix(":") }
         return (title, Array(details))
-    }
-
-    private func systemBody(_ text: String) -> String {
-        let parts = text.split(separator: "\n", maxSplits: 1, omittingEmptySubsequences: false)
-        guard parts.count == 2 else { return "" }
-        return String(parts[1]).trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }
 
