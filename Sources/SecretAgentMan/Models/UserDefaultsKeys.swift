@@ -13,4 +13,5 @@ enum UserDefaultsKeys {
     static let autoAnalyzeReviews = "autoAnalyzeReviews"
     static let fontScale = "fontScale"
     static let preferredEditor = "preferredEditor"
+    static let favoriteThemes = "favoriteThemes"
 }

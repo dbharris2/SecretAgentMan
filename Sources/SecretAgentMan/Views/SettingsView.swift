@@ -11,7 +11,7 @@ struct SettingsView: View {
             ReviewerGroupsSettingsView(store: reviewerGroupStore)
                 .tabItem { Label("Reviewers", systemImage: "person.2") }
         }
-        .frame(width: 550, height: 650)
+        .frame(minWidth: 650, idealWidth: 750, maxWidth: .infinity, minHeight: 750, idealHeight: 850, maxHeight: .infinity)
     }
 }
 
@@ -22,13 +22,44 @@ struct GeneralSettingsView: View {
     @AppStorage(UserDefaultsKeys.claudePluginDirectory) private var claudePluginDirectory = ""
     @AppStorage(UserDefaultsKeys.defaultAgentFolder) private var defaultAgentFolder = ""
     @AppStorage(UserDefaultsKeys.codexApprovalPolicy) private var codexApprovalPolicy = CodexApprovalPolicy.onRequest.rawValue
+    @AppStorage(UserDefaultsKeys.favoriteThemes) private var favoriteThemesJSON = "[]"
     @State private var searchText = ""
     @State private var allThemes: [String] = []
     @State private var listSelection: String?
 
+    private var favoriteThemes: Set<String> {
+        guard let data = favoriteThemesJSON.data(using: .utf8),
+              let array = try? JSONDecoder().decode([String].self, from: data)
+        else { return [] }
+        return Set(array)
+    }
+
     private var filteredThemes: [String] {
         if searchText.isEmpty { return allThemes }
         return allThemes.filter { $0.localizedCaseInsensitiveContains(searchText) }
+    }
+
+    private var favoriteThemesSorted: [String] {
+        let favs = favoriteThemes
+        return allThemes.filter { favs.contains($0) }
+    }
+
+    private var nonFavoriteThemes: [String] {
+        let favs = favoriteThemes
+        return allThemes.filter { !favs.contains($0) }
+    }
+
+    private func toggleFavorite(_ theme: String) {
+        var favs = favoriteThemes
+        if favs.contains(theme) {
+            favs.remove(theme)
+        } else {
+            favs.insert(theme)
+        }
+        if let data = try? JSONEncoder().encode(Array(favs).sorted()),
+           let json = String(data: data, encoding: .utf8) {
+            favoriteThemesJSON = json
+        }
     }
 
     var body: some View {
@@ -130,9 +161,23 @@ struct GeneralSettingsView: View {
             TextField("Search themes...", text: $searchText)
                 .textFieldStyle(.roundedBorder)
 
-            List(filteredThemes, id: \.self, selection: $listSelection) { theme in
-                themeRow(theme)
-                    .tag(theme)
+            List(selection: $listSelection) {
+                if searchText.isEmpty, !favoriteThemesSorted.isEmpty {
+                    Section("Favorites") {
+                        ForEach(favoriteThemesSorted, id: \.self) { theme in
+                            themeRow(theme).tag(theme)
+                        }
+                    }
+                    Section("All Themes") {
+                        ForEach(nonFavoriteThemes, id: \.self) { theme in
+                            themeRow(theme).tag(theme)
+                        }
+                    }
+                } else {
+                    ForEach(filteredThemes, id: \.self) { theme in
+                        themeRow(theme).tag(theme)
+                    }
+                }
             }
             .listStyle(.inset)
             .clipShape(RoundedRectangle(cornerRadius: 6))
@@ -154,7 +199,8 @@ struct GeneralSettingsView: View {
     }
 
     private func themeRow(_ theme: String) -> some View {
-        HStack {
+        let isFavorite = favoriteThemes.contains(theme)
+        return HStack {
             ThemePreview(themeName: theme)
             Text(theme)
             Spacer()
@@ -162,6 +208,14 @@ struct GeneralSettingsView: View {
                 Image(systemName: "checkmark")
                     .foregroundStyle(.blue)
             }
+            Button {
+                toggleFavorite(theme)
+            } label: {
+                Image(systemName: isFavorite ? "star.fill" : "star")
+                    .foregroundStyle(isFavorite ? Color.yellow : Color.secondary.opacity(0.6))
+            }
+            .buttonStyle(.plain)
+            .help(isFavorite ? "Remove from favorites" : "Add to favorites")
         }
         .padding(.vertical, 1)
     }
@@ -252,7 +306,7 @@ struct ReviewerGroupsSettingsView: View {
                 }
                 .padding(Spacing.md)
             }
-            .frame(minWidth: 140, idealWidth: 160)
+            .frame(minWidth: 160, idealWidth: 320, maxWidth: 400)
 
             // Group detail
             if let index = store.groups.firstIndex(where: { $0.id == selectedGroupId }) {
@@ -293,6 +347,7 @@ struct ReviewerGroupsSettingsView: View {
                     }
                 }
                 .padding(Spacing.xxl)
+                .frame(minWidth: 320, idealWidth: 360, maxWidth: .infinity)
             } else {
                 VStack {
                     Spacer()
@@ -300,7 +355,7 @@ struct ReviewerGroupsSettingsView: View {
                         .foregroundStyle(.secondary)
                     Spacer()
                 }
-                .frame(maxWidth: .infinity)
+                .frame(minWidth: 320, idealWidth: 360, maxWidth: .infinity)
             }
         }
         .padding(Spacing.xxl)
