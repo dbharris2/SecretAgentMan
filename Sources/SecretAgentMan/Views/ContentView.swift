@@ -16,9 +16,17 @@ struct ContentView: View {
     var body: some View {
         VStack(spacing: 0) {
             GeometryReader { proxy in
-                let maxLeftWidth = max(220, proxy.size.width / 3)
-                let maxRightWidth = max(320, proxy.size.width * 2 / 3)
+                let centerMinWidth: Double = 400
+                let totalWidth = Double(proxy.size.width)
+                let maxLeftWidth = max(220, totalWidth / 3)
                 let clampedLeftWidth = min(leftPanelWidth, maxLeftWidth)
+                let leftContribution = isLeftPanelVisible ? clampedLeftWidth : 0
+                // Reserve room for the center panel's minimum before letting the
+                // right panel claim space — otherwise an oversized right panel
+                // pushes the HStack past the parent frame and the center slides
+                // off the leading edge.
+                let availableForRight = max(0, totalWidth - leftContribution - centerMinWidth)
+                let maxRightWidth = min(max(320, totalWidth * 2 / 3), availableForRight)
                 let clampedRightWidth = min(rightPanelWidth, maxRightWidth)
 
                 HStack(spacing: 0) {
@@ -49,7 +57,7 @@ struct ContentView: View {
                             .frame(height: shellPanelHeight)
                         }
                     }
-                    .frame(minWidth: 400)
+                    .frame(minWidth: centerMinWidth)
 
                     if isRightPanelVisible {
                         ResizableDivider(
