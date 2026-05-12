@@ -297,7 +297,8 @@ struct SessionComposer<Suggestions: View, TrailingControls: View>: View {
                     fontSize: 13 * fontScale,
                     fontDesign: .monospaced,
                     lineLimit: 1 ... 12,
-                    focused: composerFocused
+                    focused: composerFocused,
+                    focusOn: .focusComposer
                 )
                 .padding(Spacing.lg)
                 .background(theme.background)
