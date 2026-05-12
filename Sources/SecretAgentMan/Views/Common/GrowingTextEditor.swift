@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import SwiftUI
 
 /// `TextEditor`-shaped view that auto-grows to fit content from
@@ -12,14 +13,32 @@ struct GrowingTextEditor: View {
     var fontDesign: Font.Design = .default
     var lineLimit: ClosedRange<Int> = 1 ... 12
     var focused: FocusState<Bool>.Binding?
+    /// Optional notification name that, when posted, makes the embedded
+    /// `NSTextView` first responder. `FocusState` only routes focus to views
+    /// with `.focused()` attached, which `NSViewRepresentable` can't have —
+    /// so the binding write succeeds but the editor stays unfocused. A direct
+    /// notification observer is the most reliable bridge.
+    var focusOn: Notification.Name?
+
+    @State private var focusProxy = FocusProxy()
 
     var body: some View {
         GrowingNSTextView(
             text: $text,
             font: nsFont,
             lineLimit: lineLimit,
-            focused: focused
+            focused: focused,
+            isFocused: focused?.wrappedValue ?? false,
+            proxy: focusProxy
         )
+        .onReceive(focusNotificationPublisher) { _ in
+            focusProxy.requestFocus()
+        }
+    }
+
+    private var focusNotificationPublisher: AnyPublisher<Notification, Never> {
+        guard let focusOn else { return Empty().eraseToAnyPublisher() }
+        return NotificationCenter.default.publisher(for: focusOn).eraseToAnyPublisher()
     }
 
     private var nsFont: NSFont {
@@ -30,11 +49,25 @@ struct GrowingTextEditor: View {
     }
 }
 
+@MainActor
+final class FocusProxy {
+    weak var textView: NSTextView?
+
+    func requestFocus() {
+        guard let textView else { return }
+        DispatchQueue.main.async {
+            textView.window?.makeFirstResponder(textView)
+        }
+    }
+}
+
 private struct GrowingNSTextView: NSViewRepresentable {
     @Binding var text: String
     let font: NSFont
     let lineLimit: ClosedRange<Int>
     let focused: FocusState<Bool>.Binding?
+    let isFocused: Bool
+    let proxy: FocusProxy
 
     private static let verticalInset: CGFloat = 16
     private static let lineFragmentPadding: CGFloat = 5
@@ -58,6 +91,7 @@ private struct GrowingNSTextView: NSViewRepresentable {
         textView.textContainerInset = NSSize(width: 0, height: Self.verticalInset / 2)
         textView.textContainer?.lineFragmentPadding = Self.lineFragmentPadding
         textView.string = text
+        proxy.textView = textView
         return scrollView
     }
 
@@ -88,7 +122,7 @@ private struct GrowingNSTextView: NSViewRepresentable {
         // (including the symmetric `focused == false` branch) yanks first
         // responder away mid-keystroke because the FocusState binding lags
         // `textDidBeginEditing` by a render.
-        guard let focused, focused.wrappedValue else { return }
+        guard isFocused else { return }
         let textViewIsFirstResponder = textView.window?.firstResponder === textView
         if !textViewIsFirstResponder {
             DispatchQueue.main.async {
