@@ -25,6 +25,7 @@ struct SessionTranscriptBubble: View {
     let fontScale: Double
     var images: [Data] = []
     @Environment(\.appTheme) private var theme
+    @State private var isContextActive = false
 
     private var isUser: Bool {
         kind == .userMessage
@@ -56,6 +57,12 @@ struct SessionTranscriptBubble: View {
                 .padding(Spacing.xxl)
                 .background(SessionPanelTheme.backgroundColor(for: kind, in: theme))
                 .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .stroke(theme.accent.opacity(isContextActive ? 0.7 : 0), lineWidth: 1.5)
+                )
+                .overlay(rightClickCatcher)
+                .animation(.easeOut(duration: 0.18), value: isContextActive)
             }
         } else {
             // Assistant/system messages: no bubble, just text
@@ -63,7 +70,29 @@ struct SessionTranscriptBubble: View {
                 SessionMarkdownText(text: text, fontScale: fontScale)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, Spacing.md)
+            .padding(.vertical, Spacing.sm)
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(theme.accent.opacity(isContextActive ? 0.12 : 0))
+            )
+            .overlay(rightClickCatcher)
+            .animation(.easeOut(duration: 0.18), value: isContextActive)
         }
+    }
+
+    private var rightClickCatcher: some View {
+        RightClickContextMenu(
+            menuTitle: "Copy message",
+            onOpen: { isContextActive = true },
+            onClose: { isContextActive = false },
+            onSelect: performCopy
+        )
+    }
+
+    private func performCopy() {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
     }
 
     private func openImageData(_ data: Data) {
@@ -71,6 +100,75 @@ struct SessionTranscriptBubble: View {
             .appendingPathComponent("sam-\(UUID().uuidString).png")
         try? data.write(to: tmp)
         NSWorkspace.shared.open(tmp)
+    }
+}
+
+/// Transparent AppKit overlay that catches right-clicks and shows a single-item
+/// context menu, while passing every other event through to the SwiftUI content
+/// beneath it so text selection still works.
+private struct RightClickContextMenu: NSViewRepresentable {
+    let menuTitle: String
+    let onOpen: () -> Void
+    let onClose: () -> Void
+    let onSelect: () -> Void
+
+    func makeNSView(context: Context) -> NSView {
+        let view = CatcherView()
+        view.menuTitle = menuTitle
+        view.onOpen = onOpen
+        view.onClose = onClose
+        view.onSelect = onSelect
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        guard let view = nsView as? CatcherView else { return }
+        view.menuTitle = menuTitle
+        view.onOpen = onOpen
+        view.onClose = onClose
+        view.onSelect = onSelect
+    }
+
+    private final class CatcherView: NSView, NSMenuDelegate {
+        var menuTitle: String = ""
+        var onOpen: (() -> Void)?
+        var onClose: (() -> Void)?
+        var onSelect: (() -> Void)?
+
+        override func menu(for event: NSEvent) -> NSMenu? {
+            let menu = NSMenu()
+            menu.delegate = self
+            let item = NSMenuItem(
+                title: menuTitle,
+                action: #selector(triggerSelect),
+                keyEquivalent: ""
+            )
+            item.target = self
+            menu.addItem(item)
+            return menu
+        }
+
+        func menuWillOpen(_: NSMenu) {
+            onOpen?()
+        }
+
+        func menuDidClose(_: NSMenu) {
+            onClose?()
+        }
+
+        @objc private func triggerSelect() {
+            onSelect?()
+        }
+
+        override func hitTest(_ point: NSPoint) -> NSView? {
+            guard let current = NSApp.currentEvent else { return nil }
+            switch current.type {
+            case .rightMouseDown, .rightMouseUp:
+                return bounds.contains(point) ? self : nil
+            default:
+                return nil
+            }
+        }
     }
 }
 
