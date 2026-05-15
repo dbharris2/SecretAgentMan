@@ -83,6 +83,7 @@ struct CodexSessionPanelView: View {
         } composer: {
             CodexComposerView(
                 agent: agent,
+                skills: MCPConfigLoader.loadSkills(in: agent.folder, provider: .codex),
                 currentModelName: currentModelName,
                 currentCollaborationMode: currentCollaborationMode,
                 composerFocused: $composerFocused
@@ -140,8 +141,10 @@ struct CodexSessionPanelView: View {
 private struct CodexComposerView: View {
     @Environment(AppCoordinator.self) private var coordinator
     @Environment(\.fontScale) private var fontScale
+    @Environment(\.appTheme) private var theme
 
     let agent: Agent
+    let skills: [SkillInfo]
     let currentModelName: String
     let currentCollaborationMode: CodexCollaborationMode
     var composerFocused: FocusState<Bool>.Binding
@@ -149,6 +152,15 @@ private struct CodexComposerView: View {
     @State private var draft = ""
     @State private var pendingImages: [PendingImage] = []
     @State private var showingUsagePopover = false
+    @State private var skillSelectionIndex = 0
+
+    private var skillSuggestions: [SkillInfo] {
+        let stripped = draft.replacingOccurrences(of: "\n", with: "")
+        guard stripped.hasPrefix("$"), !stripped.contains(" ") else { return [] }
+        let query = String(stripped.dropFirst()).lowercased()
+        if query.isEmpty { return skills }
+        return skills.filter { $0.name.lowercased().hasPrefix(query) }
+    }
 
     var body: some View {
         SessionComposer(
@@ -158,10 +170,12 @@ private struct CodexComposerView: View {
             fontScale: fontScale,
             statusText: "",
             statusColor: .secondary,
-            onKeyPress: { handleComposerSubmitKeyPress($0, send: sendDraft) },
-            onDraftChange: {}
+            onKeyPress: handleComposerKeyPress,
+            onDraftChange: { skillSelectionIndex = 0 }
         ) {
-            EmptyView()
+            if !skillSuggestions.isEmpty {
+                skillCommandList
+            }
         } trailingControls: {
             HStack(spacing: 6) {
                 ComposerPill(text: currentModelName)
@@ -181,6 +195,79 @@ private struct CodexComposerView: View {
                 }
             }
         }
+        .onChange(of: coordinator.composerInsert) { _, text in
+            if let text {
+                draft = text
+                coordinator.composerInsert = nil
+            }
+        }
+    }
+
+    private var skillCommandList: some View {
+        ScrollViewReader { proxy in
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(Array(skillSuggestions.enumerated()), id: \.element.id) { index, skill in
+                        Button {
+                            draft = "$\(skill.name) "
+                            skillSelectionIndex = 0
+                        } label: {
+                            HStack(alignment: .top, spacing: Spacing.lg) {
+                                Text("$\(skill.name)")
+                                    .scaledFont(size: 13, weight: .medium, design: .monospaced)
+                                    .frame(width: 140, alignment: .leading)
+
+                                if !skill.description.isEmpty {
+                                    Text(skill.description)
+                                        .scaledFont(size: 11)
+                                        .foregroundStyle(.secondary)
+                                        .lineLimit(2)
+                                }
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.horizontal, Spacing.xxl)
+                            .padding(.vertical, Spacing.md)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .background(index == skillSelectionIndex ? theme.accent.opacity(0.2) : .clear)
+                        .id(skill.id)
+                    }
+                }
+            }
+            .onChange(of: skillSelectionIndex) { _, idx in
+                if idx < skillSuggestions.count {
+                    proxy.scrollTo(skillSuggestions[idx].id, anchor: .center)
+                }
+            }
+        }
+        .frame(maxHeight: 200)
+        .background(theme.surface)
+    }
+
+    private func handleComposerKeyPress(_ keyPress: KeyPress) -> KeyPress.Result {
+        let suggestions = skillSuggestions
+        if !suggestions.isEmpty {
+            if keyPress.key == .downArrow {
+                skillSelectionIndex = min(skillSelectionIndex + 1, suggestions.count - 1)
+                return .handled
+            }
+            if keyPress.key == .upArrow {
+                skillSelectionIndex = max(skillSelectionIndex - 1, 0)
+                return .handled
+            }
+            if keyPress.key == .return, !keyPress.modifiers.contains(.shift) {
+                let selected = suggestions[skillSelectionIndex]
+                draft = "$\(selected.name) "
+                skillSelectionIndex = 0
+                return .handled
+            }
+            if keyPress.key == .escape {
+                draft = ""
+                return .handled
+            }
+        }
+        return handleComposerSubmitKeyPress(keyPress, send: sendDraft)
     }
 
     private func usageRingButton(limits: AgentRateLimits) -> some View {

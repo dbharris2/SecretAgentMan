@@ -208,7 +208,8 @@ struct StatusBarView: View {
     }
 
     private func sendSkill(_ skill: SkillInfo) {
-        coordinator.composerInsert = "/\(skill.name) "
+        let prefix = selectedAgent?.provider == .codex ? "$" : "/"
+        coordinator.composerInsert = "\(prefix)\(skill.name) "
     }
 
     private func runScript(_ script: ProjectScript) {
