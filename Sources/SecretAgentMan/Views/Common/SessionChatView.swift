@@ -50,64 +50,11 @@ struct SessionChatView: View {
             pinThreshold: Self.pinThreshold,
             distanceFromBottom: $distanceFromBottom
         ) { proxy in
-            VStack(alignment: .leading, spacing: Spacing.xxl) {
-                if transcript.isEmpty, streaming == nil {
-                    Text(emptyStateText)
-                        .scaledFont(size: 13)
-                        .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                } else {
-                    if hasMoreAbove {
-                        Button {
-                            let anchorId = displayedSections.first?.id
-                            visibleCount += Self.pageSize
-                            if let anchorId {
-                                DispatchQueue.main.async {
-                                    proxy.scrollTo(anchorId, anchor: .top)
-                                }
-                            }
-                        } label: {
-                            Text("Load earlier messages")
-                                .scaledFont(size: 12)
-                                .foregroundStyle(.secondary)
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, Spacing.md)
-                        }
-                        .buttonStyle(.plain)
-                    }
-
-                    ForEach(displayedSections) { section in
-                        switch section {
-                        case let .single(item):
-                            if item.kind == .thought {
-                                thoughtDisclosureView(items: [item], groupId: "thought-\(item.id)")
-                            } else if item.metadata?.toolName == "TodoWrite" {
-                                SessionTodoCard(text: item.text, fontScale: fontScale)
-                            } else {
-                                SessionTranscriptBubble(
-                                    kind: item.kind,
-                                    text: item.text,
-                                    fontScale: fontScale,
-                                    images: item.imageData
-                                )
-                            }
-                        case let .systemGroup(items, groupId):
-                            systemGroupView(items: items, groupId: groupId)
-                        case let .thoughtGroup(items, groupId):
-                            thoughtDisclosureView(items: items, groupId: groupId)
-                        }
-                    }
-                }
-
-                if let text = streaming, !text.isEmpty {
-                    SessionStreamingBubble(text: text, fontScale: fontScale)
-                } else if isThinking {
-                    SessionThinkingBubble(providerName: providerName, activeTool: activeTool)
-                }
-
-                pendingCards()
-            }
-            .padding(Spacing.xxl)
+            chatContent(
+                proxy: proxy,
+                displayedSections: displayedSections,
+                hasMoreAbove: hasMoreAbove
+            )
         } overlay: { distance, scrollToBottom in
             if distance > Self.goToBottomThreshold {
                 Button {
@@ -153,6 +100,71 @@ struct SessionChatView: View {
         }
     }
 
+    private func chatContent(
+        proxy: ScrollViewProxy,
+        displayedSections: ArraySlice<TranscriptSection>,
+        hasMoreAbove: Bool
+    ) -> some View {
+        VStack(alignment: .leading, spacing: Spacing.xxl) {
+            if transcript.isEmpty, streaming == nil {
+                Text(emptyStateText)
+                    .scaledFont(size: 13)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            } else {
+                if hasMoreAbove {
+                    Button {
+                        let anchorId = displayedSections.first?.id
+                        visibleCount += Self.pageSize
+                        if let anchorId {
+                            DispatchQueue.main.async {
+                                proxy.scrollTo(anchorId, anchor: .top)
+                            }
+                        }
+                    } label: {
+                        Text("Load earlier messages")
+                            .scaledFont(size: 12)
+                            .foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, Spacing.md)
+                    }
+                    .buttonStyle(.plain)
+                }
+
+                ForEach(displayedSections) { section in
+                    switch section {
+                    case let .single(item):
+                        if item.kind == .thought {
+                            thoughtDisclosureView(items: [item], groupId: "thought-\(item.id)")
+                        } else if item.metadata?.toolName == "TodoWrite" {
+                            SessionTodoCard(text: item.text, fontScale: fontScale)
+                        } else {
+                            SessionTranscriptBubble(
+                                kind: item.kind,
+                                text: item.text,
+                                fontScale: fontScale,
+                                images: item.imageData
+                            )
+                        }
+                    case let .systemGroup(items, groupId):
+                        systemGroupView(items: items, groupId: groupId)
+                    case let .thoughtGroup(items, groupId):
+                        thoughtDisclosureView(items: items, groupId: groupId)
+                    }
+                }
+            }
+
+            if let text = streaming, !text.isEmpty {
+                SessionStreamingBubble(text: text, fontScale: fontScale)
+            } else if isThinking {
+                SessionThinkingBubble(providerName: providerName, activeTool: activeTool)
+            }
+
+            pendingCards()
+        }
+        .padding(Spacing.xxl)
+    }
+
     /// Collapsed-by-default disclosure for `agent_thought_chunk` content.
     /// Mirrors the Gemini CLI's default of hiding internal reasoning unless
     /// the user opts in to see it.
@@ -184,6 +196,7 @@ struct SessionChatView: View {
                         .scaledFont(size: 11)
                         .foregroundStyle(.secondary)
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -230,6 +243,7 @@ struct SessionChatView: View {
                             .lineLimit(1)
                     }
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)

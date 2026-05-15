@@ -2,7 +2,7 @@ name: SecretAgentMan
 options:
   bundleIdPrefix: com.secretagentman
   deploymentTarget:
-    macOS: "14.0"
+    macOS: "15.0"
   developmentLanguage: en
 
 settings:

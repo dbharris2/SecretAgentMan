@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// A `ScrollView` that auto-scrolls to the bottom whenever `trigger` changes,
+/// A `ScrollView` that auto-scrolls to the bottom whenever its content grows,
 /// but only while the user is "pinned" to the bottom (within `pinThreshold`).
 ///
 /// The wrapper measures the live distance between the bottom of its content
@@ -68,23 +68,34 @@ struct AutoScrollingScrollView<Content: View, Overlay: View, Trigger: Equatable>
                                 )
                         }
                     }
-                    // `MarkdownUI` settles bubble heights across multiple
-                    // layout passes after mount. An imperative initial
-                    // `scrollTo(.bottom)` races that growth and lands short.
-                    // `defaultScrollAnchor(.bottom)` makes SwiftUI keep the
-                    // content's bottom pinned to the viewport's bottom on
-                    // every content-size change, so the panel opens flush
-                    // at the bottom and stays there as layout settles —
-                    // without fighting user-driven scrolls.
-                    .defaultScrollAnchor(.bottom)
+                    // `.initialOffset` gives us bottom-start on first appear
+                    // without touching ongoing layout — `.sizeChanges` and the
+                    // unparameterized form both leave NSScrollView's tracking
+                    // areas stale on macOS (cursor freezes, left-clicks miss
+                    // until any user scroll). Ongoing re-pin during MarkdownUI's
+                    // multi-pass settling is handled imperatively by the
+                    // `onScrollGeometryChange` handler below.
+                    .defaultScrollAnchor(.bottom, for: .initialOffset)
+                    .onScrollGeometryChange(for: CGFloat.self) { geometry in
+                        geometry.contentSize.height
+                    } action: { oldHeight, newHeight in
+                        if newHeight > oldHeight, distanceFromBottom <= pinThreshold {
+                            scrollToBottom()
+                        }
+                    }
                     .onPreferenceChange(AutoScrollDistanceKey.self) { distanceFromBottom = $0 }
-                    .onChange(of: trigger) { _, _ in
+                    // Content-size growth covers most cases; `trigger` catches
+                    // signals that don't change content size (e.g. thinking-bubble
+                    // toggles that swap one bubble for another of equal height).
+                    // `initial: true` also handles first appearance, since
+                    // `onScrollGeometryChange` only fires on subsequent changes.
+                    .onChange(of: trigger, initial: true) { _, _ in
                         if distanceFromBottom <= pinThreshold {
                             scrollToBottom()
                         }
                     }
-                    // `defaultScrollAnchor` only reacts to content-size
-                    // changes, not viewport shrinks (e.g. composer growing).
+                    // Viewport shrinks (e.g. composer growing) don't change
+                    // content size, so they need their own re-scroll trigger.
                     .onChange(of: viewportHeight) { _, _ in
                         if distanceFromBottom <= pinThreshold {
                             scrollToBottom()
