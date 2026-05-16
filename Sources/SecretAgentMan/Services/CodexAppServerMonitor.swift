@@ -127,7 +127,15 @@ final class CodexAppServerMonitor {
             Task { @MainActor in
                 self?.applyModelInfo(id: id, rawModel: rawModel, displayModel: displayModel, mode: mode, contextPct: contextPct)
             }
+        } onActiveToolChanged: { [weak self] id, name in
+            Task { @MainActor in self?.applyActiveTool(name, for: id) }
         }
+    }
+
+    private func applyActiveTool(_ name: String?, for agentId: UUID) {
+        var update = SessionMetadataUpdate()
+        update.activeToolName = name.map { .set($0) } ?? .clear
+        emit(.metadataUpdated(update), for: agentId)
     }
 
     func handleTranscriptItem(_ agentId: UUID, item: CodexTranscriptItem) {
@@ -285,6 +293,7 @@ private final class Observer: @unchecked Sendable {
     private let onUserInputResolved: (UUID) -> Void
     private let onApprovalResolved: (UUID) -> Void
     private let onModelInfo: (UUID, String, String, CodexCollaborationMode, Double) -> Void
+    private let onActiveToolChanged: (UUID, String?) -> Void
 
     private let process = Process()
     private let stdoutPipe = Pipe()
@@ -325,7 +334,8 @@ private final class Observer: @unchecked Sendable {
         onDebugMessage: @escaping (UUID, String) -> Void,
         onUserInputResolved: @escaping (UUID) -> Void,
         onApprovalResolved: @escaping (UUID) -> Void,
-        onModelInfo: @escaping (UUID, String, String, CodexCollaborationMode, Double) -> Void
+        onModelInfo: @escaping (UUID, String, String, CodexCollaborationMode, Double) -> Void,
+        onActiveToolChanged: @escaping (UUID, String?) -> Void
     ) {
         self.agent = agent
         self.onStateChange = onStateChange
@@ -340,6 +350,7 @@ private final class Observer: @unchecked Sendable {
         self.onUserInputResolved = onUserInputResolved
         self.onApprovalResolved = onApprovalResolved
         self.onModelInfo = onModelInfo
+        self.onActiveToolChanged = onActiveToolChanged
         queue = DispatchQueue(label: "CodexAppServerMonitor.\(agent.id.uuidString)")
     }
 
@@ -865,6 +876,16 @@ private extension Observer {
         else { return }
         inProgressToolItems[rawId] = toolItem
         onTranscriptItem(agent.id, toolItem)
+        onActiveToolChanged(agent.id, currentActiveToolLabel())
+    }
+
+    private func currentActiveToolLabel() -> String? {
+        guard let item = inProgressToolItems.values.first else { return nil }
+        switch item.tool {
+        case .command: return "Shell"
+        case .fileChange: return "Edit"
+        case .none: return nil
+        }
     }
 
     func handleAgentMessageDelta(itemId: String, delta: String) {
@@ -903,6 +924,7 @@ private extension Observer {
             if let finalized = CodexAppServerMonitor.transcriptItem(from: item) {
                 onTranscriptItem(agent.id, finalized)
             }
+            onActiveToolChanged(agent.id, currentActiveToolLabel())
         } else if let transcriptItem = CodexAppServerMonitor.transcriptItem(from: item) {
             onTranscriptItem(agent.id, transcriptItem)
         }
