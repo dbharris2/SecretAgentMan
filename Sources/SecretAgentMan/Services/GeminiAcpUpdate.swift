@@ -281,7 +281,7 @@ extension GeminiAcpProtocol {
 
     // MARK: - session/update notification
 
-    struct SessionNotification: Codable, Equatable {
+    struct SessionNotification: Codable, Equatable, @unchecked Sendable {
         let sessionId: String
         let update: SessionUpdate
     }
@@ -399,7 +399,7 @@ extension GeminiAcpProtocol {
         let kind: PermissionOptionKind
     }
 
-    struct RequestPermissionRequest: Codable, Equatable {
+    struct RequestPermissionRequest: Codable, Equatable, @unchecked Sendable {
         let sessionId: String
         let toolCall: ToolCallUpdate
         let options: [PermissionOption]

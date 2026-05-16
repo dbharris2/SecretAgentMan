@@ -807,7 +807,8 @@ private final class Observer: @unchecked Sendable {
         }
         let agentId = agent.id
         let acpId = req.id
-        DispatchQueue.main.async { [weak monitor] in
+        let monitor = self.monitor
+        Task { @MainActor in
             monitor?.applyPermissionRequest(parsed, acpRequestId: acpId, for: agentId)
         }
     }
@@ -825,7 +826,7 @@ private final class Observer: @unchecked Sendable {
             let parsed = try params.decode(as: GeminiAcpProtocol.SessionNotification.self)
             let agentId = agent.id
             let monitor = self.monitor
-            DispatchQueue.main.async {
+            Task { @MainActor in
                 monitor?.applySessionUpdate(parsed.update, sessionId: parsed.sessionId, for: agentId)
             }
         } catch {

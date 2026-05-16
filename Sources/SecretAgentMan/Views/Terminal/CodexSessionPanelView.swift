@@ -157,10 +157,24 @@ private struct CodexComposerView: View {
     @State private var pendingImages: [PendingImage] = []
     @State private var showingUsagePopover = false
     @State private var skillSelectionIndex = 0
-    @AppStorage(UserDefaultsKeys.codexApprovalPolicy) private var rawApprovalPolicy = CodexApprovalPolicy.onRequest.rawValue
+    @AppStorage(UserDefaultsKeys.codexApprovalPolicy) private var rawApprovalPolicy: String?
+    @AppStorage(UserDefaultsKeys.codexSandboxMode) private var rawSandboxMode: String?
+    @State private var configDefaults = CodexConfigLoader.loadDefaults()
 
     private var currentApprovalPolicy: CodexApprovalPolicy {
-        CodexApprovalPolicy(rawValue: rawApprovalPolicy) ?? .onRequest
+        if let rawApprovalPolicy,
+           let policy = CodexApprovalPolicy(rawValue: rawApprovalPolicy) {
+            return policy
+        }
+        return configDefaults.approvalPolicy ?? .onRequest
+    }
+
+    private var currentSandboxMode: CodexSandboxMode {
+        if let rawSandboxMode,
+           let mode = CodexSandboxMode(rawValue: rawSandboxMode) {
+            return mode
+        }
+        return configDefaults.sandboxMode ?? .workspaceWrite
     }
 
     private var skillSuggestions: [SkillInfo] {
@@ -209,6 +223,17 @@ private struct CodexComposerView: View {
                     shortcutLabel: "⌘⇧A"
                 ) { policy in
                     coordinator.setCodexApprovalPolicy(for: agent.id, policy: policy)
+                }
+                ComposerModePickerButton(
+                    title: "Sandbox",
+                    modes: CodexSandboxMode.allCases,
+                    currentMode: currentSandboxMode,
+                    label: { $0.label },
+                    shortcutKey: "b",
+                    shortcutModifiers: [.command, .shift],
+                    shortcutLabel: "⌘⇧B"
+                ) { mode in
+                    coordinator.setCodexSandboxMode(for: agent.id, mode: mode)
                 }
                 if let limits = coordinator.usageMonitor.rateLimits[.codex] {
                     usageRingButton(limits: limits)

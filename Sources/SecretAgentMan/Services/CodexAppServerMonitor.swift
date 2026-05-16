@@ -217,6 +217,10 @@ final class CodexAppServerMonitor {
         observers[agentId]?.setApprovalPolicy(policy)
     }
 
+    func setSandboxMode(for agentId: UUID, mode: CodexSandboxMode) {
+        observers[agentId]?.setSandboxMode(mode)
+    }
+
     func respondToApproval(for agentId: UUID, accept: Bool) {
         observers[agentId]?.respondToApproval(accept: accept)
     }
@@ -315,6 +319,7 @@ private final class Observer: @unchecked Sendable {
     private var rawModelName = "gpt-5.4"
     private var collaborationMode: CodexCollaborationMode = .default
     private var approvalPolicy: CodexApprovalPolicy = .storedValue
+    private var sandboxMode: CodexSandboxMode = .storedValue
     private var inProgressToolItems: [String: CodexTranscriptItem] = [:]
     private var streamingAgentMessages: [String: String] = [:]
     private var activeStreamingItemId: String?
@@ -450,6 +455,7 @@ private final class Observer: @unchecked Sendable {
 
     private func startOrResumeThread() {
         approvalPolicy = .storedValue
+        sandboxMode = .storedValue
 
         if agent.hasLaunched, let threadId = agent.sessionId, !threadId.isEmpty {
             sendRequest(
@@ -458,7 +464,7 @@ private final class Observer: @unchecked Sendable {
                     "threadId": threadId,
                     "cwd": agent.folder.path,
                     "approvalPolicy": approvalPolicy.rawValue,
-                    "sandbox": "workspace-write",
+                    "sandbox": sandboxMode.rawValue,
                 ]
             ) { [weak self] response in
                 self?.finishThreadBootstrap(response: response)
@@ -471,7 +477,7 @@ private final class Observer: @unchecked Sendable {
             params: [
                 "cwd": agent.folder.path,
                 "approvalPolicy": approvalPolicy.rawValue,
-                "sandbox": "workspace-write",
+                "sandbox": sandboxMode.rawValue,
                 "personality": "pragmatic",
             ]
         ) { [weak self] response in
@@ -598,6 +604,10 @@ private final class Observer: @unchecked Sendable {
 
     func setApprovalPolicy(_ policy: CodexApprovalPolicy) {
         approvalPolicy = policy
+    }
+
+    func setSandboxMode(_ mode: CodexSandboxMode) {
+        sandboxMode = mode
     }
 
     func respondToUserInput(answers: [String: [String]]) {

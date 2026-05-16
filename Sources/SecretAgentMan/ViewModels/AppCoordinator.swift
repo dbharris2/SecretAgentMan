@@ -139,6 +139,12 @@ final class AppCoordinator {
         codexMonitor.setApprovalPolicy(for: agentId, policy: policy)
     }
 
+    func setCodexSandboxMode(for agentId: UUID, mode: CodexSandboxMode) {
+        UserDefaults.standard.set(mode.rawValue, forKey: UserDefaultsKeys.codexSandboxMode)
+        agentSessions.ensureCodexSession(for: agentId)
+        codexMonitor.setSandboxMode(for: agentId, mode: mode)
+    }
+
     func answerCodexUserInput(for agentId: UUID, answers: [String: [String]]) {
         codexMonitor.respondToUserInput(for: agentId, answers: answers)
     }
