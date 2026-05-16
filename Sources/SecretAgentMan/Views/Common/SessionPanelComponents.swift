@@ -196,6 +196,11 @@ struct SessionTodoCard: View {
     }
 }
 
+struct ApprovalModeButton: Identifiable {
+    let id: String
+    let label: String
+}
+
 struct SessionApprovalCard: View {
     let title: String
     let detail: String
@@ -205,6 +210,7 @@ struct SessionApprovalCard: View {
     let unsupportedText: String
     let onApprove: () -> Void
     let onDecline: () -> Void
+    var modeButtons: [ApprovalModeButton] = []
     var onApproveAndSwitchMode: ((String) -> Void)?
     @Environment(\.appTheme) private var theme
 
@@ -231,17 +237,13 @@ struct SessionApprovalCard: View {
                         .controlSize(.small)
 
                     if let onApproveAndSwitchMode {
-                        Button("Accept Edits") {
-                            onApproveAndSwitchMode("acceptEdits")
+                        ForEach(modeButtons) { button in
+                            Button(button.label) {
+                                onApproveAndSwitchMode(button.id)
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .controlSize(.small)
                         }
-                        .buttonStyle(.borderedProminent)
-                        .controlSize(.small)
-
-                        Button("Auto") {
-                            onApproveAndSwitchMode("auto")
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .controlSize(.small)
                     }
                 }
             } else {

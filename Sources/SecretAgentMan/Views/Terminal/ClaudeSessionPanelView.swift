@@ -93,6 +93,10 @@ struct ClaudeSessionPanelView: View {
             onDecline: {
                 coordinator.answerClaudeApproval(for: agent.id, accept: false)
             },
+            modeButtons: [
+                ApprovalModeButton(id: "acceptEdits", label: "Accept Edits"),
+                ApprovalModeButton(id: "auto", label: "Auto"),
+            ],
             onApproveAndSwitchMode: { mode in
                 coordinator.answerClaudeApproval(for: agent.id, accept: true)
                 coordinator.claudeMonitor.setPermissionMode(for: agent.id, mode: mode)

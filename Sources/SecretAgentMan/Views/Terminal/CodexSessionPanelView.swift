@@ -99,23 +99,22 @@ struct CodexSessionPanelView: View {
             approveTitle: "Approve",
             declineTitle: "Decline",
             supportsDecisions: prompt.supportsDecisions,
-            unsupportedText: "This permission request is not supported by the current UI yet."
-        ) {
-            coordinator.answerCodexApproval(for: agent.id, accept: true)
-        } onDecline: {
-            coordinator.answerCodexApproval(for: agent.id, accept: false)
-        } onApproveAndSwitchMode: { mode in
-            let policy: CodexApprovalPolicy = switch mode {
-            case "acceptEdits":
-                .onRequest
-            case "auto":
-                .never
-            default:
-                .untrusted
+            unsupportedText: "This permission request is not supported by the current UI yet.",
+            onApprove: {
+                coordinator.answerCodexApproval(for: agent.id, accept: true)
+            },
+            onDecline: {
+                coordinator.answerCodexApproval(for: agent.id, accept: false)
+            },
+            modeButtons: CodexApprovalPolicy.allCases
+                .filter { $0 != .untrusted }
+                .map { ApprovalModeButton(id: $0.rawValue, label: $0.label) },
+            onApproveAndSwitchMode: { mode in
+                guard let policy = CodexApprovalPolicy(rawValue: mode) else { return }
+                coordinator.setCodexApprovalPolicy(for: agent.id, policy: policy)
+                coordinator.answerCodexApproval(for: agent.id, accept: true)
             }
-            coordinator.setCodexApprovalPolicy(for: agent.id, policy: policy)
-            coordinator.answerCodexApproval(for: agent.id, accept: true)
-        }
+        )
     }
 
     private func inputCard(_ prompt: UserInputPrompt) -> some View {
@@ -154,6 +153,11 @@ private struct CodexComposerView: View {
     @State private var pendingImages: [PendingImage] = []
     @State private var showingUsagePopover = false
     @State private var skillSelectionIndex = 0
+    @AppStorage(UserDefaultsKeys.codexApprovalPolicy) private var rawApprovalPolicy = CodexApprovalPolicy.onRequest.rawValue
+
+    private var currentApprovalPolicy: CodexApprovalPolicy {
+        CodexApprovalPolicy(rawValue: rawApprovalPolicy) ?? .onRequest
+    }
 
     private var skillSuggestions: [SkillInfo] {
         let stripped = draft.replacingOccurrences(of: "\n", with: "")
@@ -190,6 +194,17 @@ private struct CodexComposerView: View {
                     shortcutLabel: "⌘⇧M"
                 ) { mode in
                     coordinator.setCodexCollaborationMode(for: agent.id, mode: mode)
+                }
+                ComposerModePickerButton(
+                    title: "Approval",
+                    modes: CodexApprovalPolicy.allCases,
+                    currentMode: currentApprovalPolicy,
+                    label: { $0.label },
+                    shortcutKey: "a",
+                    shortcutModifiers: [.command, .shift],
+                    shortcutLabel: "⌘⇧A"
+                ) { policy in
+                    coordinator.setCodexApprovalPolicy(for: agent.id, policy: policy)
                 }
                 if let limits = coordinator.usageMonitor.rateLimits[.codex] {
                     usageRingButton(limits: limits)
