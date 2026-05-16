@@ -9,6 +9,7 @@ struct SessionChatView: View {
     let hasPendingCard: Bool
     let fontScale: Double
     let emptyStateText: String
+    var groupsToolActivity: Bool = true
 
     @ViewBuilder let pendingCards: () -> AnyView
 
@@ -35,7 +36,7 @@ struct SessionChatView: View {
     }
 
     var body: some View {
-        let allSections = TranscriptSection.group(transcript)
+        let allSections = TranscriptSection.group(transcript, groupsToolActivity: groupsToolActivity)
         let displayedStart = max(0, allSections.count - visibleCount)
         let displayedSections = allSections[displayedStart...]
         let hasMoreAbove = allSections.count > visibleCount
@@ -340,7 +341,10 @@ private enum TranscriptSection: Identifiable {
         }
     }
 
-    static func group(_ items: [SessionTranscriptItem]) -> [TranscriptSection] {
+    static func group(
+        _ items: [SessionTranscriptItem],
+        groupsToolActivity: Bool = true
+    ) -> [TranscriptSection] {
         var sections: [TranscriptSection] = []
         var systemRun: [SessionTranscriptItem] = []
         var thoughtRun: [SessionTranscriptItem] = []
@@ -373,6 +377,10 @@ private enum TranscriptSection: Identifiable {
             if item.kind == .thought {
                 flushSystemRun()
                 thoughtRun.append(item)
+            } else if item.kind == .toolActivity, !groupsToolActivity {
+                flushSystemRun()
+                flushThoughtRun()
+                sections.append(.single(item))
             } else if isGroupableKind(item.kind) {
                 flushThoughtRun()
                 systemRun.append(item)
