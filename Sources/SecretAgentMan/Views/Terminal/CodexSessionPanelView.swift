@@ -37,6 +37,10 @@ struct CodexSessionPanelView: View {
         agent.state == .active && streamingText == nil
     }
 
+    private var activeTool: String? {
+        snapshot?.metadata.activeToolName
+    }
+
     private var currentModelName: String {
         let name = snapshot?.metadata.displayModelName
         return (name?.isEmpty == false ? name : nil) ?? "Codex"
@@ -54,7 +58,7 @@ struct CodexSessionPanelView: View {
                 transcript: transcript,
                 streaming: streamingText,
                 isThinking: isThinking,
-                activeTool: nil,
+                activeTool: activeTool,
                 hasPendingCard: pendingInput != nil || pendingApproval != nil,
                 fontScale: fontScale,
                 emptyStateText: "Codex session is ready. Send a message to start.",
