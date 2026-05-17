@@ -21,11 +21,44 @@ struct GeneralSettingsView: View {
     @AppStorage(UserDefaultsKeys.terminalTheme) private var selectedTheme = "Catppuccin Mocha"
     @AppStorage(UserDefaultsKeys.claudePluginDirectory) private var claudePluginDirectory = ""
     @AppStorage(UserDefaultsKeys.defaultAgentFolder) private var defaultAgentFolder = ""
-    @AppStorage(UserDefaultsKeys.codexApprovalPolicy) private var codexApprovalPolicy = CodexApprovalPolicy.onRequest.rawValue
+    @AppStorage(UserDefaultsKeys.codexApprovalPolicy) private var codexApprovalPolicyOverride: String?
+    @AppStorage(UserDefaultsKeys.codexSandboxMode) private var codexSandboxModeOverride: String?
     @AppStorage(UserDefaultsKeys.favoriteThemes) private var favoriteThemesJSON = "[]"
     @State private var searchText = ""
     @State private var allThemes: [String] = []
     @State private var listSelection: String?
+
+    @State private var codexConfigDefaults = CodexConfigLoader.loadDefaults()
+
+    private var effectiveCodexApprovalPolicy: CodexApprovalPolicy {
+        if let codexApprovalPolicyOverride,
+           let policy = CodexApprovalPolicy(rawValue: codexApprovalPolicyOverride) {
+            return policy
+        }
+        return codexConfigDefaults.approvalPolicy ?? .onRequest
+    }
+
+    private var effectiveCodexSandboxMode: CodexSandboxMode {
+        if let codexSandboxModeOverride,
+           let mode = CodexSandboxMode(rawValue: codexSandboxModeOverride) {
+            return mode
+        }
+        return codexConfigDefaults.sandboxMode ?? .workspaceWrite
+    }
+
+    private var codexApprovalPolicySelection: Binding<String> {
+        Binding(
+            get: { effectiveCodexApprovalPolicy.rawValue },
+            set: { codexApprovalPolicyOverride = $0 }
+        )
+    }
+
+    private var codexSandboxModeSelection: Binding<String> {
+        Binding(
+            get: { effectiveCodexSandboxMode.rawValue },
+            set: { codexSandboxModeOverride = $0 }
+        )
+    }
 
     private var favoriteThemes: Set<String> {
         guard let data = favoriteThemesJSON.data(using: .utf8),
@@ -118,21 +151,46 @@ struct GeneralSettingsView: View {
                 Text("Codex")
                     .font(.headline)
 
-                Picker("Approval Policy", selection: $codexApprovalPolicy) {
-                    ForEach(CodexApprovalPolicy.allCases, id: \.rawValue) { policy in
-                        Text(policy.label).tag(policy.rawValue)
-                    }
-                }
-                .pickerStyle(.menu)
+                VStack(alignment: .leading, spacing: Spacing.md) {
+                    HStack {
+                        Picker("Approval Policy", selection: codexApprovalPolicySelection) {
+                            ForEach(CodexApprovalPolicy.allCases, id: \.rawValue) { policy in
+                                Text(policy.label).tag(policy.rawValue)
+                            }
+                        }
+                        .pickerStyle(.menu)
 
-                if let policy = CodexApprovalPolicy(rawValue: codexApprovalPolicy) {
-                    Text(policy.settingsDescription)
+                        Button("Use Config Default") {
+                            codexApprovalPolicyOverride = nil
+                        }
+                        .disabled(codexApprovalPolicyOverride == nil)
+                    }
+
+                    Text(effectiveCodexApprovalPolicy.settingsDescription)
+                }
+
+                VStack(alignment: .leading, spacing: Spacing.md) {
+                    HStack {
+                        Picker("Sandbox Mode", selection: codexSandboxModeSelection) {
+                            ForEach(CodexSandboxMode.allCases, id: \.rawValue) { mode in
+                                Text(mode.label).tag(mode.rawValue)
+                            }
+                        }
+                        .pickerStyle(.menu)
+
+                        Button("Use Config Default") {
+                            codexSandboxModeOverride = nil
+                        }
+                        .disabled(codexSandboxModeOverride == nil)
+                    }
+
+                    Text(effectiveCodexSandboxMode.settingsDescription)
                 }
 
                 VStack(alignment: .leading, spacing: Spacing.sm) {
-                    Text("Configuration is read from ~/.codex/config.toml")
+                    Text("Defaults come from ~/.codex/config.toml when present.")
                     Text("Plugins and MCP servers are discovered from ~/.codex")
-                    Text("Approval policy is applied to new Codex turns and future session starts.")
+                    Text("Selections here become app-specific overrides for new Codex turns and future session starts.")
                 }
                 .font(.caption)
                 .foregroundStyle(.secondary)

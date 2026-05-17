@@ -2,16 +2,14 @@ import Foundation
 
 enum CodexApprovalPolicy: String, CaseIterable, Codable {
     case untrusted
-    case onFailure = "on-failure"
     case onRequest = "on-request"
     case never
 
     var label: String {
         switch self {
-        case .untrusted: "Ask Every Time"
-        case .onFailure: "On Failure"
-        case .onRequest: "Accept Edits"
-        case .never: "Auto"
+        case .untrusted: "Untrusted"
+        case .onRequest: "On Request"
+        case .never: "Never"
         }
     }
 
@@ -19,8 +17,6 @@ enum CodexApprovalPolicy: String, CaseIterable, Codable {
         switch self {
         case .untrusted:
             "Prompt for edits and other approvals."
-        case .onFailure:
-            "Let normal work proceed and only ask when something is blocked or fails."
         case .onRequest:
             "Only prompt when the agent explicitly requests approval."
         case .never:
@@ -29,8 +25,44 @@ enum CodexApprovalPolicy: String, CaseIterable, Codable {
     }
 
     static var storedValue: CodexApprovalPolicy {
-        let raw = UserDefaults.standard.string(forKey: UserDefaultsKeys.codexApprovalPolicy)
-        return CodexApprovalPolicy(rawValue: raw ?? "") ?? .onRequest
+        if let raw = UserDefaults.standard.string(forKey: UserDefaultsKeys.codexApprovalPolicy),
+           let policy = CodexApprovalPolicy(rawValue: raw) {
+            return policy
+        }
+        return CodexConfigLoader.loadDefaults().approvalPolicy ?? .onRequest
+    }
+}
+
+enum CodexSandboxMode: String, CaseIterable, Codable {
+    case readOnly = "read-only"
+    case workspaceWrite = "workspace-write"
+    case dangerFullAccess = "danger-full-access"
+
+    var label: String {
+        switch self {
+        case .readOnly: "Read Only"
+        case .workspaceWrite: "Workspace Write"
+        case .dangerFullAccess: "Danger Full Access"
+        }
+    }
+
+    var settingsDescription: String {
+        switch self {
+        case .readOnly:
+            "Codex can read files but not write anywhere or use the network."
+        case .workspaceWrite:
+            "Codex can write inside the project folder. `.git/` is read-only and network is blocked."
+        case .dangerFullAccess:
+            "No restrictions — Codex commands run with your full user privileges."
+        }
+    }
+
+    static var storedValue: CodexSandboxMode {
+        if let raw = UserDefaults.standard.string(forKey: UserDefaultsKeys.codexSandboxMode),
+           let mode = CodexSandboxMode(rawValue: raw) {
+            return mode
+        }
+        return CodexConfigLoader.loadDefaults().sandboxMode ?? .workspaceWrite
     }
 }
 
