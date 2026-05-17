@@ -5,11 +5,28 @@ default:
     @just --list
 
 # Install pinned dev tools (SwiftLint, SwiftFormat) via mint
-bootstrap:
+bootstrap: _check-xcode
     mint bootstrap
 
+# Verify the active Xcode matches .xcode-version (fails fast if mismatched)
+_check-xcode:
+    #!/usr/bin/env bash
+    set -eu
+    required=$(cat .xcode-version)
+    version_output=$(xcodebuild -version)
+    first_line=${version_output%%$'\n'*}
+    actual=${first_line#Xcode }
+    if [ "$required" != "$actual" ]; then
+        echo "This repo pins Xcode $required, but you're on $actual."
+        echo "If Xcode $required is already installed:"
+        echo "  sudo xcode-select -s /Applications/Xcode_$required.app"
+        echo "If not, install it with the third-party 'xcodes' tool:"
+        echo "  brew install xcodesorg/made/xcodes && xcodes install $required && xcodes select $required"
+        exit 1
+    fi
+
 # Generate Xcode project from project.yml
-generate:
+generate: _check-xcode
     xcodegen generate
 
 # Build the app (regenerates project first)
