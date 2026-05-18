@@ -120,12 +120,18 @@ private struct ClaudeComposerView: View {
     let pendingElicitation: UserInputPrompt?
     var composerFocused: FocusState<Bool>.Binding
 
-    @State private var draft = ""
     @State private var pendingImages: [PendingImage] = []
     @State private var slashSelectionIndex = 0
 
+    private var draft: Binding<String> {
+        Binding(
+            get: { coordinator.drafts[agent.id] ?? "" },
+            set: { coordinator.drafts[agent.id] = $0 }
+        )
+    }
+
     private var slashSuggestions: [SessionSlashCommand] {
-        let stripped = draft.replacingOccurrences(of: "\n", with: "")
+        let stripped = draft.wrappedValue.replacingOccurrences(of: "\n", with: "")
         guard stripped.hasPrefix("/"), !stripped.contains(" ") else { return [] }
         let query = String(stripped.dropFirst()).lowercased()
         if query.isEmpty { return slashCommands }
@@ -134,7 +140,7 @@ private struct ClaudeComposerView: View {
 
     var body: some View {
         SessionComposer(
-            draft: $draft,
+            draft: draft,
             pendingImages: $pendingImages,
             composerFocused: composerFocused,
             fontScale: fontScale,
@@ -164,7 +170,7 @@ private struct ClaudeComposerView: View {
         }
         .onChange(of: coordinator.composerInsert) { _, text in
             if let text {
-                draft = text
+                draft.wrappedValue = text
                 coordinator.composerInsert = nil
             }
         }
@@ -176,7 +182,7 @@ private struct ClaudeComposerView: View {
                 VStack(alignment: .leading, spacing: 0) {
                     ForEach(Array(slashSuggestions.enumerated()), id: \.element.name) { index, command in
                         Button {
-                            draft = "/\(command.name) "
+                            draft.wrappedValue = "/\(command.name) "
                             slashSelectionIndex = 0
                         } label: {
                             HStack(alignment: .top, spacing: Spacing.lg) {
@@ -225,12 +231,12 @@ private struct ClaudeComposerView: View {
             }
             if keyPress.key == .return, !keyPress.modifiers.contains(.shift) {
                 let selected = suggestions[slashSelectionIndex]
-                draft = "/\(selected.name) "
+                draft.wrappedValue = "/\(selected.name) "
                 slashSelectionIndex = 0
                 return .handled
             }
             if keyPress.key == .escape {
-                draft = ""
+                draft.wrappedValue = ""
                 return .handled
             }
         }
@@ -238,7 +244,7 @@ private struct ClaudeComposerView: View {
     }
 
     private func sendDraft() {
-        let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        let text = draft.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty || !pendingImages.isEmpty else { return }
         if pendingElicitation != nil {
             coordinator.answerClaudeElicitation(for: agent.id, answer: text)
@@ -250,7 +256,7 @@ private struct ClaudeComposerView: View {
                 images: images.map { ($0.data, $0.mediaType) }
             )
         }
-        draft = ""
+        draft.wrappedValue = ""
         pendingImages.removeAll()
     }
 }

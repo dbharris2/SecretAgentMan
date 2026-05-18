@@ -30,6 +30,8 @@ final class AppCoordinator {
 
     var composerInsert: String?
 
+    var drafts: [UUID: String] = [:]
+
     init(
         loadStateFromDisk: Bool = true,
         userDefaults: UserDefaults = .standard
