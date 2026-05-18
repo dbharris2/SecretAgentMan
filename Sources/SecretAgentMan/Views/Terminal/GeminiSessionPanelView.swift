@@ -154,12 +154,18 @@ private struct GeminiComposerView: View {
     let currentModeId: String?
     var composerFocused: FocusState<Bool>.Binding
 
-    @State private var draft = ""
     @State private var pendingImages: [PendingImage] = []
+
+    private var draft: Binding<String> {
+        Binding(
+            get: { coordinator.drafts[agent.id] ?? "" },
+            set: { coordinator.drafts[agent.id] = $0 }
+        )
+    }
 
     var body: some View {
         SessionComposer(
-            draft: $draft,
+            draft: draft,
             pendingImages: $pendingImages,
             composerFocused: composerFocused,
             fontScale: fontScale,
@@ -199,12 +205,12 @@ private struct GeminiComposerView: View {
     }
 
     private func sendDraft() {
-        let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        let text = draft.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty || !pendingImages.isEmpty else { return }
         let sendText = text.isEmpty ? "[Image]" : text
         let imageData = pendingImages.map(\.data)
         coordinator.sendGeminiMessage(for: agent.id, text: sendText, imageData: imageData)
-        draft = ""
+        draft.wrappedValue = ""
         pendingImages.removeAll()
     }
 }

@@ -153,10 +153,17 @@ private struct CodexComposerView: View {
     let currentCollaborationMode: CodexCollaborationMode
     var composerFocused: FocusState<Bool>.Binding
 
-    @State private var draft = ""
     @State private var pendingImages: [PendingImage] = []
     @State private var showingUsagePopover = false
     @State private var skillSelectionIndex = 0
+
+    private var draft: Binding<String> {
+        Binding(
+            get: { coordinator.drafts[agent.id] ?? "" },
+            set: { coordinator.drafts[agent.id] = $0 }
+        )
+    }
+
     @AppStorage(UserDefaultsKeys.codexApprovalPolicy) private var rawApprovalPolicy: String?
     @AppStorage(UserDefaultsKeys.codexSandboxMode) private var rawSandboxMode: String?
     @State private var configDefaults = CodexConfigLoader.loadDefaults()
@@ -178,7 +185,7 @@ private struct CodexComposerView: View {
     }
 
     private var skillSuggestions: [SkillInfo] {
-        let stripped = draft.replacingOccurrences(of: "\n", with: "")
+        let stripped = draft.wrappedValue.replacingOccurrences(of: "\n", with: "")
         guard stripped.hasPrefix("$"), !stripped.contains(" ") else { return [] }
         let query = String(stripped.dropFirst()).lowercased()
         if query.isEmpty { return skills }
@@ -187,7 +194,7 @@ private struct CodexComposerView: View {
 
     var body: some View {
         SessionComposer(
-            draft: $draft,
+            draft: draft,
             pendingImages: $pendingImages,
             composerFocused: composerFocused,
             fontScale: fontScale,
@@ -242,7 +249,7 @@ private struct CodexComposerView: View {
         }
         .onChange(of: coordinator.composerInsert) { _, text in
             if let text {
-                draft = text
+                draft.wrappedValue = text
                 coordinator.composerInsert = nil
             }
         }
@@ -254,7 +261,7 @@ private struct CodexComposerView: View {
                 VStack(alignment: .leading, spacing: 0) {
                     ForEach(Array(skillSuggestions.enumerated()), id: \.element.id) { index, skill in
                         Button {
-                            draft = "$\(skill.name) "
+                            draft.wrappedValue = "$\(skill.name) "
                             skillSelectionIndex = 0
                         } label: {
                             HStack(alignment: .top, spacing: Spacing.lg) {
@@ -303,12 +310,12 @@ private struct CodexComposerView: View {
             }
             if keyPress.key == .return, !keyPress.modifiers.contains(.shift) {
                 let selected = suggestions[skillSelectionIndex]
-                draft = "$\(selected.name) "
+                draft.wrappedValue = "$\(selected.name) "
                 skillSelectionIndex = 0
                 return .handled
             }
             if keyPress.key == .escape {
-                draft = ""
+                draft.wrappedValue = ""
                 return .handled
             }
         }
@@ -329,7 +336,7 @@ private struct CodexComposerView: View {
     }
 
     private func sendDraft() {
-        let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        let text = draft.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty || !pendingImages.isEmpty else { return }
         let imageData = pendingImages.map(\.data)
         let imagePaths = pendingImages.compactMap { img -> String? in
@@ -344,7 +351,7 @@ private struct CodexComposerView: View {
             imageData: imageData
         )
         coordinator.sendCodexMessage(for: agent.id, text: sendText, imagePaths: imagePaths)
-        draft = ""
+        draft.wrappedValue = ""
         pendingImages.removeAll()
     }
 }
