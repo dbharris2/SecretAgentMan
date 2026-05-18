@@ -717,8 +717,11 @@ private final class Observer: @unchecked Sendable {
 
     func interrupt() {
         queue.async { [weak self] in
-            guard let self, let proc = self.process, proc.isRunning else { return }
-            self.writeEncodable(ClaudeProtocol.ControlRequest.interrupt())
+            guard let self else { return }
+            if let proc = self.process, proc.isRunning {
+                self.writeEncodable(ClaudeProtocol.ControlRequest.interrupt())
+            }
+            self.clearPendingPrompts()
         }
     }
 
@@ -749,13 +752,17 @@ private final class Observer: @unchecked Sendable {
 
     func respondToApproval(accept: Bool) {
         queue.async { [weak self] in
-            guard let self, let pending = self.pendingApproval else { return }
-            self.pendingApproval = nil
-            self.sendPermissionResponse(requestId: pending.requestId, allow: accept, toolInput: pending.toolInput)
-            self.delegate.approvalResolved(self.agent.id)
-            if accept {
-                self.publishIfChanged(.active)
+            guard let self else { return }
+            if let pending = self.pendingApproval {
+                self.pendingApproval = nil
+                self.sendPermissionResponse(requestId: pending.requestId, allow: accept, toolInput: pending.toolInput)
+                if accept {
+                    self.publishIfChanged(.active)
+                }
             }
+            // Always notify so a stuck card (worker state out of sync with the
+            // monitor's snapshot) still dismisses when the user clicks Allow/Deny.
+            self.delegate.approvalResolved(self.agent.id)
         }
     }
 
@@ -1059,24 +1066,27 @@ private final class Observer: @unchecked Sendable {
 
     func respondToElicitation(requestId: String, answer: String) {
         queue.async { [weak self] in
-            guard let self, let pending = self.pendingElicitation else { return }
+            guard let self else { return }
+            if let pending = self.pendingElicitation {
+                // Echo Claude's original input verbatim, with `answers` merged in.
+                // Tool input is always an `.object` from Claude — fall back to a
+                // fresh object if it's not, so a misshapen input still produces a
+                // valid permission response.
+                let answers = JSONValue.object([pending.questionText: .string(answer)])
+                var modified = pending.toolInput
+                if case var .object(dict) = modified {
+                    dict["answers"] = answers
+                    modified = .object(dict)
+                } else {
+                    modified = .object(["answers": answers])
+                }
 
-            // Echo Claude's original input verbatim, with `answers` merged in.
-            // Tool input is always an `.object` from Claude — fall back to a
-            // fresh object if it's not, so a misshapen input still produces a
-            // valid permission response.
-            let answers = JSONValue.object([pending.questionText: .string(answer)])
-            var modified = pending.toolInput
-            if case var .object(dict) = modified {
-                dict["answers"] = answers
-                modified = .object(dict)
-            } else {
-                modified = .object(["answers": answers])
+                self.pendingElicitation = nil
+                self.sendPermissionResponse(requestId: requestId, allow: true, toolInput: modified)
+                self.publishIfChanged(.active)
             }
-
-            self.pendingElicitation = nil
-            self.sendPermissionResponse(requestId: requestId, allow: true, toolInput: modified)
-            self.publishIfChanged(.active)
+            // Always notify so a stuck card (worker state out of sync with the
+            // monitor's snapshot) still dismisses on user submit.
             self.delegate.elicitationResolved(self.agent.id)
         }
     }
@@ -1104,7 +1114,21 @@ private final class Observer: @unchecked Sendable {
         }
 
         delegate.activeToolChanged(agent.id, nil)
+        // Turn ended — any still-pending prompt is stale (Claude won't be
+        // waiting on our response anymore), so dismiss the card.
+        clearPendingPrompts()
         publishIfChanged(event.isError == true ? .error : .awaitingInput)
+    }
+
+    private func clearPendingPrompts() {
+        if pendingApproval != nil {
+            pendingApproval = nil
+            delegate.approvalResolved(agent.id)
+        }
+        if pendingElicitation != nil {
+            pendingElicitation = nil
+            delegate.elicitationResolved(agent.id)
+        }
     }
 
     private static func resultErrorMessage(_ event: ClaudeProtocol.ResultEvent) -> String {
