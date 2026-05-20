@@ -2,6 +2,7 @@ import SwiftUI
 
 struct SideBySideDiffView: View {
     let diffText: String
+    var scrollRequest: DiffScrollRequest?
     @Environment(\.fontScale) private var fontScale
     @Environment(\.appTheme) private var theme
     @State private var collapsedFiles: Set<String> = []
@@ -11,22 +12,32 @@ struct SideBySideDiffView: View {
     }
 
     var body: some View {
-        ScrollView(.vertical) {
-            LazyVStack(alignment: .leading, spacing: 0, pinnedViews: [.sectionHeaders]) {
-                ForEach(groupedFiles) { file in
-                    Section(header: stickyHeader(for: file)) {
-                        if !collapsedFiles.contains(file.id) {
-                            ForEach(Array(file.rows.enumerated()), id: \.offset) { _, row in
-                                bodyRow(row)
+        ScrollViewReader { proxy in
+            ScrollView(.vertical) {
+                LazyVStack(alignment: .leading, spacing: 0, pinnedViews: [.sectionHeaders]) {
+                    ForEach(groupedFiles) { file in
+                        Section(header: stickyHeader(for: file)) {
+                            if !collapsedFiles.contains(file.id) {
+                                ForEach(Array(file.rows.enumerated()), id: \.offset) { _, row in
+                                    bodyRow(row)
+                                }
                             }
                         }
+                        .id(file.id)
                     }
                 }
+                .padding(.vertical, Spacing.sm)
             }
-            .padding(.vertical, Spacing.sm)
+            .background(theme.background)
+            .textSelection(.enabled)
+            .onChange(of: scrollRequest) { _, request in
+                guard let request else { return }
+                collapsedFiles.remove(request.path)
+                withAnimation {
+                    proxy.scrollTo(request.path, anchor: .top)
+                }
+            }
         }
-        .background(theme.background)
-        .textSelection(.enabled)
     }
 
     private func stickyHeader(for file: ParsedFile) -> some View {
@@ -121,9 +132,10 @@ struct SideBySideDiffView: View {
 
 private struct ParsedFile: Identifiable {
     var id: String {
-        headerLine
+        path
     }
 
+    let path: String
     let headerLine: String
     var rows: [BodyRow]
 }
@@ -177,7 +189,8 @@ private func parseSideBySide(_ diff: String) -> [ParsedFile] {
             if let ext = SyntaxHighlighter.extensionFromDiffHeader(line) {
                 currentLang = SyntaxHighlighter.language(forExtension: ext)
             }
-            currentFile = ParsedFile(headerLine: line, rows: [])
+            let path = SyntaxHighlighter.pathFromDiffHeader(line) ?? line
+            currentFile = ParsedFile(path: path, headerLine: line, rows: [])
         } else if line.hasPrefix("@@") {
             flushBuffers()
             currentFile?.rows.append(.hunkHeader(line))

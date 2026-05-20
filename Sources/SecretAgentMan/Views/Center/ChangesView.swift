@@ -1,18 +1,19 @@
 import AppKit
 import SwiftUI
 
+struct DiffScrollRequest: Equatable {
+    let path: String
+    let token: UUID
+}
+
 struct ChangesView: View {
     let changes: [FileChange]
     let fullDiff: String
 
     @State private var selectedFile: String?
+    @State private var scrollRequest: DiffScrollRequest?
     @AppStorage(UserDefaultsKeys.diffViewMode) private var diffMode: String = "unified"
     @Environment(\.appTheme) private var theme
-
-    private var visibleDiff: String {
-        guard let selected = selectedFile else { return fullDiff }
-        return filterDiff(fullDiff, forFile: selected)
-    }
 
     var body: some View {
         ZStack {
@@ -45,9 +46,9 @@ struct ChangesView: View {
                         .frame(height: 3)
                     Group {
                         if diffMode == "sideBySide" {
-                            SideBySideDiffView(diffText: visibleDiff)
+                            SideBySideDiffView(diffText: fullDiff, scrollRequest: scrollRequest)
                         } else {
-                            DiffView(diffText: visibleDiff)
+                            DiffView(diffText: fullDiff, scrollRequest: scrollRequest)
                         }
                     }
                 }
@@ -104,11 +105,8 @@ struct ChangesView: View {
                     .hoverHighlight(isSelected: selectedFile == change.path, cornerRadius: 0)
                     .contentShape(Rectangle())
                     .onTapGesture {
-                        if selectedFile == change.path {
-                            selectedFile = nil
-                        } else {
-                            selectedFile = change.path
-                        }
+                        selectedFile = change.path
+                        scrollRequest = DiffScrollRequest(path: change.path, token: UUID())
                     }
                     .contextMenu {
                         Button("Copy File Name") {
@@ -138,23 +136,6 @@ struct ChangesView: View {
         .listStyle(.inset)
         .scrollContentBackground(.hidden)
         .background(theme.surface)
-    }
-
-    private func filterDiff(_ diff: String, forFile path: String) -> String {
-        let lines = diff.components(separatedBy: "\n")
-        var result: [String] = []
-        var inTargetFile = false
-
-        for line in lines {
-            if line.hasPrefix("diff --git") {
-                inTargetFile = line.contains("b/\(path)")
-            }
-            if inTargetFile {
-                result.append(line)
-            }
-        }
-
-        return result.joined(separator: "\n")
     }
 
     private func copyToPasteboard(_ text: String) {

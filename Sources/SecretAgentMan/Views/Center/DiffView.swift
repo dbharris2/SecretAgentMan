@@ -2,15 +2,17 @@ import SwiftUI
 
 struct DiffView: View {
     let diffText: String
+    var scrollRequest: DiffScrollRequest?
     @Environment(\.fontScale) private var fontScale
     @Environment(\.appTheme) private var theme
     @State private var collapsedFiles: Set<String> = []
 
     private struct ParsedFile: Identifiable {
         var id: String {
-            headerLine
+            path
         }
 
+        let path: String
         let headerLine: String
         var otherLines: [(line: String, kind: LineKind, lang: String?)]
     }
@@ -26,7 +28,8 @@ struct DiffView: View {
                 if let current = currentFile {
                     files.append(current)
                 }
-                currentFile = ParsedFile(headerLine: line, otherLines: [])
+                let path = SyntaxHighlighter.pathFromDiffHeader(line) ?? line
+                currentFile = ParsedFile(path: path, headerLine: line, otherLines: [])
                 if let ext = SyntaxHighlighter.extensionFromDiffHeader(line) {
                     currentLang = SyntaxHighlighter.language(forExtension: ext)
                 }
@@ -34,7 +37,7 @@ struct DiffView: View {
                 currentFile?.otherLines.append((line, kind, currentLang))
             } else {
                 // Content before first file header (rare for git diffs)
-                currentFile = ParsedFile(headerLine: "diff (meta)", otherLines: [(line, .meta, nil)])
+                currentFile = ParsedFile(path: "(meta)", headerLine: "diff (meta)", otherLines: [(line, .meta, nil)])
             }
         }
         if let current = currentFile {
@@ -44,22 +47,32 @@ struct DiffView: View {
     }
 
     var body: some View {
-        ScrollView(.vertical) {
-            LazyVStack(alignment: .leading, spacing: 0, pinnedViews: [.sectionHeaders]) {
-                ForEach(groupedFiles) { file in
-                    Section(header: stickyHeader(for: file)) {
-                        if !collapsedFiles.contains(file.id) {
-                            ForEach(Array(file.otherLines.enumerated()), id: \.offset) { _, entry in
-                                diffLine(entry.line, kind: entry.kind, lang: entry.lang)
+        ScrollViewReader { proxy in
+            ScrollView(.vertical) {
+                LazyVStack(alignment: .leading, spacing: 0, pinnedViews: [.sectionHeaders]) {
+                    ForEach(groupedFiles) { file in
+                        Section(header: stickyHeader(for: file)) {
+                            if !collapsedFiles.contains(file.id) {
+                                ForEach(Array(file.otherLines.enumerated()), id: \.offset) { _, entry in
+                                    diffLine(entry.line, kind: entry.kind, lang: entry.lang)
+                                }
                             }
                         }
+                        .id(file.id)
                     }
                 }
+                .padding(.vertical, Spacing.sm)
             }
-            .padding(.vertical, Spacing.sm)
+            .background(theme.background)
+            .textSelection(.enabled)
+            .onChange(of: scrollRequest) { _, request in
+                guard let request else { return }
+                collapsedFiles.remove(request.path)
+                withAnimation {
+                    proxy.scrollTo(request.path, anchor: .top)
+                }
+            }
         }
-        .background(theme.background)
-        .textSelection(.enabled)
     }
 
     private func stickyHeader(for file: ParsedFile) -> some View {

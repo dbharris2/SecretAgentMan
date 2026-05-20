@@ -55,9 +55,15 @@ enum SyntaxHighlighter {
 
     /// Extract the file extension from a "diff --git a/path b/path" line.
     static func extensionFromDiffHeader(_ line: String) -> String? {
+        guard let path = pathFromDiffHeader(line) else { return nil }
+        return (path as NSString).pathExtension
+    }
+
+    /// Extract the destination path (after " b/") from a "diff --git a/path b/path" line.
+    static func pathFromDiffHeader(_ line: String) -> String? {
         guard line.hasPrefix("diff --git") else { return nil }
         let parts = line.components(separatedBy: " b/")
-        guard let path = parts.last else { return nil }
-        return (path as NSString).pathExtension
+        guard parts.count >= 2 else { return nil }
+        return parts.last
     }
 }
