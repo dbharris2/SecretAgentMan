@@ -392,4 +392,122 @@ struct ClaudeStreamMonitorTests {
         // swiftlint:disable:next force_try
         return try! JSONDecoder().decode(ClaudeProtocol.MessageEvent.self, from: data)
     }
+
+    // MARK: - State Transition Ordering
+
+    /// Regression: a partial-message `assistant` event arriving after a
+    /// `control_request` for tool approval must NOT republish `.active` and
+    /// overwrite the `.needsPermission` state. Claude's
+    /// `--include-partial-messages` emits one `assistant` event per tool_use
+    /// block sharing a single `msg_id`, so the last chunk can land in the
+    /// same buffer batch as (or after) the approval request.
+    @Test
+    func assistantEventAfterApprovalRequestPreservesNeedsPermission() {
+        let agent = Agent(name: "test", folder: URL(fileURLWithPath: "/tmp"))
+        var states: [AgentState] = []
+        let delegate = captureDelegate { _, state in states.append(state) }
+        let observer = ClaudeObserver(agent: agent, delegate: delegate)
+
+        // 1. First partial-message chunk: assistant tool_use → .active
+        observer.handleLineForTesting(assistantToolUseLine(
+            msgId: "msg-1", toolUseId: "toolu_1", toolName: "Write", filePath: "/tmp/a.txt"
+        ))
+        #expect(states == [.active])
+
+        // 2. SDK asks for permission → .needsPermission
+        observer.handleLineForTesting(canUseToolLine(
+            requestId: "req-1", toolName: "Write", filePath: "/tmp/a.txt"
+        ))
+        #expect(states == [.active, .needsPermission])
+
+        // 3. Another partial-message chunk for the SAME msg_id arrives.
+        // Before the fix this overwrote `.needsPermission` with `.active`.
+        observer.handleLineForTesting(assistantToolUseLine(
+            msgId: "msg-1", toolUseId: "toolu_2", toolName: "Write", filePath: "/tmp/b.txt"
+        ))
+        #expect(states == [.active, .needsPermission])
+    }
+
+    /// Stream events (content_block_start, text_delta, message_stop) arriving
+    /// after a control_request are also guarded — this test pins down that
+    /// existing behavior so it doesn't regress alongside the assistant-event fix.
+    @Test
+    func streamEventAfterApprovalRequestPreservesNeedsPermission() {
+        let agent = Agent(name: "test", folder: URL(fileURLWithPath: "/tmp"))
+        var states: [AgentState] = []
+        let delegate = captureDelegate { _, state in states.append(state) }
+        let observer = ClaudeObserver(agent: agent, delegate: delegate)
+
+        observer.handleLineForTesting(canUseToolLine(
+            requestId: "req-1", toolName: "Write", filePath: "/tmp/a.txt"
+        ))
+        #expect(states == [.needsPermission])
+
+        observer.handleLineForTesting(streamMessageStopLine())
+        #expect(states == [.needsPermission])
+    }
+
+    private func captureDelegate(
+        stateChanged: @escaping (UUID, AgentState) -> Void
+    ) -> ClaudeObserverDelegate {
+        ClaudeObserverDelegate(
+            stateChanged: stateChanged,
+            sessionReady: { _, _ in },
+            transcriptItem: { _, _ in },
+            approvalRequest: { _, _ in },
+            approvalResolved: { _ in },
+            elicitationRequest: { _, _ in },
+            elicitationResolved: { _ in },
+            streamingText: { _, _ in },
+            streamingFinished: { _ in },
+            activeToolChanged: { _, _ in },
+            permissionModeChanged: { _, _ in },
+            modelInfo: { _, _, _ in },
+            slashCommands: { _ in },
+            sessionConflict: { _ in }
+        )
+    }
+
+    private func assistantToolUseLine(
+        msgId: String, toolUseId: String, toolName: String, filePath: String
+    ) -> String {
+        // swiftlint:disable:next force_try
+        let data = try! JSONSerialization.data(withJSONObject: [
+            "type": "assistant",
+            "uuid": UUID().uuidString,
+            "message": [
+                "id": msgId,
+                "stop_reason": "tool_use",
+                "content": [
+                    [
+                        "type": "tool_use",
+                        "id": toolUseId,
+                        "name": toolName,
+                        "input": ["file_path": filePath, "content": "x"],
+                    ],
+                ],
+            ],
+        ])
+        return String(data: data, encoding: .utf8)!
+    }
+
+    private func canUseToolLine(
+        requestId: String, toolName: String, filePath: String
+    ) -> String {
+        // swiftlint:disable:next force_try
+        let data = try! JSONSerialization.data(withJSONObject: [
+            "type": "control_request",
+            "request_id": requestId,
+            "request": [
+                "subtype": "can_use_tool",
+                "tool_name": toolName,
+                "input": ["file_path": filePath, "content": "x"],
+            ],
+        ])
+        return String(data: data, encoding: .utf8)!
+    }
+
+    private func streamMessageStopLine() -> String {
+        #"{"type":"stream_event","event":{"type":"message_stop"}}"#
+    }
 }

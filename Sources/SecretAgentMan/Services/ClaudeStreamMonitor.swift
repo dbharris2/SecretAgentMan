@@ -58,7 +58,7 @@ final class ClaudeStreamMonitor {
     static let permissionModes = ["default", "acceptEdits", "plan", "auto", "bypassPermissions"]
     static let defaultPermissionMode = permissionModes[0]
 
-    @ObservationIgnored private var observers: [UUID: Observer] = [:]
+    @ObservationIgnored private var observers: [UUID: ClaudeObserver] = [:]
 
     // Normalized event emission state (Phase 1 dual-emit migration).
     // Visibility relaxed from `private` so the ClaudeStreamMonitor+SessionEvents
@@ -97,7 +97,7 @@ final class ClaudeStreamMonitor {
             return
         }
 
-        let observer = Observer(agent: agent, delegate: makeObserverDelegate())
+        let observer = ClaudeObserver(agent: agent, delegate: makeClaudeObserverDelegate())
         observers[agent.id] = observer
 
         // Hydrate transcript from session file in background (avoid blocking main thread)
@@ -123,8 +123,8 @@ final class ClaudeStreamMonitor {
         observer.start()
     }
 
-    private func makeObserverDelegate() -> ObserverDelegate {
-        ObserverDelegate(
+    private func makeClaudeObserverDelegate() -> ClaudeObserverDelegate {
+        ClaudeObserverDelegate(
             stateChanged: { [weak self] id, state in
                 Task { @MainActor in
                     guard let self else { return }
@@ -557,7 +557,7 @@ final class ClaudeStreamMonitor {
 
 // MARK: - Observer Types
 
-private struct ObserverDelegate {
+struct ClaudeObserverDelegate {
     let stateChanged: (UUID, AgentState) -> Void
     let sessionReady: (UUID, String) -> Void
     let transcriptItem: (UUID, CodexTranscriptItem) -> Void
@@ -587,9 +587,9 @@ private struct PendingElicitation {
 
 // MARK: - Observer
 
-private final class Observer: @unchecked Sendable {
+final class ClaudeObserver: @unchecked Sendable {
     private(set) var agent: Agent
-    private let delegate: ObserverDelegate
+    private let delegate: ClaudeObserverDelegate
 
     private var process: Process?
     private var stdoutPipe = Pipe()
@@ -610,7 +610,7 @@ private final class Observer: @unchecked Sendable {
     private var currentStreamingText = ""
     private var lastStreamingFlush = Date.distantPast
 
-    init(agent: Agent, delegate: ObserverDelegate) {
+    init(agent: Agent, delegate: ClaudeObserverDelegate) {
         self.agent = agent
         self.delegate = delegate
         queue = DispatchQueue(label: "ClaudeStreamMonitor.\(agent.id.uuidString)")
@@ -953,7 +953,12 @@ private final class Observer: @unchecked Sendable {
         for item in ClaudeStreamMonitor.transcriptItems(fromAssistantEvent: message) {
             delegate.transcriptItem(agent.id, item)
         }
-        publishIfChanged(.active)
+        // Don't overwrite needsPermission/awaitingResponse — partial-message
+        // snapshots (--include-partial-messages) can arrive in the same buffer
+        // batch after a control_request.
+        if pendingApproval == nil, pendingElicitation == nil {
+            publishIfChanged(.active)
+        }
     }
 
     private func handleUserEvent(_ message: ClaudeProtocol.MessageEvent) {
@@ -1108,7 +1113,7 @@ private final class Observer: @unchecked Sendable {
             let item = CodexTranscriptItem(
                 id: UUID().uuidString,
                 role: .system,
-                text: "🛑 **Error**: \(Observer.resultErrorMessage(event))"
+                text: "🛑 **Error**: \(ClaudeObserver.resultErrorMessage(event))"
             )
             delegate.transcriptItem(agent.id, item)
         }
@@ -1159,6 +1164,14 @@ private final class Observer: @unchecked Sendable {
         lastObservedState = state
         delegate.stateChanged(agent.id, state)
     }
+
+    #if DEBUG
+        /// Test-only seam: feed a single JSONL line through the same dispatch
+        /// the production pipe-reader uses, without launching a Claude process.
+        func handleLineForTesting(_ line: String) {
+            handleJSONLine(line)
+        }
+    #endif
 }
 
 // swiftlint:enable file_length
