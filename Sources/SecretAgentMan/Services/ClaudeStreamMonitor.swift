@@ -55,8 +55,11 @@ final class ClaudeStreamMonitor {
     private(set) var slashCommands: [SlashCommand] = []
     private(set) var permissionModes: [UUID: String] = [:]
 
-    static let permissionModes = ["default", "acceptEdits", "plan", "auto", "bypassPermissions"]
-    static let defaultPermissionMode = permissionModes[0]
+    static var permissionModes: [String] {
+        ClaudeRemoteSettings.availablePermissionModes
+    }
+
+    static let defaultPermissionMode = ClaudeRemoteSettings.defaultPermissionMode
 
     @ObservationIgnored private var observers: [UUID: ClaudeObserver] = [:]
 
@@ -358,6 +361,7 @@ final class ClaudeStreamMonitor {
     }
 
     func setPermissionMode(for agentId: UUID, mode: String) {
+        guard ClaudeRemoteSettings.isPermissionModeAvailable(mode) else { return }
         observers[agentId]?.setPermissionMode(mode)
         permissionModes[agentId] = mode
     }
