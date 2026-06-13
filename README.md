@@ -1,6 +1,6 @@
 # Secret Agent Man
 
-A macOS app for managing Claude Code and Codex agent sessions with a native chat interface.
+A macOS app for managing Claude Code and Codex agent sessions with a native chat interface. Gemini is not supported.
 
 ## Features
 
@@ -24,7 +24,8 @@ A macOS app for managing Claude Code and Codex agent sessions with a native chat
 - **Colored diff view** — unified and side-by-side with per-file filtering
 - **PR status tracking** — live CI checks, reviewer avatars via `gh` CLI
 - **Plans panel** — browse and read Claude Code plans
-- **VCS integration** — jj or git branch info per folder
+- **VCS integration** — jj, Graphite, or git branch info per folder with repo-aware VCS panels
+- **Repo-type badges** — folder metadata shows whether a repo is JJ, Graphite, or Git
 
 ### Shell
 - **Split shell** — a terminal below the agent session for running commands
@@ -34,6 +35,8 @@ A macOS app for managing Claude Code and Codex agent sessions with a native chat
 
 - macOS 14.0+
 - [Claude Code](https://claude.ai/download) CLI and/or Codex CLI installed
+- [Jujutsu (`jj`)](https://jj-vcs.github.io/jj/latest/) for jj repositories
+- [Graphite CLI (`gt`)](https://graphite.com/docs/cli-quick-start) for Graphite repositories
 - [`gh` CLI](https://cli.github.com) (optional, for PR tracking)
 
 ## Setup

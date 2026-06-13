@@ -26,5 +26,7 @@ IMPORTANT: Always use the `just` recipes, never raw `xcodebuild`. They run `xcod
 
 ## Gotchas
 
+- This repo (`SecretAgentMan`) uses Jujutsu for its own history. Other repos monitored by the app may use Jujutsu, Graphite, or plain Git.
+- Supported agent providers are Claude and Codex only. Gemini support has been removed.
 - `handleSystemEvent` must NOT publish `.active` state — system events are config acks, not work indicators. Publishing `.active` there causes spurious "thinking" bubbles on permission mode changes.
 - SwiftLint enforces a 1000-line file limit — `ClaudeStreamMonitor.swift` is near the limit.
