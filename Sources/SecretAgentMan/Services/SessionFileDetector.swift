@@ -29,19 +29,11 @@ enum SessionFileDetector {
             claudeProjectDir(for: agent.folder)
         case .codex:
             codexSessionsDir()
-        case .gemini:
-            geminiChatsDir(for: agent.folder)
         }
     }
 
     static func codexSessionsDir() -> URL {
         URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent(".codex/sessions")
-    }
-
-    static func geminiChatsDir(for folder: URL) -> URL {
-        let home = URL(fileURLWithPath: NSHomeDirectory())
-        let folderName = folder.lastPathComponent
-        return home.appendingPathComponent(".gemini/tmp/\(folderName)/chats")
     }
 
     /// Check if a session file exists for the given session ID in an agent's project directory.
@@ -51,8 +43,6 @@ enum SessionFileDetector {
             sessionFileExists(sessionId, inDirectory: claudeProjectDir(for: agent.folder))
         case .codex:
             codexSessionFile(for: sessionId) != nil
-        case .gemini:
-            geminiSessionFile(for: sessionId, inDirectory: geminiChatsDir(for: agent.folder)) != nil
         }
     }
 
@@ -73,8 +63,6 @@ enum SessionFileDetector {
             sessions(inDirectory: claudeProjectDir(for: agent.folder))
         case .codex:
             codexSessions(for: agent.folder)
-        case .gemini:
-            geminiSessions(for: agent.folder)
         }
     }
 
@@ -181,61 +169,6 @@ enum SessionFileDetector {
         return matches.sorted { ($0.modifiedAt ?? .distantPast) > ($1.modifiedAt ?? .distantPast) }
     }
 
-    private static func geminiSessions(for folder: URL) -> [SessionRecord] {
-        let dir = geminiChatsDir(for: folder)
-        let fm = FileManager.default
-
-        guard let entries = try? fm.contentsOfDirectory(
-            at: dir,
-            includingPropertiesForKeys: [.contentModificationDateKey],
-            options: .skipsHiddenFiles
-        ) else { return [] }
-
-        return entries
-            .filter { $0.pathExtension == "json" && $0.lastPathComponent.hasPrefix("session-") }
-            .compactMap { url in
-                let modified = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))
-                    .flatMap(\.contentModificationDate)
-
-                // Gemini session IDs are in the JSON, but they also often match the end of the filename.
-                // However, the most reliable way is to parse the file or use the session ID from filename.
-                // session-2026-04-25T22-53-dcb17cd9.json -> dcb17cd9-... is truncated in filename.
-                // We'll parse the JSON for the full sessionId.
-                guard let data = try? Data(contentsOf: url),
-                      let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                      let sessionId = json["sessionId"] as? String else {
-                    return nil
-                }
-
-                return SessionRecord(
-                    id: sessionId,
-                    modifiedAt: modified,
-                    firstMessage: firstGeminiUserMessage(at: url)
-                )
-            }
-            .sorted { ($0.modifiedAt ?? .distantPast) > ($1.modifiedAt ?? .distantPast) }
-    }
-
-    private static func geminiSessionFile(for sessionId: String, inDirectory dir: URL) -> URL? {
-        guard let entries = try? FileManager.default.contentsOfDirectory(
-            at: dir,
-            includingPropertiesForKeys: nil,
-            options: .skipsHiddenFiles
-        ) else { return nil }
-
-        for url in entries {
-            guard url.pathExtension == "json", url.lastPathComponent.hasPrefix("session-") else { continue }
-            guard let data = try? Data(contentsOf: url),
-                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                  let sid = json["sessionId"] as? String,
-                  sid == sessionId else {
-                continue
-            }
-            return url
-        }
-        return nil
-    }
-
     private static func parseCodexSessionMeta(at url: URL) -> (id: String, cwd: String)? {
         // Session meta lines can be very large (15KB+) due to embedded base_instructions.
         // Read enough to capture the full first line.
@@ -280,28 +213,6 @@ enum SessionFileDetector {
                 continue
             }
 
-            if !text.isEmpty {
-                return String(text.prefix(200))
-            }
-        }
-        return nil
-    }
-
-    private static func firstGeminiUserMessage(at url: URL) -> String? {
-        guard let data = try? Data(contentsOf: url),
-              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let messages = json["messages"] as? [[String: Any]] else {
-            return nil
-        }
-
-        for message in messages {
-            guard let type = message["type"] as? String,
-                  type == "user",
-                  let content = message["content"] as? [[String: Any]] else {
-                continue
-            }
-
-            let text = content.compactMap { $0["text"] as? String }.joined()
             if !text.isEmpty {
                 return String(text.prefix(200))
             }

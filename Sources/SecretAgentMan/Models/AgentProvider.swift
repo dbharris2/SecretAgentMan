@@ -3,7 +3,6 @@ import Foundation
 enum AgentProvider: String, CaseIterable, Codable, Hashable, Identifiable {
     case claude
     case codex
-    case gemini
 
     var id: String {
         rawValue
@@ -15,8 +14,6 @@ enum AgentProvider: String, CaseIterable, Codable, Hashable, Identifiable {
             "Claude"
         case .codex:
             "Codex"
-        case .gemini:
-            "Gemini"
         }
     }
 
@@ -26,8 +23,6 @@ enum AgentProvider: String, CaseIterable, Codable, Hashable, Identifiable {
             "claude"
         case .codex:
             "codex"
-        case .gemini:
-            "gemini"
         }
     }
 
@@ -37,8 +32,6 @@ enum AgentProvider: String, CaseIterable, Codable, Hashable, Identifiable {
             ".claude"
         case .codex:
             ".codex"
-        case .gemini:
-            ".gemini"
         }
     }
 }

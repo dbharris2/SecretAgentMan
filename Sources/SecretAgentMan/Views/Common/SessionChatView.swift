@@ -167,7 +167,7 @@ struct SessionChatView: View {
     }
 
     /// Collapsed-by-default disclosure for `agent_thought_chunk` content.
-    /// Mirrors the Gemini CLI's default of hiding internal reasoning unless
+    /// Mirrors the current agent UX default of hiding internal reasoning unless
     /// the user opts in to see it.
     @ViewBuilder
     private func thoughtDisclosureView(items: [SessionTranscriptItem], groupId: String) -> some View {

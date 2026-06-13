@@ -574,14 +574,14 @@ struct AgentSessionReducerTests {
         var snap = AgentSessionSnapshot()
         var update = SessionMetadataUpdate()
         update.availableModels = .set([
-            SessionModelInfo(id: "gemini-2.5-pro", name: "Gemini 2.5 Pro"),
-            SessionModelInfo(id: "gemini-2.5-flash", name: "Gemini 2.5 Flash"),
+            SessionModelInfo(id: "model-pro", name: "Model Pro"),
+            SessionModelInfo(id: "model-flash", name: "Model Flash"),
         ])
-        update.currentModelId = .set("gemini-2.5-pro")
+        update.currentModelId = .set("model-pro")
         snap = AgentSessionReducer.reduce(snap, event: .metadataUpdated(update))
 
         #expect(snap.metadata.availableModels?.count == 2)
-        #expect(snap.metadata.currentModelId == "gemini-2.5-pro")
+        #expect(snap.metadata.currentModelId == "model-pro")
     }
 
     @Test func metadataUpdateCanClearDynamicFields() {
@@ -607,15 +607,15 @@ struct AgentSessionReducerTests {
     @Test func metadataUpdatePreservesUntouchedDynamicFields() {
         var snap = AgentSessionSnapshot()
         snap.metadata.availableModes = [SessionModeInfo(id: "x", name: "X")]
-        snap.metadata.currentModelId = "gemini-2.5-pro"
+        snap.metadata.currentModelId = "model-pro"
 
         // Only touch one unrelated field.
         var update = SessionMetadataUpdate()
-        update.displayModelName = .set("Gemini 2.5 Pro")
+        update.displayModelName = .set("Model Pro")
         snap = AgentSessionReducer.reduce(snap, event: .metadataUpdated(update))
 
         #expect(snap.metadata.availableModes?.count == 1)
-        #expect(snap.metadata.currentModelId == "gemini-2.5-pro")
-        #expect(snap.metadata.displayModelName == "Gemini 2.5 Pro")
+        #expect(snap.metadata.currentModelId == "model-pro")
+        #expect(snap.metadata.displayModelName == "Model Pro")
     }
 }

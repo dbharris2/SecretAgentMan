@@ -1,6 +1,6 @@
 import Foundation
 
-/// Resolves provider CLI binaries (`claude`, `codex`, `gemini`) by checking a
+/// Resolves provider CLI binaries (`claude`, `codex`) by checking a
 /// fixed list of standard install locations, falling back to the bare
 /// executable name so the system PATH can take over.
 enum ProviderExecutableLocator {
@@ -17,12 +17,6 @@ enum ProviderExecutableLocator {
                 NSHomeDirectory() + "/.local/bin/codex",
                 "/usr/local/bin/codex",
                 "/opt/homebrew/bin/codex",
-            ]
-        case .gemini:
-            [
-                NSHomeDirectory() + "/.local/bin/gemini",
-                "/usr/local/bin/gemini",
-                "/opt/homebrew/bin/gemini",
             ]
         }
 
