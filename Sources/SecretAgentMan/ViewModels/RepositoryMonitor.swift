@@ -9,6 +9,7 @@ final class RepositoryMonitor {
     var fileChanges: [FileChange] = []
     var fullDiff: String = ""
     var branchNames: [String: String] = [:]
+    var repoTypes: [String: DiffService.VCSType] = [:]
     /// Bumped on any VCS directory change — views can observe this to trigger refreshes.
     var vcsChangeCount = 0
 
@@ -146,6 +147,10 @@ final class RepositoryMonitor {
         bookmarks[Self.folderKey(folder)]
     }
 
+    func vcsType(for folder: URL) -> DiffService.VCSType? {
+        repoTypes[Self.folderKey(folder)]
+    }
+
     private func refreshBranchNames() {
         let folders = Set(store.agents.map(\.folder))
         for folder in folders {
@@ -211,13 +216,21 @@ final class RepositoryMonitor {
         branchRefreshInFlight.insert(key)
         suppressVCSMetadataChange(for: folder)
         Task.detached(priority: .background) {
+            let vcsType = diffService.detectVCS(in: folder)
             async let nameTask = diffService.fetchBranchName(in: folder)
             async let bookmarkTask = diffService.fetchBookmark(in: folder)
             let (name, bookmark) = await (nameTask, bookmarkTask)
             await MainActor.run {
-                let changed = self.branchNames[key] != name || self.bookmarks[key] != bookmark
+                let changed = self.branchNames[key] != name
+                    || self.bookmarks[key] != bookmark
+                    || self.repoTypes[key] != vcsType
                 self.branchNames[key] = name
                 self.bookmarks[key] = bookmark
+                if vcsType == .none {
+                    self.repoTypes.removeValue(forKey: key)
+                } else {
+                    self.repoTypes[key] = vcsType
+                }
                 self.branchRefreshInFlight.remove(key)
                 self.branchRefreshLastCompletedAt[key] = .now
                 PerfLogger.log("refreshBranchName.total", start: refreshStart, details: "folder=\(folder.lastPathComponent) trigger=\(trigger)")
