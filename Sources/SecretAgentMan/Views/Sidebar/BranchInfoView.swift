@@ -29,18 +29,3 @@ struct BranchInfoView: View {
         }
     }
 }
-
-private extension DiffService.VCSType {
-    var displayName: String {
-        switch self {
-        case .jj:
-            "JJ"
-        case .graphite:
-            "Graphite"
-        case .git:
-            "Git"
-        case .none:
-            ""
-        }
-    }
-}

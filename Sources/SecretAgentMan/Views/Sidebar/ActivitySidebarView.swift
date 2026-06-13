@@ -52,7 +52,7 @@ struct ActivitySidebarView: View {
                             onWorkOnIssue: coordinator.workOnIssue
                         )
                     case .vcs:
-                        JJLogView()
+                        VCSLogView()
                     }
                 }
                 .frame(height: bottomPanelHeight)
