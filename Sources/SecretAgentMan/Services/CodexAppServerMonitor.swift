@@ -71,10 +71,7 @@ final class CodexAppServerMonitor {
     private func makeObserver(for agent: Agent) -> Observer {
         Observer(agent: agent) { [weak self] id, state in
             Task { @MainActor in
-                guard let self else { return }
-                self.runtimeStates[id] = state
-                self.onStateChange?(id, state)
-                self.emit(.runStateChanged(Self.mapRunState(state)), for: id)
+                self?.handleStateChange(for: id, state: state)
             }
         } onSessionReady: { [weak self] id, threadId in
             Task { @MainActor in
@@ -92,16 +89,11 @@ final class CodexAppServerMonitor {
             Task { @MainActor in self?.emitStreamFinalize(id: id, itemId: itemId) }
         } onUserInputRequest: { [weak self] id, request in
             Task { @MainActor in
-                guard let self else { return }
-                self.debugMessages.removeValue(forKey: id)
-                self.pendingUserInputRequests[id] = request
-                self.emit(.promptPresented(.userInput(Self.mapUserInputPrompt(request))), for: id)
+                self?.presentUserInputRequest(id: id, request: request)
             }
         } onApprovalRequest: { [weak self] id, request in
             Task { @MainActor in
-                guard let self else { return }
-                self.pendingApprovalRequests[id] = request
-                self.emit(.promptPresented(.approval(Self.mapApprovalPrompt(request))), for: id)
+                self?.presentApprovalRequest(id: id, request: request)
             }
         } onDebugMessage: { [weak self] id, message in
             Task { @MainActor in
@@ -109,19 +101,11 @@ final class CodexAppServerMonitor {
             }
         } onUserInputResolved: { [weak self] id in
             Task { @MainActor in
-                guard let self else { return }
-                if let pending = self.pendingUserInputRequests[id] {
-                    self.emit(.promptResolved(id: pending.itemId), for: id)
-                }
-                self.pendingUserInputRequests.removeValue(forKey: id)
+                self?.resolveUserInputRequest(id: id)
             }
         } onApprovalResolved: { [weak self] id in
             Task { @MainActor in
-                guard let self else { return }
-                if let pending = self.pendingApprovalRequests[id] {
-                    self.emit(.promptResolved(id: pending.itemId), for: id)
-                }
-                self.pendingApprovalRequests.removeValue(forKey: id)
+                self?.resolveApprovalRequest(id: id)
             }
         } onModelInfo: { [weak self] id, rawModel, displayModel, mode, contextPct in
             Task { @MainActor in
@@ -132,13 +116,55 @@ final class CodexAppServerMonitor {
         }
     }
 
+    func handleStateChange(for agentId: UUID, state: AgentState) {
+        runtimeStates[agentId] = state
+        onStateChange?(agentId, state)
+
+        if shouldFinalizeStreams(for: state) {
+            finalizeLingeringStreams(for: agentId)
+        }
+
+        emit(.runStateChanged(Self.mapRunState(state)), for: agentId)
+    }
+
     private func applyActiveTool(_ name: String?, for agentId: UUID) {
         var update = SessionMetadataUpdate()
         update.activeToolName = name.map { .set($0) } ?? .clear
         emit(.metadataUpdated(update), for: agentId)
     }
 
+    func presentUserInputRequest(id agentId: UUID, request: CodexUserInputRequest) {
+        debugMessages.removeValue(forKey: agentId)
+        pendingUserInputRequests[agentId] = request
+        finalizeLingeringStreams(for: agentId)
+        emit(.promptPresented(.userInput(Self.mapUserInputPrompt(request))), for: agentId)
+    }
+
+    func presentApprovalRequest(id agentId: UUID, request: CodexApprovalRequest) {
+        pendingApprovalRequests[agentId] = request
+        finalizeLingeringStreams(for: agentId)
+        emit(.promptPresented(.approval(Self.mapApprovalPrompt(request))), for: agentId)
+    }
+
+    func resolveUserInputRequest(id agentId: UUID) {
+        if let pending = pendingUserInputRequests[agentId] {
+            finalizeLingeringStreams(for: agentId)
+            emit(.promptResolved(id: pending.itemId), for: agentId)
+        }
+        pendingUserInputRequests.removeValue(forKey: agentId)
+    }
+
+    func resolveApprovalRequest(id agentId: UUID) {
+        if let pending = pendingApprovalRequests[agentId] {
+            finalizeLingeringStreams(for: agentId)
+            emit(.promptResolved(id: pending.itemId), for: agentId)
+        }
+        pendingApprovalRequests.removeValue(forKey: agentId)
+    }
+
     func handleTranscriptItem(_ agentId: UUID, item: CodexTranscriptItem) {
+        finalizeLingeringStreams(before: item, for: agentId)
+
         // Reconcile with an in-flight local user message: the monitor records
         // user messages under a `local-user-*` id; when the server echoes
         // the message back, we swap to the server's id but preserve the
@@ -194,6 +220,7 @@ final class CodexAppServerMonitor {
 
     func recordSentUserMessage(for agentId: UUID, text: String, imageData: [Data]) {
         guard !text.isEmpty || !imageData.isEmpty else { return }
+        finalizeLingeringStreams(for: agentId)
         let item = CodexTranscriptItem(
             id: "local-user-\(UUID().uuidString)",
             role: .user,
@@ -230,12 +257,43 @@ final class CodexAppServerMonitor {
     }
 
     func recordSystemTranscript(for agentId: UUID, text: String) {
+        finalizeLingeringStreams(for: agentId)
         let item = CodexTranscriptItem(
             id: "system-\(UUID().uuidString)",
             role: .system,
             text: text
         )
         emitTranscriptUpsert(agentId, item: item, canonicalId: item.id)
+    }
+
+    private func shouldFinalizeStreams(for state: AgentState) -> Bool {
+        switch state {
+        case .active, .needsPermission:
+            false
+        case .idle, .awaitingInput, .awaitingResponse, .finished, .error:
+            true
+        }
+    }
+
+    private func finalizeLingeringStreams(before item: CodexTranscriptItem, for agentId: UUID) {
+        guard hasLingeringStreams(for: agentId) else { return }
+
+        // Any non-delta transcript item means timeline progress beyond the
+        // dedicated live-stream row. Finalize first so the stale bottom row
+        // cannot outlive the later item that supersedes it.
+        finalizeLingeringStreams(for: agentId)
+    }
+
+    private func finalizeLingeringStreams(for agentId: UUID) {
+        guard let itemIds = streamingItemIds[agentId], !itemIds.isEmpty else { return }
+        for itemId in itemIds.sorted() {
+            emitStreamFinalize(id: agentId, itemId: itemId)
+        }
+    }
+
+    private func hasLingeringStreams(for agentId: UUID) -> Bool {
+        guard let itemIds = streamingItemIds[agentId] else { return false }
+        return !itemIds.isEmpty
     }
 
     func respondToUserInput(for agentId: UUID, answers: [String: [String]]) {
