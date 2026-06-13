@@ -4,7 +4,7 @@ import SwiftTerm
 /// Manages per-folder project shell terminals. One shell exists per unique
 /// standardized agent folder; agents sharing a folder share the same shell
 /// and scrollback. Shells run the user's login shell — they do not launch
-/// Claude/Codex/Gemini, and their lifecycle does not affect agent state.
+/// Claude/Codex, and their lifecycle does not affect agent state.
 @MainActor
 final class ShellManager {
     private var terminals: [String: LocalProcessTerminalView] = [:]

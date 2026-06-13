@@ -3,7 +3,7 @@ import Foundation
 /// Shared loose JSON value for provider protocol payloads whose concrete
 /// schema is unknown or selected after method/type dispatch.
 ///
-/// Used by Claude, Codex, and Gemini protocol layers for fields like
+/// Used by Claude and Codex protocol layers for fields like
 /// `rawInput`, `rawOutput`, RPC `params`/`result`, and permission echoes.
 enum JSONValue: Codable, Equatable {
     case null

@@ -9,7 +9,6 @@ final class AgentSessionCoordinator {
     let eventBus: AgentEventBus
     let codexMonitor: CodexAppServerMonitor
     let claudeMonitor: ClaudeStreamMonitor
-    let geminiMonitor: GeminiAcpMonitor
 
     /// Per-agent reduced session snapshots. Populated by the normalized
     /// `SessionEvent` stream from each provider monitor. Phase 2 of the
@@ -24,15 +23,13 @@ final class AgentSessionCoordinator {
         shellManager: ShellManager = ShellManager(),
         eventBus: AgentEventBus = AgentEventBus(),
         codexMonitor: CodexAppServerMonitor = CodexAppServerMonitor(),
-        claudeMonitor: ClaudeStreamMonitor = ClaudeStreamMonitor(),
-        geminiMonitor: GeminiAcpMonitor = GeminiAcpMonitor()
+        claudeMonitor: ClaudeStreamMonitor = ClaudeStreamMonitor()
     ) {
         self.store = store
         self.shellManager = shellManager
         self.eventBus = eventBus
         self.codexMonitor = codexMonitor
         self.claudeMonitor = claudeMonitor
-        self.geminiMonitor = geminiMonitor
     }
 
     func start() {
@@ -74,18 +71,6 @@ final class AgentSessionCoordinator {
             }
         }
 
-        geminiMonitor.onSessionReady = { [self] id, sessionId in
-            store.updateSessionId(id: id, sessionId: sessionId)
-            store.markLaunched(id: id)
-            syncSessionWatches()
-        }
-        geminiMonitor.onStateChange = { [self] id, state in
-            handleAgentStateChange(agentId: id, state: state)
-        }
-        geminiMonitor.onSessionEvent = { [self] id, event in
-            reduceSessionEvent(agentId: id, event: event)
-        }
-
         eventBus.onSendPrompt = { [self] agentId, prompt in
             guard let agent = store.agents.first(where: { $0.id == agentId }) else { return }
             switch agent.provider {
@@ -93,8 +78,6 @@ final class AgentSessionCoordinator {
                 claudeMonitor.sendMessage(for: agentId, text: prompt)
             case .codex:
                 codexMonitor.sendMessage(for: agentId, text: prompt)
-            case .gemini:
-                geminiMonitor.sendMessage(for: agentId, text: prompt)
             }
         }
 
@@ -121,7 +104,6 @@ final class AgentSessionCoordinator {
         sessionWatcher.unwatchAll()
         codexMonitor.stopAll()
         claudeMonitor.stopAll()
-        geminiMonitor.stopAll()
     }
 
     func syncSessionWatches() {
@@ -135,14 +117,12 @@ final class AgentSessionCoordinator {
         }
         codexMonitor.syncMonitoredAgents(store.agents)
         claudeMonitor.syncMonitoredAgents(store.agents)
-        geminiMonitor.syncMonitoredAgents(store.agents)
     }
 
     func removeAgent(_ id: UUID) {
         let folder = store.agents.first(where: { $0.id == id })?.folder
         codexMonitor.removeObserver(for: id)
         claudeMonitor.removeObserver(for: id)
-        geminiMonitor.removeObserver(for: id)
         snapshots.removeValue(forKey: id)
         store.removeAgent(id: id)
         if let folder, !folderHasAgents(folder) {
@@ -176,16 +156,6 @@ final class AgentSessionCoordinator {
               agent.provider == .claude
         else { return }
         claudeMonitor.ensureSession(for: agent)
-    }
-
-    func ensureGeminiSession(for agentId: UUID) {
-        guard let agent = store.agents.first(where: { $0.id == agentId }),
-              agent.provider == .gemini
-        else { return }
-        // First ensureSession spawns the process; the session id arrives via
-        // the ACP `session/new` (or `session/load`) response.
-        store.markLaunched(id: agentId)
-        geminiMonitor.ensureSession(for: agent)
     }
 
     private func reduceSessionEvent(agentId: UUID, event: SessionEvent) {

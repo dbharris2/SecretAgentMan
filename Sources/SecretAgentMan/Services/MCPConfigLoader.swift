@@ -17,10 +17,6 @@ enum MCPConfigLoader {
             return plugins.keys.map { $0.components(separatedBy: "@").first ?? $0 }.sorted()
         case .codex:
             return loadCodexPluginNames()
-        case .gemini:
-            // Gemini extensions/plugins are not surfaced in V1; ACP-managed
-            // sessions advertise their slash commands via `available_commands_update`.
-            return []
         }
     }
 
@@ -80,9 +76,6 @@ enum MCPConfigLoader {
                     source: plugin.lastPathComponent
                 ))
             }
-        case .gemini:
-            // No skills concept for Gemini in V1.
-            break
         }
 
         return skills.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }

@@ -43,7 +43,6 @@ struct AgentRowView: View {
         switch agent.provider {
         case .claude: theme.orange
         case .codex: theme.blue
-        case .gemini: theme.magenta
         }
     }
 }

@@ -85,10 +85,6 @@ final class UsageMonitor {
                     Self.readLatestClaudeRateLimits()
                 case .codex:
                     Self.readLatestCodexRateLimits()
-                case .gemini:
-                    // ACP `usage_update` notifications carry per-session usage,
-                    // not account-level rate limits. Skip in V1.
-                    nil
                 }
 
             await MainActor.run {
