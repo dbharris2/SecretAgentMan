@@ -63,7 +63,7 @@ struct StatusBarView: View {
                 panelToggleButton(icon: "exclamationmark.circle", panel: .issues, label: "Issues")
                 if let folder = selectedAgent?.folder,
                    FileManager.default.fileExists(atPath: folder.appendingPathComponent(".jj").path) {
-                    panelToggleButton(icon: "arrow.triangle.branch", panel: .jj, label: "JJ")
+                    panelToggleButton(icon: "arrow.triangle.branch", panel: .vcs, label: "JJ")
                 }
             }
 

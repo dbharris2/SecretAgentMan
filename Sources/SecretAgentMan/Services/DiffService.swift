@@ -3,6 +3,7 @@ import Foundation
 actor DiffService {
     enum VCSType {
         case jj
+        case graphite
         case git
         case none
     }
@@ -11,6 +12,8 @@ actor DiffService {
         let fm = FileManager.default
         if fm.fileExists(atPath: directory.appendingPathComponent(".jj").path) {
             return .jj
+        } else if fm.fileExists(atPath: directory.appendingPathComponent(".git/.graphite_repo_config").path) {
+            return .graphite
         } else if fm.fileExists(atPath: directory.appendingPathComponent(".git").path) {
             return .git
         }
@@ -30,7 +33,7 @@ actor DiffService {
                 ],
                 in: directory
             ) ?? ""
-        case .git:
+        case .graphite, .git:
             raw = await runCommand("/usr/bin/git", args: ["branch", "--show-current"], in: directory) ?? ""
         case .none:
             return nil
@@ -60,7 +63,7 @@ actor DiffService {
             let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
             return trimmed.components(separatedBy: " ").first { !$0.isEmpty }?
                 .trimmingCharacters(in: CharacterSet(charactersIn: "*"))
-        case .git:
+        case .graphite, .git:
             let raw = await runCommand("/usr/bin/git", args: ["branch", "--show-current"], in: directory) ?? ""
             let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
             return trimmed.isEmpty ? nil : trimmed
@@ -93,7 +96,7 @@ actor DiffService {
         switch vcs {
         case .jj:
             return await runCommand("/opt/homebrew/bin/jj", args: ["diff", "--git"], in: directory)
-        case .git:
+        case .graphite, .git:
             return await runCommand("/usr/bin/git", args: ["diff"], in: directory)
         case .none:
             return ""
