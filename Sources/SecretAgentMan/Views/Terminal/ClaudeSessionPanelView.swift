@@ -33,6 +33,14 @@ struct ClaudeSessionPanelView: View {
         snapshot?.metadata.activeToolName
     }
 
+    private var approvalModeButtons: [ApprovalModeButton] {
+        let availableModes = Set(ClaudeStreamMonitor.permissionModes)
+        return [
+            ApprovalModeButton(id: "acceptEdits", label: "Accept Edits"),
+            ApprovalModeButton(id: "auto", label: "Auto"),
+        ].filter { availableModes.contains($0.id) }
+    }
+
     private var isThinking: Bool {
         agent.state == .active && streaming == nil
     }
@@ -71,8 +79,9 @@ struct ClaudeSessionPanelView: View {
                 agent: agent,
                 slashCommands: snapshot?.metadata.slashCommands ?? [],
                 displayModelName: snapshot?.metadata.displayModelName ?? "Claude",
-                permissionMode: snapshot?.metadata.permissionMode
-                    ?? ClaudeStreamMonitor.defaultPermissionMode,
+                permissionMode: ClaudeRemoteSettings.displayPermissionMode(
+                    snapshot?.metadata.permissionMode ?? ClaudeStreamMonitor.defaultPermissionMode
+                ),
                 pendingElicitation: pendingElicitation,
                 composerFocused: $composerFocused
             )
@@ -93,10 +102,7 @@ struct ClaudeSessionPanelView: View {
             onDecline: {
                 coordinator.answerClaudeApproval(for: agent.id, accept: false)
             },
-            modeButtons: [
-                ApprovalModeButton(id: "acceptEdits", label: "Accept Edits"),
-                ApprovalModeButton(id: "auto", label: "Auto"),
-            ],
+            modeButtons: approvalModeButtons,
             onApproveAndSwitchMode: { mode in
                 coordinator.answerClaudeApproval(for: agent.id, accept: true)
                 coordinator.claudeMonitor.setPermissionMode(for: agent.id, mode: mode)
