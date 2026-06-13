@@ -4,8 +4,22 @@ import SwiftUI
 struct SessionMarkdownText: View {
     let text: String
     let fontScale: Double
+    var allowsExpansion: Bool = false
 
-    var body: some View {
+    private static let collapsedMaxHeight: CGFloat = 320
+    private static let expansionLineThreshold = 18
+    private static let expansionCharacterThreshold = 1600
+
+    private var shouldOfferExpansion: Bool {
+        guard allowsExpansion else { return false }
+
+        let lineCount = text.split(separator: "\n", omittingEmptySubsequences: false).count
+        if lineCount > Self.expansionLineThreshold { return true }
+        if text.count > Self.expansionCharacterThreshold { return true }
+        return text.contains("```") && lineCount > 10
+    }
+
+    private var markdownBody: some View {
         Markdown(text)
             .markdownTextStyle {
                 FontSize(13 * fontScale)
@@ -16,6 +30,40 @@ struct SessionMarkdownText: View {
             }
             .markdownTheme(.docC)
             .textSelection(.enabled)
+    }
+
+    var body: some View {
+        if shouldOfferExpansion {
+            ExpandableMarkdownText(
+                collapsedMaxHeight: Self.collapsedMaxHeight,
+                content: { markdownBody }
+            )
+        } else {
+            markdownBody
+        }
+    }
+}
+
+private struct ExpandableMarkdownText<Content: View>: View {
+    let collapsedMaxHeight: CGFloat
+    @ViewBuilder let content: () -> Content
+
+    @State private var isExpanded = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Spacing.md) {
+            content()
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .frame(maxHeight: isExpanded ? nil : collapsedMaxHeight, alignment: .topLeading)
+                .clipped()
+
+            Button(isExpanded ? "Show less" : "Show more") {
+                withAnimation(.easeInOut(duration: 0.18)) {
+                    isExpanded.toggle()
+                }
+            }
+            .buttonStyle(.link)
+        }
     }
 }
 
@@ -52,7 +100,7 @@ struct SessionTranscriptBubble: View {
                         }
                     }
 
-                    SessionMarkdownText(text: text, fontScale: fontScale)
+                    SessionMarkdownText(text: text, fontScale: fontScale, allowsExpansion: true)
                 }
                 .padding(Spacing.xxl)
                 .background(SessionPanelTheme.backgroundColor(for: kind, in: theme))
@@ -67,7 +115,7 @@ struct SessionTranscriptBubble: View {
         } else {
             // Assistant/system messages: no bubble, just text
             VStack(alignment: .leading, spacing: Spacing.md) {
-                SessionMarkdownText(text: text, fontScale: fontScale)
+                SessionMarkdownText(text: text, fontScale: fontScale, allowsExpansion: true)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, Spacing.md)
@@ -182,7 +230,7 @@ struct SessionTodoCard: View {
             Image(systemName: "checklist")
                 .foregroundStyle(theme.accent)
 
-            SessionMarkdownText(text: text, fontScale: fontScale)
+            SessionMarkdownText(text: text, fontScale: fontScale, allowsExpansion: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(Spacing.xxl)
