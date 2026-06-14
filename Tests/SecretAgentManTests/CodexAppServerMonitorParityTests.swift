@@ -54,6 +54,107 @@ struct CodexAppServerMonitorParityTests {
         #expect(snap.finalizedTranscript.allSatisfy { !$0.isStreaming })
     }
 
+    @Test func nonInFlightStateFinalizesLingeringStream() {
+        // Regression: interrupted Codex turns can skip the final
+        // `itemCompleted(agentMessage)` event. When the session moves to a
+        // non-in-flight state anyway, the visible streaming row must finalize
+        // so stale assistant text does not remain pinned at the bottom.
+        let monitor = CodexAppServerMonitor()
+        let agentId = UUID()
+        var events: [SessionEvent] = []
+        monitor.onSessionEvent = { _, event in events.append(event) }
+
+        monitor.emitStreamDelta(id: agentId, itemId: "msg-1", delta: "partial answer")
+        monitor.handleStateChange(for: agentId, state: .awaitingInput)
+
+        let snap = events.replay()
+
+        #expect(snap.streamingAssistantText == nil)
+        #expect(snap.finalizedTranscript.count == 1)
+        #expect(snap.finalizedTranscript[0].id == "msg-1")
+        #expect(snap.finalizedTranscript[0].text == "partial answer")
+        #expect(snap.finalizedTranscript[0].isStreaming == false)
+        #expect(snap.runState == .idle)
+    }
+
+    @Test func laterTranscriptItemFinalizesLingeringStream() {
+        let monitor = CodexAppServerMonitor()
+        let agentId = UUID()
+        var events: [SessionEvent] = []
+        monitor.onSessionEvent = { _, event in events.append(event) }
+
+        monitor.emitStreamDelta(id: agentId, itemId: "msg-1", delta: "partial answer")
+        monitor.handleTranscriptItem(
+            agentId,
+            item: CodexTranscriptItem(id: "system-1", role: .system, text: "later event")
+        )
+
+        let snap = events.replay()
+
+        #expect(snap.streamingAssistantText == nil)
+        #expect(snap.finalizedTranscript.count == 2)
+        #expect(snap.finalizedTranscript[0].id == "msg-1")
+        #expect(snap.finalizedTranscript[0].isStreaming == false)
+        #expect(snap.finalizedTranscript[1].id == "system-1")
+    }
+
+    @Test func promptPresentationFinalizesLingeringStream() {
+        let monitor = CodexAppServerMonitor()
+        let agentId = UUID()
+        var events: [SessionEvent] = []
+        monitor.onSessionEvent = { _, event in events.append(event) }
+
+        monitor.emitStreamDelta(id: agentId, itemId: "msg-1", delta: "partial answer")
+        let approval = CodexAppServerMonitor.mapApprovalPrompt(
+            CodexApprovalRequest(
+                agentId: agentId,
+                requestId: 1,
+                threadId: "t",
+                turnId: "T1",
+                itemId: "approve-1",
+                kind: .command(command: "rm -rf", reason: "dangerous")
+            )
+        )
+        monitor.presentApprovalRequest(
+            id: agentId,
+            request: CodexApprovalRequest(
+                agentId: agentId,
+                requestId: 1,
+                threadId: "t",
+                turnId: "T1",
+                itemId: approval.id,
+                kind: .command(command: "rm -rf", reason: "dangerous")
+            )
+        )
+
+        let snap = events.replay()
+
+        #expect(snap.streamingAssistantText == nil)
+        #expect(snap.finalizedTranscript.count == 1)
+        #expect(snap.finalizedTranscript[0].id == "msg-1")
+        #expect(snap.finalizedTranscript[0].isStreaming == false)
+        #expect(snap.activePrompt?.id == "approve-1")
+    }
+
+    @Test func localUserMessageFinalizesLingeringStream() {
+        let monitor = CodexAppServerMonitor()
+        let agentId = UUID()
+        var events: [SessionEvent] = []
+        monitor.onSessionEvent = { _, event in events.append(event) }
+
+        monitor.emitStreamDelta(id: agentId, itemId: "msg-1", delta: "partial answer")
+        monitor.recordSentUserMessage(for: agentId, text: "next turn", imageData: [])
+
+        let snap = events.replay()
+
+        #expect(snap.streamingAssistantText == nil)
+        #expect(snap.finalizedTranscript.count == 2)
+        #expect(snap.finalizedTranscript[0].id == "msg-1")
+        #expect(snap.finalizedTranscript[0].isStreaming == false)
+        #expect(snap.finalizedTranscript[1].kind == .userMessage)
+        #expect(snap.finalizedTranscript[1].text == "next turn")
+    }
+
     // MARK: - Local-echo reconciliation
 
     @Test func localUserMessageWithImagesIsPreservedThroughServerEcho() {
