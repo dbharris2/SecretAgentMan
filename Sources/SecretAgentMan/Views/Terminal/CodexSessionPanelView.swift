@@ -105,18 +105,20 @@ struct CodexSessionPanelView: View {
             supportsDecisions: prompt.supportsDecisions,
             unsupportedText: "This permission request is not supported by the current UI yet.",
             onApprove: {
-                coordinator.answerCodexApproval(for: agent.id, accept: true)
+                coordinator.answerCodexApproval(
+                    for: agent.id,
+                    action: ApprovalAction(id: "approve", label: "Approve", kind: .allowOnce)
+                )
             },
             onDecline: {
-                coordinator.answerCodexApproval(for: agent.id, accept: false)
+                coordinator.answerCodexApproval(
+                    for: agent.id,
+                    action: ApprovalAction(id: "decline", label: "Decline", kind: .rejectOnce, isDestructive: true)
+                )
             },
-            modeButtons: CodexApprovalPolicy.allCases
-                .filter { $0 != .untrusted }
-                .map { ApprovalModeButton(id: $0.rawValue, label: $0.label) },
-            onApproveAndSwitchMode: { mode in
-                guard let policy = CodexApprovalPolicy(rawValue: mode) else { return }
-                coordinator.setCodexApprovalPolicy(for: agent.id, policy: policy)
-                coordinator.answerCodexApproval(for: agent.id, accept: true)
+            actions: prompt.actions,
+            onSelectAction: { action in
+                coordinator.answerCodexApproval(for: agent.id, action: action)
             }
         )
     }

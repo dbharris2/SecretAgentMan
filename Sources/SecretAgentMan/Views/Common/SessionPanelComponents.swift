@@ -260,6 +260,8 @@ struct SessionApprovalCard: View {
     let onDecline: () -> Void
     var modeButtons: [ApprovalModeButton] = []
     var onApproveAndSwitchMode: ((String) -> Void)?
+    var actions: [ApprovalAction] = []
+    var onSelectAction: ((ApprovalAction) -> Void)?
     @Environment(\.appTheme) private var theme
 
     var body: some View {
@@ -273,21 +275,50 @@ struct SessionApprovalCard: View {
                     .textSelection(.enabled)
             }
 
-            if supportsDecisions {
+            if !actions.isEmpty, let onSelectAction {
+                VStack(alignment: .leading, spacing: Spacing.md) {
+                    ForEach(actions) { action in
+                        if action.isDestructive {
+                            Button {
+                                onSelectAction(action)
+                            } label: {
+                                actionLabel(action.label)
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                            .tint(theme.red)
+                        } else {
+                            Button {
+                                onSelectAction(action)
+                            } label: {
+                                actionLabel(action.label)
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .controlSize(.small)
+                        }
+                    }
+                }
+            } else if supportsDecisions {
                 HStack(spacing: Spacing.lg) {
-                    Button(declineTitle, action: onDecline)
-                        .buttonStyle(.bordered)
-                        .controlSize(.small)
-                        .tint(theme.red)
+                    Button(action: onDecline) {
+                        actionLabel(declineTitle)
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .tint(theme.red)
 
-                    Button(approveTitle, action: onApprove)
-                        .buttonStyle(.borderedProminent)
-                        .controlSize(.small)
+                    Button(action: onApprove) {
+                        actionLabel(approveTitle)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
 
                     if let onApproveAndSwitchMode {
                         ForEach(modeButtons) { button in
-                            Button(button.label) {
+                            Button {
                                 onApproveAndSwitchMode(button.id)
+                            } label: {
+                                actionLabel(button.label)
                             }
                             .buttonStyle(.borderedProminent)
                             .controlSize(.small)
@@ -304,6 +335,13 @@ struct SessionApprovalCard: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(theme.yellow.opacity(0.12))
         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+
+    private func actionLabel(_ text: String) -> some View {
+        Text(text)
+            .scaledFont(size: 12, weight: .medium)
+            .lineLimit(nil)
+            .fixedSize(horizontal: false, vertical: true)
     }
 }
 
@@ -335,8 +373,10 @@ struct SessionElicitationCard: View {
             } else {
                 HStack(spacing: Spacing.lg) {
                     ForEach(options) { option in
-                        Button(option.label) {
+                        Button {
                             onSelectOption?(option.label)
+                        } label: {
+                            promptButtonLabel(option.label)
                         }
                         .buttonStyle(.borderedProminent)
                         .controlSize(.small)
@@ -353,6 +393,13 @@ struct SessionElicitationCard: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(theme.blue.opacity(0.1))
         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+
+    private func promptButtonLabel(_ text: String) -> some View {
+        Text(text)
+            .scaledFont(size: 12, weight: .medium)
+            .lineLimit(nil)
+            .fixedSize(horizontal: false, vertical: true)
     }
 }
 
@@ -378,8 +425,10 @@ struct SessionQuestionCard: View {
 
             HStack(spacing: Spacing.lg) {
                 ForEach(options) { option in
-                    Button(option.label) {
+                    Button {
                         onSelect(option)
+                    } label: {
+                        promptButtonLabel(option.label)
                     }
                     .buttonStyle(.borderedProminent)
                     .controlSize(.small)
@@ -391,6 +440,13 @@ struct SessionQuestionCard: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(theme.blue.opacity(0.1))
         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+
+    private func promptButtonLabel(_ text: String) -> some View {
+        Text(text)
+            .scaledFont(size: 12, weight: .medium)
+            .lineLimit(nil)
+            .fixedSize(horizontal: false, vertical: true)
     }
 }
 

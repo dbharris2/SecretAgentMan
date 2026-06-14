@@ -7,7 +7,7 @@ struct CodexProtocolTests {
 
     @Test
     func approvalAcceptHasCorrectDecision() throws {
-        let resp = CodexProtocol.RPCResponse.approvalDecision(id: 42, accept: true)
+        let resp = CodexProtocol.RPCResponse.approvalDecision(id: 42, decision: .string("accept"))
         let json = try requireJSON(resp)
 
         #expect(json["id"] as? Int == 42)
@@ -17,11 +17,30 @@ struct CodexProtocolTests {
 
     @Test
     func approvalDeclineHasCorrectDecision() throws {
-        let resp = CodexProtocol.RPCResponse.approvalDecision(id: 7, accept: false)
+        let resp = CodexProtocol.RPCResponse.approvalDecision(id: 7, decision: .string("decline"))
         let json = try requireJSON(resp)
 
         let result = try #require(json["result"] as? [String: Any])
         #expect(result["decision"] as? String == "decline")
+    }
+
+    @Test
+    func approvalExecpolicyAmendmentHasStructuredDecision() throws {
+        let resp = CodexProtocol.RPCResponse.approvalDecision(
+            id: 8,
+            decision: .object([
+                "acceptWithExecpolicyAmendment": .object([
+                    "execpolicy_amendment": .array([.string("just"), .string("build")]),
+                ]),
+            ])
+        )
+        let json = try requireJSON(resp)
+
+        let result = try #require(json["result"] as? [String: Any])
+        let decision = try #require(result["decision"] as? [String: Any])
+        let wrapper = try #require(decision["acceptWithExecpolicyAmendment"] as? [String: Any])
+        let amendment = try #require(wrapper["execpolicy_amendment"] as? [String])
+        #expect(amendment == ["just", "build"])
     }
 
     @Test

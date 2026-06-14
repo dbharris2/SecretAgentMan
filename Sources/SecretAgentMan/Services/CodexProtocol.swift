@@ -59,9 +59,9 @@ enum CodexProtocol {
         let id: Int
         let result: [String: JSONValue]
 
-        static func approvalDecision(id: Int, accept: Bool) -> RPCResponse {
+        static func approvalDecision(id: Int, decision: JSONValue) -> RPCResponse {
             RPCResponse(id: id, result: [
-                "decision": .string(accept ? "accept" : "decline"),
+                "decision": decision,
             ])
         }
 
