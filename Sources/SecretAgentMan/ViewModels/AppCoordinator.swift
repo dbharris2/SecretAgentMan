@@ -148,8 +148,8 @@ final class AppCoordinator {
         codexMonitor.respondToUserInput(for: agentId, answers: answers)
     }
 
-    func answerCodexApproval(for agentId: UUID, accept: Bool) {
-        codexMonitor.respondToApproval(for: agentId, accept: accept)
+    func answerCodexApproval(for agentId: UUID, action: ApprovalAction) {
+        codexMonitor.respondToApproval(for: agentId, action: action)
     }
 
     // MARK: - Claude Actions

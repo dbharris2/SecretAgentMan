@@ -112,7 +112,11 @@ struct CodexAppServerMonitorParityTests {
                 threadId: "t",
                 turnId: "T1",
                 itemId: "approve-1",
-                kind: .command(command: "rm -rf", reason: "dangerous")
+                kind: .command(command: "rm -rf", reason: "dangerous"),
+                actions: [
+                    ApprovalAction(id: "approve", label: "Yes, proceed", kind: .allowOnce),
+                    ApprovalAction(id: "decline", label: "No, and tell Codex what to do differently", kind: .rejectOnce, isDestructive: true),
+                ]
             )
         )
         monitor.presentApprovalRequest(
@@ -123,7 +127,8 @@ struct CodexAppServerMonitorParityTests {
                 threadId: "t",
                 turnId: "T1",
                 itemId: approval.id,
-                kind: .command(command: "rm -rf", reason: "dangerous")
+                kind: .command(command: "rm -rf", reason: "dangerous"),
+                actions: approval.actions
             )
         )
 
@@ -229,7 +234,11 @@ struct CodexAppServerMonitorParityTests {
                 threadId: "t",
                 turnId: "T1",
                 itemId: "approve-1",
-                kind: .command(command: "rm -rf", reason: "dangerous")
+                kind: .command(command: "rm -rf", reason: "dangerous"),
+                actions: [
+                    ApprovalAction(id: "approve", label: "Yes, proceed", kind: .allowOnce),
+                    ApprovalAction(id: "decline", label: "No, and tell Codex what to do differently", kind: .rejectOnce, isDestructive: true),
+                ]
             )
         )
         monitor.emit(.promptPresented(.approval(approval)), for: agentId)

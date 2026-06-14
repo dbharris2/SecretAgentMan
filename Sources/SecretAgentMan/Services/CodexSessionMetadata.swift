@@ -224,6 +224,15 @@ enum CodexApprovalKind: Equatable {
             true
         }
     }
+
+    var declineLabel: String {
+        switch self {
+        case .unsupportedPermissions:
+            "Dismiss"
+        case .command, .fileChange:
+            "No, and tell Codex what to do differently"
+        }
+    }
 }
 
 struct CodexApprovalRequest: Equatable {
@@ -233,6 +242,7 @@ struct CodexApprovalRequest: Equatable {
     let turnId: String
     let itemId: String
     let kind: CodexApprovalKind
+    let actions: [ApprovalAction]
 }
 
 extension CodexAppServerMonitor {
@@ -375,14 +385,66 @@ extension CodexAppServerMonitor {
             return nil
         }
 
+        let actions = approvalActions(for: kind, params: params)
+
         return CodexApprovalRequest(
             agentId: agentId,
             requestId: requestId,
             threadId: threadId,
             turnId: turnId,
             itemId: itemId,
-            kind: kind
+            kind: kind,
+            actions: actions
         )
+    }
+
+    nonisolated static func approvalActions(
+        for kind: CodexApprovalKind,
+        params: [String: Any]
+    ) -> [ApprovalAction] {
+        guard kind.supportsDecisions else {
+            return [ApprovalAction(id: "dismiss", label: "Dismiss", kind: .dismiss)]
+        }
+
+        var actions: [ApprovalAction] = [
+            ApprovalAction(id: "approve", label: "Yes, proceed", kind: .allowOnce),
+        ]
+
+        if let amendment = proposedExecpolicyAmendment(from: params), !amendment.isEmpty {
+            let prefix = amendment.joined(separator: " ")
+            actions.append(
+                ApprovalAction(
+                    id: "approve_for_prefix",
+                    label: "Yes, and don't ask again for commands that start with `\(prefix)`",
+                    kind: .allowAlways,
+                    metadata: ApprovalActionMetadata(
+                        prefixRule: amendment,
+                        execpolicyAmendment: amendment
+                    )
+                )
+            )
+        }
+
+        actions.append(
+            ApprovalAction(
+                id: "decline",
+                label: kind.declineLabel,
+                kind: .rejectOnce,
+                isDestructive: true
+            )
+        )
+
+        return actions
+    }
+
+    nonisolated static func proposedExecpolicyAmendment(from params: [String: Any]) -> [String]? {
+        if let amendment = params["proposedExecpolicyAmendment"] as? [String], !amendment.isEmpty {
+            return amendment
+        }
+        if let amendment = params["proposed_execpolicy_amendment"] as? [String], !amendment.isEmpty {
+            return amendment
+        }
+        return nil
     }
 
     nonisolated static func transcriptItem(from item: [String: Any]) -> CodexTranscriptItem? {

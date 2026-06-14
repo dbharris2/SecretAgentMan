@@ -96,9 +96,21 @@ struct PromptQuestion: Equatable, Identifiable {
 
 enum ApprovalActionKind: String, Equatable {
     case allowOnce
+    case allowForSession
     case allowAlways
     case rejectOnce
     case rejectAlways
+    case dismiss
+}
+
+struct ApprovalActionMetadata: Equatable {
+    let prefixRule: [String]?
+    let execpolicyAmendment: [String]?
+
+    init(prefixRule: [String]? = nil, execpolicyAmendment: [String]? = nil) {
+        self.prefixRule = prefixRule
+        self.execpolicyAmendment = execpolicyAmendment
+    }
 }
 
 struct ApprovalAction: Equatable, Identifiable {
@@ -106,12 +118,20 @@ struct ApprovalAction: Equatable, Identifiable {
     let label: String
     let kind: ApprovalActionKind?
     let isDestructive: Bool
+    let metadata: ApprovalActionMetadata?
 
-    init(id: String, label: String, kind: ApprovalActionKind? = nil, isDestructive: Bool = false) {
+    init(
+        id: String,
+        label: String,
+        kind: ApprovalActionKind? = nil,
+        isDestructive: Bool = false,
+        metadata: ApprovalActionMetadata? = nil
+    ) {
         self.id = id
         self.label = label
         self.kind = kind
         self.isDestructive = isDestructive
+        self.metadata = metadata
     }
 }
 

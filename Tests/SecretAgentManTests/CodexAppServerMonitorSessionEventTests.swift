@@ -73,13 +73,17 @@ struct CodexAppServerMonitorSessionEventTests {
             threadId: "t",
             turnId: "T1",
             itemId: "item-1",
-            kind: .command(command: "rm -rf", reason: "dangerous")
+            kind: .command(command: "rm -rf", reason: "dangerous"),
+            actions: [
+                ApprovalAction(id: "approve", label: "Yes, proceed", kind: .allowOnce),
+                ApprovalAction(id: "decline", label: "No, and tell Codex what to do differently", kind: .rejectOnce, isDestructive: true),
+            ]
         )
         let prompt = CodexAppServerMonitor.mapApprovalPrompt(request)
         #expect(prompt.id == "item-1")
         #expect(prompt.title == "Command Approval")
-        #expect(prompt.actions.map(\.id) == ["allow", "deny"])
-        #expect(prompt.actions.map(\.label) == ["Allow", "Deny"])
+        #expect(prompt.actions.map(\.id) == ["approve", "decline"])
+        #expect(prompt.actions.map(\.label) == ["Yes, proceed", "No, and tell Codex what to do differently"])
         #expect(prompt.actions.map(\.isDestructive) == [false, true])
         #expect(prompt.supportsDecisions)
     }
@@ -91,11 +95,33 @@ struct CodexAppServerMonitorSessionEventTests {
             threadId: "t",
             turnId: "T1",
             itemId: "item-2",
-            kind: .unsupportedPermissions(reason: "explain")
+            kind: .unsupportedPermissions(reason: "explain"),
+            actions: [ApprovalAction(id: "dismiss", label: "Dismiss", kind: .dismiss)]
         )
         let prompt = CodexAppServerMonitor.mapApprovalPrompt(request)
         #expect(prompt.actions.map(\.id) == ["dismiss"])
         #expect(prompt.supportsDecisions == false)
+    }
+
+    @Test func approvalRequestParsesPrefixRuleActionWhenPresent() {
+        let request = CodexAppServerMonitor.approvalRequest(
+            agentId: UUID(),
+            requestId: 3,
+            method: "item/commandExecution/requestApproval",
+            params: [
+                "threadId": "t",
+                "turnId": "T1",
+                "itemId": "item-3",
+                "command": "just build",
+                "reason": "Need approval",
+                "proposedExecpolicyAmendment": ["just", "build"],
+            ]
+        )
+
+        let actions = request?.actions ?? []
+        #expect(actions.map(\.id) == ["approve", "approve_for_prefix", "decline"])
+        #expect(actions[1].metadata?.prefixRule == ["just", "build"])
+        #expect(actions[1].metadata?.execpolicyAmendment == ["just", "build"])
     }
 
     // MARK: - mapUserInputPrompt

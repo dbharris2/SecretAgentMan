@@ -248,8 +248,8 @@ final class CodexAppServerMonitor {
         observers[agentId]?.setSandboxMode(mode)
     }
 
-    func respondToApproval(for agentId: UUID, accept: Bool) {
-        observers[agentId]?.respondToApproval(accept: accept)
+    func respondToApproval(for agentId: UUID, action: ApprovalAction) {
+        observers[agentId]?.respondToApproval(action: action)
     }
 
     func interrupt(for agentId: UUID) {
@@ -687,16 +687,44 @@ private final class Observer: @unchecked Sendable {
         }
     }
 
-    func respondToApproval(accept: Bool) {
+    func respondToApproval(action: ApprovalAction) {
         queue.async { [weak self] in
             guard let self,
                   let pendingRequest = self.pendingApprovalRequest
             else { return }
 
-            if case .unsupportedPermissions = pendingRequest.request.kind { return }
+            if action.kind == .allowAlways,
+               let prefixRule = action.metadata?.prefixRule {
+                try? CodexRulesStore.allowCommandPrefix(prefixRule)
+            }
+
+            if case .unsupportedPermissions = pendingRequest.request.kind {
+                self.pendingApprovalRequest = nil
+                self.onApprovalResolved(self.agent.id)
+                return
+            }
+
+            let decision: JSONValue = switch action.kind {
+            case .allowOnce:
+                .string("accept")
+            case .allowForSession:
+                .string("acceptForSession")
+            case .allowAlways:
+                if let amendment = action.metadata?.execpolicyAmendment, !amendment.isEmpty {
+                    .object([
+                        "acceptWithExecpolicyAmendment": .object([
+                            "execpolicy_amendment": .array(amendment.map(JSONValue.string)),
+                        ]),
+                    ])
+                } else {
+                    .string("accept")
+                }
+            case .rejectOnce, .rejectAlways, .dismiss, .none:
+                .string("decline")
+            }
 
             let response = CodexProtocol.RPCResponse.approvalDecision(
-                id: pendingRequest.requestId, accept: accept
+                id: pendingRequest.requestId, decision: decision
             )
 
             self.pendingApprovalRequest = nil

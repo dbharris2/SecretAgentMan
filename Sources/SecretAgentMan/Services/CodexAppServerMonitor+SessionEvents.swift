@@ -87,17 +87,11 @@ extension CodexAppServerMonitor {
     }
 
     static func mapApprovalPrompt(_ request: CodexApprovalRequest) -> ApprovalPrompt {
-        let actions: [ApprovalAction] = request.kind.supportsDecisions
-            ? [
-                ApprovalAction(id: "allow", label: "Allow"),
-                ApprovalAction(id: "deny", label: "Deny", isDestructive: true),
-            ]
-            : [ApprovalAction(id: "dismiss", label: "Dismiss")]
-        return ApprovalPrompt(
+        ApprovalPrompt(
             id: request.itemId,
             title: request.kind.title,
             message: request.kind.detail,
-            actions: actions
+            actions: request.actions
         )
     }
 
