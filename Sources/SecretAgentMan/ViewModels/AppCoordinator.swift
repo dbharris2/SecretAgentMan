@@ -163,8 +163,8 @@ final class AppCoordinator {
         claudeMonitor.sendMessage(for: agentId, text: text, images: images)
     }
 
-    func answerClaudeApproval(for agentId: UUID, accept: Bool) {
-        claudeMonitor.respondToApproval(for: agentId, accept: accept)
+    func answerClaudeApproval(for agentId: UUID, action: ApprovalAction) {
+        claudeMonitor.respondToApproval(for: agentId, action: action)
     }
 
     func answerClaudeElicitation(for agentId: UUID, answer: String) {

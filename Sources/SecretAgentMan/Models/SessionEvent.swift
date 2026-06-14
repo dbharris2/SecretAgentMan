@@ -106,10 +106,16 @@ enum ApprovalActionKind: String, Equatable {
 struct ApprovalActionMetadata: Equatable {
     let prefixRule: [String]?
     let execpolicyAmendment: [String]?
+    let shellAllowRule: String?
 
-    init(prefixRule: [String]? = nil, execpolicyAmendment: [String]? = nil) {
+    init(
+        prefixRule: [String]? = nil,
+        execpolicyAmendment: [String]? = nil,
+        shellAllowRule: String? = nil
+    ) {
         self.prefixRule = prefixRule
         self.execpolicyAmendment = execpolicyAmendment
+        self.shellAllowRule = shellAllowRule
     }
 }
 
