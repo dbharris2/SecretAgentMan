@@ -16,6 +16,7 @@ struct AutoScrollingScrollView<Content: View, Overlay: View, Trigger: Equatable>
     @Binding var distanceFromBottom: CGFloat
     @ViewBuilder let content: (ScrollViewProxy) -> Content
     @ViewBuilder let overlay: (_ distance: CGFloat, _ scrollToBottom: @escaping () -> Void) -> Overlay
+    @State private var isPinnedToBottom = true
 
     private static var bottomAnchor: String {
         "auto-scrolling-bottom"
@@ -36,82 +37,67 @@ struct AutoScrollingScrollView<Content: View, Overlay: View, Trigger: Equatable>
     }
 
     var body: some View {
-        // `.global` is the most reliable coordinate space here — preference
-        // pipelines tied to the ScrollView's local space silently returned
-        // zero in macOS 14 + Swift 6 strict concurrency mode.
-        GeometryReader { outer in
-            let scrollBottomY = outer.frame(in: .global).maxY
-            let viewportHeight = outer.size.height
-            ScrollViewReader { proxy in
-                let scrollToBottom: () -> Void = {
-                    proxy.scrollTo(Self.bottomAnchor, anchor: .bottom)
+        ScrollViewReader { proxy in
+            let scrollToBottom: () -> Void = {
+                proxy.scrollTo(Self.bottomAnchor, anchor: .bottom)
+            }
+            ZStack(alignment: .bottomTrailing) {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 0) {
+                        content(proxy)
+                        Color.clear
+                            .frame(height: 1)
+                            .id(Self.bottomAnchor)
+                    }
                 }
-                ZStack(alignment: .bottomTrailing) {
-                    ScrollView {
-                        VStack(alignment: .leading, spacing: 0) {
-                            content(proxy)
-                            Color.clear
-                                .frame(height: 1)
-                                .id(Self.bottomAnchor)
-                                .background(
-                                    GeometryReader { inner in
-                                        // Round to whole points so subpixel
-                                        // scroll deltas don't trigger a parent
-                                        // re-render on every frame of inertia.
-                                        let y = inner.frame(in: .global).maxY
-                                        let raw = max(0, y - scrollBottomY)
-                                        Color.clear.preference(
-                                            key: AutoScrollDistanceKey.self,
-                                            value: raw.rounded()
-                                        )
-                                    }
-                                )
-                        }
-                    }
-                    // `.initialOffset` gives us bottom-start on first appear
-                    // without touching ongoing layout — `.sizeChanges` and the
-                    // unparameterized form both leave NSScrollView's tracking
-                    // areas stale on macOS (cursor freezes, left-clicks miss
-                    // until any user scroll). Ongoing re-pin during MarkdownUI's
-                    // multi-pass settling is handled imperatively by the
-                    // `onScrollGeometryChange` handler below.
-                    .defaultScrollAnchor(.bottom, for: .initialOffset)
-                    .onScrollGeometryChange(for: CGFloat.self) { geometry in
-                        geometry.contentSize.height
-                    } action: { oldHeight, newHeight in
-                        if newHeight > oldHeight, distanceFromBottom <= pinThreshold {
-                            scrollToBottom()
-                        }
-                    }
-                    .onPreferenceChange(AutoScrollDistanceKey.self) { distanceFromBottom = $0 }
-                    // Content-size growth covers most cases; `trigger` catches
-                    // signals that don't change content size (e.g. thinking-bubble
-                    // toggles that swap one bubble for another of equal height).
-                    // `initial: true` also handles first appearance, since
-                    // `onScrollGeometryChange` only fires on subsequent changes.
-                    .onChange(of: trigger, initial: true) { _, _ in
-                        if distanceFromBottom <= pinThreshold {
-                            scrollToBottom()
-                        }
-                    }
-                    // Viewport shrinks (e.g. composer growing) don't change
-                    // content size, so they need their own re-scroll trigger.
-                    .onChange(of: viewportHeight) { _, _ in
-                        if distanceFromBottom <= pinThreshold {
-                            scrollToBottom()
-                        }
-                    }
+                // `.initialOffset` gives us bottom-start on first appear
+                // without touching ongoing layout — `.sizeChanges` and the
+                // unparameterized form both leave NSScrollView's tracking
+                // areas stale on macOS (cursor freezes, left-clicks miss
+                // until any user scroll).
+                .defaultScrollAnchor(.bottom, for: .initialOffset)
+                .onScrollGeometryChange(for: ScrollMetrics.self) { geometry in
+                    ScrollMetrics(
+                        contentHeight: geometry.contentSize.height,
+                        contentOffsetY: geometry.contentOffset.y,
+                        viewportHeight: geometry.containerSize.height
+                    )
+                } action: { oldMetrics, newMetrics in
+                    let oldDistance = oldMetrics.distanceFromBottom
+                    let newDistance = newMetrics.distanceFromBottom.rounded()
+                    let contentGrew = newMetrics.contentHeight > oldMetrics.contentHeight
+                    let viewportShrank = newMetrics.viewportHeight < oldMetrics.viewportHeight
+                    let wasPinned = isPinnedToBottom || oldDistance <= pinThreshold
 
-                    overlay(distanceFromBottom, scrollToBottom)
+                    distanceFromBottom = newDistance
+
+                    if contentGrew || viewportShrank, wasPinned {
+                        scrollToBottom()
+                        isPinnedToBottom = true
+                    } else {
+                        isPinnedToBottom = newDistance <= pinThreshold
+                    }
                 }
+                // `trigger` catches equal-height swaps such as thinking/pending
+                // state changes where the content-height callback does not fire.
+                .onChange(of: trigger, initial: true) { _, _ in
+                    if isPinnedToBottom {
+                        scrollToBottom()
+                    }
+                }
+
+                overlay(distanceFromBottom, scrollToBottom)
             }
         }
     }
 }
 
-private struct AutoScrollDistanceKey: PreferenceKey {
-    static let defaultValue: CGFloat = 0
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = nextValue()
+private struct ScrollMetrics: Equatable {
+    let contentHeight: CGFloat
+    let contentOffsetY: CGFloat
+    let viewportHeight: CGFloat
+
+    var distanceFromBottom: CGFloat {
+        max(0, contentHeight - (contentOffsetY + viewportHeight))
     }
 }
