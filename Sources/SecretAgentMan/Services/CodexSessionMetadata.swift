@@ -439,12 +439,92 @@ extension CodexAppServerMonitor {
 
     nonisolated static func proposedExecpolicyAmendment(from params: [String: Any]) -> [String]? {
         if let amendment = params["proposedExecpolicyAmendment"] as? [String], !amendment.isEmpty {
-            return amendment
+            return normalizedExecpolicyAmendment(amendment)
         }
         if let amendment = params["proposed_execpolicy_amendment"] as? [String], !amendment.isEmpty {
-            return amendment
+            return normalizedExecpolicyAmendment(amendment)
         }
         return nil
+    }
+
+    nonisolated static func normalizedExecpolicyAmendment(_ amendment: [String]) -> [String] {
+        guard amendment.count >= 3 else { return amendment }
+
+        let executable = URL(fileURLWithPath: amendment[0]).lastPathComponent.lowercased()
+        guard ["sh", "bash", "zsh"].contains(executable),
+              amendment[1] == "-lc"
+        else { return amendment }
+
+        let prefix = categoricalCommandPrefix(fromShellCommand: amendment[2])
+        return prefix.isEmpty ? amendment : prefix
+    }
+
+    private nonisolated static func categoricalCommandPrefix(fromShellCommand command: String) -> [String] {
+        let shellOperators = Set(["|", "||", "&&", ";", "(", ")", "<", ">", ">>", "<<"])
+        let tokens = shellWords(in: command)
+
+        var prefix = [String]()
+        for token in tokens {
+            if shellOperators.contains(token) || token == "--" || token.hasPrefix("-") {
+                break
+            }
+            prefix.append(token)
+            if prefix.count == 3 {
+                break
+            }
+        }
+
+        return prefix
+    }
+
+    private nonisolated static func shellWords(in command: String) -> [String] {
+        var tokens: [String] = []
+        var current = ""
+        var quote: Character?
+        var escaping = false
+
+        for character in command {
+            if escaping {
+                current.append(character)
+                escaping = false
+                continue
+            }
+
+            if character == "\\" && quote != "'" {
+                escaping = true
+                continue
+            }
+
+            if let currentQuote = quote {
+                if character == currentQuote {
+                    quote = nil
+                } else {
+                    current.append(character)
+                }
+                continue
+            }
+
+            if character == "\"" || character == "'" {
+                quote = character
+                continue
+            }
+
+            if character.isWhitespace {
+                self.append(current, to: &tokens)
+                current = ""
+                continue
+            }
+
+            current.append(character)
+        }
+
+        self.append(current, to: &tokens)
+        return tokens
+    }
+
+    private nonisolated static func append(_ token: String, to tokens: inout [String]) {
+        guard !token.isEmpty else { return }
+        tokens.append(token)
     }
 
     nonisolated static func transcriptItem(from item: [String: Any]) -> CodexTranscriptItem? {
