@@ -124,6 +124,32 @@ struct CodexAppServerMonitorSessionEventTests {
         #expect(actions[1].metadata?.execpolicyAmendment == ["just", "build"])
     }
 
+    @Test func approvalRequestNormalizesShellWrappedPrefixRule() {
+        let request = CodexAppServerMonitor.approvalRequest(
+            agentId: UUID(),
+            requestId: 4,
+            method: "item/commandExecution/requestApproval",
+            params: [
+                "threadId": "t",
+                "turnId": "T1",
+                "itemId": "item-4",
+                "command": "/bin/zsh -lc 'gh pr edit 156 --title \"patch: test\" --body \"body\"'",
+                "reason": "Need approval",
+                "proposedExecpolicyAmendment": [
+                    "/bin/zsh",
+                    "-lc",
+                    "gh pr edit 156 --title \"patch: test\" --body \"body\"",
+                ],
+            ]
+        )
+
+        let actions = request?.actions ?? []
+        #expect(actions.map(\.id) == ["approve", "approve_for_prefix", "decline"])
+        #expect(actions[1].label == "Yes, and don't ask again for commands that start with `gh pr edit`")
+        #expect(actions[1].metadata?.prefixRule == ["gh", "pr", "edit"])
+        #expect(actions[1].metadata?.execpolicyAmendment == ["gh", "pr", "edit"])
+    }
+
     // MARK: - mapUserInputPrompt
 
     @Test func mapUserInputPromptNormalizesEmptyDescriptions() {
