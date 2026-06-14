@@ -161,6 +161,54 @@ struct DiffServiceTests {
         #expect(diff.count > 10000)
     }
 
+    @Test
+    func detectsGraphiteRepoFromGraphiteConfig() throws {
+        let root = try makeTemporaryDirectory()
+        try FileManager.default.createDirectory(at: root.appendingPathComponent(".git"), withIntermediateDirectories: true)
+        FileManager.default.createFile(
+            atPath: root.appendingPathComponent(".git/.graphite_repo_config").path,
+            contents: Data()
+        )
+
+        #expect(service.detectVCS(in: root) == .graphite)
+    }
+
+    @Test
+    func detectsJJRepoBeforeGraphiteRepo() throws {
+        let root = try makeTemporaryDirectory()
+        try FileManager.default.createDirectory(at: root.appendingPathComponent(".jj"), withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: root.appendingPathComponent(".git"), withIntermediateDirectories: true)
+        FileManager.default.createFile(
+            atPath: root.appendingPathComponent(".git/.graphite_repo_config").path,
+            contents: Data()
+        )
+
+        #expect(service.detectVCS(in: root) == .jj)
+    }
+
+    @Test
+    func detectsPlainGitRepoWhenGraphiteConfigIsAbsent() throws {
+        let root = try makeTemporaryDirectory()
+        try FileManager.default.createDirectory(at: root.appendingPathComponent(".git"), withIntermediateDirectories: true)
+
+        #expect(service.detectVCS(in: root) == .git)
+    }
+
+    @Test
+    func supportsLogPanelOnlyForJJAndGraphite() {
+        #expect(DiffService.VCSType.jj.supportsLogPanel)
+        #expect(DiffService.VCSType.graphite.supportsLogPanel)
+        #expect(!DiffService.VCSType.git.supportsLogPanel)
+        #expect(!DiffService.VCSType.none.supportsLogPanel)
+    }
+
+    private func makeTemporaryDirectory() throws -> URL {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        return root
+    }
+
     private func runGit(_ args: [String], in directory: URL) throws {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/git")

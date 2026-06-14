@@ -42,6 +42,11 @@ struct StatusBarView: View {
             .filter { !openSessionIds.contains($0.id) }
     }
 
+    private var selectedRepoVCSType: DiffService.VCSType? {
+        guard let folder = selectedAgent?.folder else { return nil }
+        return coordinator.repositoryMonitor.vcsType(for: folder) ?? DiffService().detectVCS(in: folder)
+    }
+
     var body: some View {
         @Bindable var coordinator = coordinator
         let mcpServers = mcpServers
@@ -61,9 +66,8 @@ struct StatusBarView: View {
                 panelToggleButton(icon: "doc.text", panel: .plans, label: "Plans")
                 panelToggleImageButton(image: "PRIcon", panel: .prs, label: "Pull Requests")
                 panelToggleButton(icon: "exclamationmark.circle", panel: .issues, label: "Issues")
-                if let folder = selectedAgent?.folder,
-                   FileManager.default.fileExists(atPath: folder.appendingPathComponent(".jj").path) {
-                    panelToggleButton(icon: "arrow.triangle.branch", panel: .jj, label: "JJ")
+                if let vcsType = selectedRepoVCSType, vcsType.supportsLogPanel {
+                    panelToggleButton(icon: "arrow.triangle.branch", panel: .vcs, label: "VCS")
                 }
             }
 

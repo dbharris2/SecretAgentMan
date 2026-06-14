@@ -238,6 +238,9 @@ final class AppCoordinator {
         guard let rawValue = userDefaults.string(forKey: UserDefaultsKeys.activeSidebarPanel) else {
             return nil
         }
+        if rawValue == "jj" {
+            return .vcs
+        }
         return SidebarPanel(rawValue: rawValue)
     }
 

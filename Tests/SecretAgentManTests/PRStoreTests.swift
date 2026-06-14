@@ -67,6 +67,38 @@ struct PRStoreTests {
         #expect(prStore.selectedPRChanges.isEmpty)
     }
 
+    @Test
+    func repositoryMonitorTracksRepoTypesForJJGraphiteAndGitFolders() async throws {
+        let store = AgentStore(loadFromDisk: false)
+        let root = try makeTemporaryDirectory()
+        let jjFolder = root.appendingPathComponent("jj-repo", isDirectory: true)
+        let graphiteFolder = root.appendingPathComponent("graphite-repo", isDirectory: true)
+        let gitFolder = root.appendingPathComponent("git-repo", isDirectory: true)
+
+        try FileManager.default.createDirectory(at: jjFolder.appendingPathComponent(".jj"), withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: graphiteFolder.appendingPathComponent(".git"), withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: gitFolder.appendingPathComponent(".git"), withIntermediateDirectories: true)
+        FileManager.default.createFile(
+            atPath: graphiteFolder.appendingPathComponent(".git/.graphite_repo_config").path,
+            contents: Data()
+        )
+
+        _ = store.addAgent(name: "JJ", folder: jjFolder)
+        _ = store.addAgent(name: "Graphite", folder: graphiteFolder)
+        _ = store.addAgent(name: "Git", folder: gitFolder)
+
+        let monitor = RepositoryMonitor(store: store)
+        defer { monitor.stop() }
+
+        monitor.start()
+
+        try await assertEventually {
+            monitor.vcsType(for: jjFolder) == .jj
+                && monitor.vcsType(for: graphiteFolder) == .graphite
+                && monitor.vcsType(for: gitFolder) == .git
+        }
+    }
+
     private func makeStore(store: AgentStore) -> PRStore {
         let repositoryMonitor = RepositoryMonitor(store: store)
         return PRStore(
@@ -74,6 +106,27 @@ struct PRStoreTests {
             eventBus: AgentEventBus(loadFromDisk: false),
             repositoryMonitor: repositoryMonitor
         )
+    }
+
+    private func makeTemporaryDirectory() throws -> URL {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        return root
+    }
+
+    private func assertEventually(
+        timeoutNanoseconds: UInt64 = 1_000_000_000,
+        pollNanoseconds: UInt64 = 20_000_000,
+        condition: @escaping @MainActor () -> Bool
+    ) async throws {
+        let deadline = DispatchTime.now().uptimeNanoseconds + timeoutNanoseconds
+        while DispatchTime.now().uptimeNanoseconds < deadline {
+            if await condition() { return }
+            try await Task.sleep(nanoseconds: pollNanoseconds)
+        }
+        Issue.record("Condition was not satisfied before timeout")
+        throw CancellationError()
     }
 
     private func makePR(repository: String, number: Int) -> GitHubPRService.GitHubPR {

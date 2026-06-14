@@ -22,4 +22,16 @@ struct AppCoordinatorTests {
         restored.activeSidebarPanel = nil
         #expect(defaults.string(forKey: UserDefaultsKeys.activeSidebarPanel) == nil)
     }
+
+    @Test
+    func legacyJJPanelStateRestoresAsVCS() throws {
+        let suiteName = "AppCoordinatorTests.sidebarMigration.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        defaults.set("jj", forKey: UserDefaultsKeys.activeSidebarPanel)
+
+        let restored = AppCoordinator(loadStateFromDisk: false, userDefaults: defaults)
+
+        #expect(restored.activeSidebarPanel == .vcs)
+    }
 }

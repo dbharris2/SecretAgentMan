@@ -123,8 +123,10 @@ struct SidebarView: View {
                     }
                 }
 
-                if let branch = coordinator.repositoryMonitor.branchNames[group.key] {
-                    BranchInfoView(branchName: branch)
+                let branch = coordinator.repositoryMonitor.branchNames[group.key]
+                let vcsType = coordinator.repositoryMonitor.repoTypes[group.key]
+                if branch != nil || vcsType != nil {
+                    BranchInfoView(branchName: branch, vcsType: vcsType)
                 }
             }
 

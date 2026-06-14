@@ -1,6 +1,12 @@
 import SwiftUI
 
-struct JJLogView: View {
+struct VCSLogView: View {
+    struct CommandSpec: Equatable {
+        let executablePath: String
+        let arguments: [String]
+        let perfLabel: String
+    }
+
     @Environment(AppCoordinator.self) private var coordinator
     @Environment(\.appTheme) private var theme
     @State private var parsedLog = AttributedString()
@@ -15,13 +21,18 @@ struct JJLogView: View {
         coordinator.store.selectedAgent?.folder
     }
 
+    private var vcsType: DiffService.VCSType {
+        guard let folder else { return .none }
+        return coordinator.repositoryMonitor.vcsType(for: folder) ?? DiffService().detectVCS(in: folder)
+    }
+
     var body: some View {
         Group {
             if parsedLog.characters.isEmpty, !isLoading {
                 ContentUnavailableView(
-                    "No JJ Log",
+                    Self.emptyStateTitle(for: vcsType),
                     systemImage: "arrow.triangle.branch",
-                    description: Text("Select an agent in a jj repository.")
+                    description: Text(Self.emptyStateDescription(for: vcsType))
                 )
             } else {
                 ScrollView(.vertical) {
@@ -80,63 +91,141 @@ struct JJLogView: View {
         isLoading = true
         let currentTheme = theme
         let loadStart = CFAbsoluteTimeGetCurrent()
+        let vcsType = self.vcsType
         Task.detached {
             let t0 = CFAbsoluteTimeGetCurrent()
-            let output = Self.runJJ(in: folder)
-            PerfLogger.log("JJLogView.runJJ", start: t0, details: "folder=\(folder.lastPathComponent)")
+            let output = Self.runLog(in: folder, vcsType: vcsType)
+            PerfLogger.log("VCSLogView.runLog", start: t0, details: "folder=\(folder.lastPathComponent) vcs=\(vcsType.displayName)")
             let t1 = CFAbsoluteTimeGetCurrent()
             let parsed = Self.parseANSI(output, theme: currentTheme)
-            PerfLogger.log("JJLogView.parseANSI", start: t1, details: "folder=\(folder.lastPathComponent)")
+            PerfLogger.log("VCSLogView.parseANSI", start: t1, details: "folder=\(folder.lastPathComponent)")
             await MainActor.run {
                 guard requestID == latestRequestID else { return }
                 parsedLog = parsed
                 isLoading = false
-                PerfLogger.log("JJLogView.loadLog.total", start: loadStart, details: "folder=\(folder.lastPathComponent) trigger=\(trigger)")
+                PerfLogger.log("VCSLogView.loadLog.total", start: loadStart, details: "folder=\(folder.lastPathComponent) trigger=\(trigger)")
             }
         }
     }
 
-    private nonisolated static func jjPath() -> String? {
-        let candidates = [
-            NSHomeDirectory() + "/.local/bin/jj",
-            NSHomeDirectory() + "/.cargo/bin/jj",
-            "/opt/homebrew/bin/jj",
-            "/usr/local/bin/jj",
-        ]
-        return candidates.first { FileManager.default.isExecutableFile(atPath: $0) }
+    private nonisolated static func emptyStateTitle(for vcsType: DiffService.VCSType) -> String {
+        switch vcsType {
+        case .jj:
+            "No JJ Log"
+        case .graphite:
+            "No Graphite Log"
+        case .git, .none:
+            "No VCS Log"
+        }
     }
 
-    private nonisolated static func runJJ(in folder: URL) -> String {
-        guard let jj = jjPath() else {
-            return "jj not found. Install with: brew install jj"
+    private nonisolated static func emptyStateDescription(for vcsType: DiffService.VCSType) -> String {
+        switch vcsType {
+        case .jj:
+            "Select an agent in a Jujutsu repository."
+        case .graphite:
+            "Select an agent in a Graphite-initialized repository."
+        case .git:
+            "Plain Git repositories do not have a VCS log panel."
+        case .none:
+            "Select an agent in a Jujutsu or Graphite repository."
         }
+    }
+
+    nonisolated static func commandSpec(for vcsType: DiffService.VCSType) -> CommandSpec? {
+        switch vcsType {
+        case .jj:
+            guard let executablePath = executablePath(candidates: [
+                NSHomeDirectory() + "/.local/bin/jj",
+                NSHomeDirectory() + "/.cargo/bin/jj",
+                "/opt/homebrew/bin/jj",
+                "/usr/local/bin/jj",
+            ]) else {
+                return nil
+            }
+            return CommandSpec(
+                executablePath: executablePath,
+                arguments: ["log", "--no-pager", "--color=always", "--limit=50"],
+                perfLabel: "jj"
+            )
+        case .graphite:
+            guard let executablePath = executablePath(candidates: [
+                NSHomeDirectory() + "/.local/bin/gt",
+                "/opt/homebrew/bin/gt",
+                "/usr/local/bin/gt",
+            ]) else {
+                return nil
+            }
+            return CommandSpec(
+                executablePath: executablePath,
+                arguments: ["log", "short"],
+                perfLabel: "graphite"
+            )
+        case .git, .none:
+            return nil
+        }
+    }
+
+    private nonisolated static func executablePath(candidates: [String]) -> String? {
+        candidates.first { FileManager.default.isExecutableFile(atPath: $0) }
+    }
+
+    private nonisolated static func runLog(in folder: URL, vcsType: DiffService.VCSType) -> String {
+        guard let spec = commandSpec(for: vcsType) else {
+            return switch vcsType {
+            case .jj:
+                "jj not found. Install with: brew install jj"
+            case .graphite:
+                "gt not found. Install Graphite CLI first."
+            case .git:
+                "Plain Git repositories do not have a VCS log panel."
+            case .none:
+                ""
+            }
+        }
+
         let process = Process()
-        let pipe = Pipe()
-        process.executableURL = URL(fileURLWithPath: jj)
-        process.arguments = ["log", "--no-pager", "--color=always", "--limit=50"]
+        let outputPipe = Pipe()
+        let errorPipe = Pipe()
+        process.executableURL = URL(fileURLWithPath: spec.executablePath)
+        process.arguments = spec.arguments
         process.currentDirectoryURL = folder
         var env = ProcessInfo.processInfo.environment
         env["TERM"] = "dumb"
         process.environment = env
-        process.standardOutput = pipe
-        process.standardError = FileHandle.nullDevice
+        process.standardOutput = outputPipe
+        process.standardError = errorPipe
 
         do {
             try process.run()
             process.waitUntilExit()
         } catch {
-            return "Failed to run jj: \(error.localizedDescription)"
+            return "Failed to run \(spec.perfLabel): \(error.localizedDescription)"
         }
 
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        return String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let output = String(
+            data: outputPipe.fileHandleForReading.readDataToEndOfFile(),
+            encoding: .utf8
+        )?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let error = String(
+            data: errorPipe.fileHandleForReading.readDataToEndOfFile(),
+            encoding: .utf8
+        )?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+
+        guard process.terminationStatus == 0 else {
+            if !error.isEmpty { return error }
+            if !output.isEmpty { return output }
+            return "Failed to run \(spec.perfLabel)."
+        }
+
+        return output
     }
 
     // MARK: - ANSI Color Parsing
 
-    private static let ansi256Base = [30, 31, 32, 33, 34, 35, 36, 37, 90, 91, 92, 93, 94, 95, 96, 97]
+    private nonisolated static let ansi256Base = [30, 31, 32, 33, 34, 35, 36, 37, 90, 91, 92, 93, 94, 95, 96, 97]
 
-    private static func colorForBasicCode(_ code: Int, theme: AppTheme) -> Color? {
+    private nonisolated static func colorForBasicCode(_ code: Int, theme: AppTheme) -> Color? {
         switch code {
         case 30, 90: theme.foreground.opacity(0.5)
         case 31, 91: theme.red
@@ -150,7 +239,7 @@ struct JJLogView: View {
         }
     }
 
-    private static func applySGR(_ codes: [Int], color: inout Color?, bold: inout Bool, theme: AppTheme) {
+    private nonisolated static func applySGR(_ codes: [Int], color: inout Color?, bold: inout Bool, theme: AppTheme) {
         var i = 0
         while i < codes.count {
             let code = codes[i]
