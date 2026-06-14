@@ -73,16 +73,56 @@ struct ClaudeStreamMonitorSessionEventTests {
             requestId: "req-1",
             toolName: "Write",
             displayName: "Write File",
-            inputDescription: "file_path: /tmp/x"
+            inputDescription: "file_path: /tmp/x",
+            actions: [
+                ApprovalAction(id: "allow", label: "Yes", kind: .allowOnce),
+                ApprovalAction(id: "deny", label: "No", kind: .rejectOnce, isDestructive: true),
+            ]
         )
         let prompt = ClaudeStreamMonitor.mapApprovalPrompt(request)
         #expect(prompt.id == "req-1")
         #expect(prompt.title == "Write File")
         #expect(prompt.message == "file_path: /tmp/x")
         #expect(prompt.actions.map(\.id) == ["allow", "deny"])
-        #expect(prompt.actions.map(\.label) == ["Allow", "Deny"])
+        #expect(prompt.actions.map(\.label) == ["Yes", "No"])
         #expect(prompt.actions.map(\.isDestructive) == [false, true])
         #expect(prompt.supportsDecisions)
+    }
+
+    @Test func mapApprovalPromptForBashIncludesPersistentRuleAction() {
+        let permission = ClaudeProtocol.PermissionRequest(
+            toolName: "Bash",
+            displayName: "Bash command",
+            input: .object([
+                "command": .string("just build"),
+                "description": .string("Build the project with just"),
+            ])
+        )
+        let request = ClaudeStreamMonitor.approvalRequest(
+            agentId: UUID(),
+            requestId: "req-bash",
+            permission: permission
+        )
+
+        #expect(request.actions.map(\.id) == ["allow", "allow_always", "deny"])
+        #expect(request.actions[1].kind == .allowAlways)
+        #expect(request.actions[1].label == "Yes, and don't ask again for: just build *")
+        #expect(request.actions[1].metadata?.shellAllowRule == "Bash(just build *)")
+    }
+
+    @Test func approvalRequestSkipsPersistentRuleForComplexBashCommand() {
+        let permission = ClaudeProtocol.PermissionRequest(
+            toolName: "Bash",
+            displayName: "Bash command",
+            input: .object(["command": .string("git status | head")])
+        )
+        let request = ClaudeStreamMonitor.approvalRequest(
+            agentId: UUID(),
+            requestId: "req-complex",
+            permission: permission
+        )
+
+        #expect(request.actions.map(\.id) == ["allow", "deny"])
     }
 
     @Test func mapElicitationPromptWithoutOptionsAllowsFreeform() {

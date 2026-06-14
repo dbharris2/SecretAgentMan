@@ -15,6 +15,7 @@ struct ClaudeApprovalRequest: Equatable {
     let toolName: String
     let displayName: String
     let inputDescription: String
+    let actions: [ApprovalAction]
 
     static func == (lhs: Self, rhs: Self) -> Bool {
         lhs.requestId == rhs.requestId
@@ -356,8 +357,8 @@ final class ClaudeStreamMonitor {
         observers[agentId]?.sendMessage(trimmed, images: images)
     }
 
-    func respondToApproval(for agentId: UUID, accept: Bool) {
-        observers[agentId]?.respondToApproval(accept: accept)
+    func respondToApproval(for agentId: UUID, action: ApprovalAction) {
+        observers[agentId]?.respondToApproval(action: action)
     }
 
     func setPermissionMode(for agentId: UUID, mode: String) {
@@ -390,8 +391,71 @@ final class ClaudeStreamMonitor {
             requestId: requestId,
             toolName: permission.toolName,
             displayName: permission.displayName ?? permission.toolName,
-            inputDescription: formatToolInput(permission.input)
+            inputDescription: formatToolInput(permission.input),
+            actions: approvalActions(for: permission)
         )
+    }
+
+    nonisolated static func approvalActions(
+        for permission: ClaudeProtocol.PermissionRequest
+    ) -> [ApprovalAction] {
+        var actions = [ApprovalAction(id: "allow", label: "Yes", kind: .allowOnce)]
+
+        if let shellAllowRule = persistentShellAllowRule(for: permission),
+           let command = shellCommand(for: permission.input) {
+            actions.append(
+                ApprovalAction(
+                    id: "allow_always",
+                    label: "Yes, and don't ask again for: \(command) *",
+                    kind: .allowAlways,
+                    metadata: ApprovalActionMetadata(shellAllowRule: shellAllowRule)
+                )
+            )
+        }
+
+        actions.append(
+            ApprovalAction(
+                id: "deny",
+                label: "No",
+                kind: .rejectOnce,
+                isDestructive: true
+            )
+        )
+        return actions
+    }
+
+    nonisolated static func persistentShellAllowRule(
+        for permission: ClaudeProtocol.PermissionRequest
+    ) -> String? {
+        guard permission.toolName == "Bash",
+              let command = shellCommand(for: permission.input),
+              supportsPersistentShellAllowRule(command)
+        else { return nil }
+        return "Bash(\(command) *)"
+    }
+
+    nonisolated static func shellCommand(for input: JSONValue) -> String? {
+        guard case let .object(fields) = input,
+              case let .string(command)? = fields["command"]
+        else { return nil }
+
+        let trimmed = command.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    private nonisolated static func supportsPersistentShellAllowRule(_ command: String) -> Bool {
+        guard !command.contains("\n"),
+              !command.contains("("),
+              !command.contains(")"),
+              !command.contains("*"),
+              !command.contains("?")
+        else { return false }
+        let allowedScalars = CharacterSet(charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_./:@%+=,-")
+        let tokens = command.split(separator: " ")
+        guard !tokens.isEmpty else { return false }
+        return tokens.allSatisfy { token in
+            token.unicodeScalars.allSatisfy(allowedScalars.contains)
+        }
     }
 
     nonisolated static func transcriptItems(
@@ -754,11 +818,17 @@ final class ClaudeObserver: @unchecked Sendable {
         }
     }
 
-    func respondToApproval(accept: Bool) {
+    func respondToApproval(action: ApprovalAction) {
         queue.async { [weak self] in
             guard let self else { return }
             if let pending = self.pendingApproval {
                 self.pendingApproval = nil
+                if action.kind == .allowAlways,
+                   let shellAllowRule = action.metadata?.shellAllowRule {
+                    try? ClaudeSettingsStore.allowShellRule(shellAllowRule, in: self.agent.folder)
+                }
+
+                let accept = action.kind != .rejectOnce && action.kind != .rejectAlways
                 self.sendPermissionResponse(requestId: pending.requestId, allow: accept, toolInput: pending.toolInput)
                 if accept {
                     self.publishIfChanged(.active)

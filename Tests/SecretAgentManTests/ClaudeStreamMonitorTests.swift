@@ -27,6 +27,7 @@ struct ClaudeStreamMonitorTests {
         #expect(request.displayName == "Write")
         #expect(request.inputDescription.contains("file_path") == true)
         #expect(request.inputDescription.contains("/tmp/test.txt") == true)
+        #expect(request.actions.map(\.id) == ["allow", "deny"])
     }
 
     @Test
@@ -43,6 +44,7 @@ struct ClaudeStreamMonitorTests {
 
         #expect(request.displayName == "Bash")
         #expect(request.inputDescription == "")
+        #expect(request.actions.map(\.id) == ["allow", "deny"])
     }
 
     // MARK: - Assistant Event Parsing
