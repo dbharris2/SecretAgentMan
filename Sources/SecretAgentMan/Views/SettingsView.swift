@@ -21,6 +21,7 @@ struct GeneralSettingsView: View {
     @AppStorage(UserDefaultsKeys.terminalTheme) private var selectedTheme = "Catppuccin Mocha"
     @AppStorage(UserDefaultsKeys.claudePluginDirectory) private var claudePluginDirectory = ""
     @AppStorage(UserDefaultsKeys.defaultAgentFolder) private var defaultAgentFolder = ""
+    @AppStorage(UserDefaultsKeys.codexModel) private var codexModelOverride: String?
     @AppStorage(UserDefaultsKeys.codexApprovalPolicy) private var codexApprovalPolicyOverride: String?
     @AppStorage(UserDefaultsKeys.codexSandboxMode) private var codexSandboxModeOverride: String?
     @AppStorage(UserDefaultsKeys.favoriteThemes) private var favoriteThemesJSON = "[]"
@@ -29,6 +30,10 @@ struct GeneralSettingsView: View {
     @State private var listSelection: String?
 
     @State private var codexConfigDefaults = CodexConfigLoader.loadDefaults()
+
+    private var effectiveCodexModelName: String {
+        CodexModelSettings.effectiveModel(configDefaults: codexConfigDefaults)
+    }
 
     private var effectiveCodexApprovalPolicy: CodexApprovalPolicy {
         if let codexApprovalPolicyOverride,
@@ -50,6 +55,13 @@ struct GeneralSettingsView: View {
         Binding(
             get: { effectiveCodexApprovalPolicy.rawValue },
             set: { codexApprovalPolicyOverride = $0 }
+        )
+    }
+
+    private var codexModelOverrideSelection: Binding<String> {
+        Binding(
+            get: { codexModelOverride ?? "" },
+            set: { codexModelOverride = CodexModelSettings.normalized($0) }
         )
     }
 
@@ -150,6 +162,29 @@ struct GeneralSettingsView: View {
             Section {
                 Text("Codex")
                     .font(.headline)
+
+                VStack(alignment: .leading, spacing: Spacing.md) {
+                    HStack {
+                        TextField("Model ID override", text: codexModelOverrideSelection)
+                            .textFieldStyle(.roundedBorder)
+                            .frame(maxWidth: 240)
+
+                        Menu("Presets") {
+                            ForEach(CodexModelSettings.suggestedModelNames, id: \.self) { modelName in
+                                Button(modelName) {
+                                    codexModelOverride = modelName
+                                }
+                            }
+                        }
+
+                        Button("Use Config Default") {
+                            codexModelOverride = nil
+                        }
+                        .disabled(codexModelOverride == nil)
+                    }
+
+                    Text("Active model: \(effectiveCodexModelName)")
+                }
 
                 VStack(alignment: .leading, spacing: Spacing.md) {
                     HStack {

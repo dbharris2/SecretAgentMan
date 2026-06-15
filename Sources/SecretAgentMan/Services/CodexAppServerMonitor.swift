@@ -248,6 +248,10 @@ final class CodexAppServerMonitor {
         observers[agentId]?.setSandboxMode(mode)
     }
 
+    func setModelName(for agentId: UUID, modelName: String) {
+        observers[agentId]?.setModelName(modelName)
+    }
+
     func respondToApproval(for agentId: UUID, action: ApprovalAction) {
         observers[agentId]?.respondToApproval(action: action)
     }
@@ -325,6 +329,17 @@ final class CodexAppServerMonitor {
             return nil
         }
     }
+
+    nonisolated static func collaborationModePayload(mode: CodexCollaborationMode, modelName: String) -> [String: Any] {
+        [
+            "mode": mode.rawValue,
+            "settings": [
+                "model": modelName,
+                "reasoning_effort": NSNull(),
+                "developer_instructions": NSNull(),
+            ],
+        ]
+    }
 }
 
 private final class Observer: @unchecked Sendable {
@@ -374,7 +389,8 @@ private final class Observer: @unchecked Sendable {
     private var pendingUserInputRequest: PendingUserInputServerRequest?
     private var pendingMessages: [String] = []
     private var sessionFilePath: String?
-    private var rawModelName = "gpt-5.4"
+    private var requestedModelName = CodexModelSettings.storedValue
+    private var reportedModelName: String?
     private var collaborationMode: CodexCollaborationMode = .default
     private var approvalPolicy: CodexApprovalPolicy = .storedValue
     private var sandboxMode: CodexSandboxMode = .storedValue
@@ -512,6 +528,8 @@ private final class Observer: @unchecked Sendable {
     }
 
     private func startOrResumeThread() {
+        requestedModelName = CodexModelSettings.storedValue
+        reportedModelName = nil
         approvalPolicy = .storedValue
         sandboxMode = .storedValue
 
@@ -546,6 +564,7 @@ private final class Observer: @unchecked Sendable {
     private func finishThreadBootstrap(response: [String: Any]) {
         didInitialize = true
 
+        var didRefreshMetadata = false
         if let result = response["result"] as? [String: Any],
            let thread = result["thread"] as? [String: Any] {
             if let threadId = thread["id"] as? String {
@@ -556,11 +575,15 @@ private final class Observer: @unchecked Sendable {
             if let path = thread["path"] as? String {
                 sessionFilePath = path
                 refreshSessionMetadataFromFile(at: path)
+                didRefreshMetadata = true
             }
             if let status = thread["status"] as? [String: Any],
                let mapped = CodexAppServerMonitor.agentState(fromThreadStatus: status) {
                 publishIfChanged(mapped)
             }
+        }
+        if !didRefreshMetadata {
+            publishModelInfo(contextPercent: 0)
         }
 
         Task { @MainActor in
@@ -651,13 +674,7 @@ private final class Observer: @unchecked Sendable {
 
     func setCollaborationMode(_ mode: CodexCollaborationMode) {
         collaborationMode = mode
-        onModelInfo(
-            agent.id,
-            rawModelName,
-            CodexAppServerMonitor.friendlyModelName(rawModelName),
-            mode,
-            0
-        )
+        publishModelInfo(contextPercent: 0)
     }
 
     func setApprovalPolicy(_ policy: CodexApprovalPolicy) {
@@ -666,6 +683,13 @@ private final class Observer: @unchecked Sendable {
 
     func setSandboxMode(_ mode: CodexSandboxMode) {
         sandboxMode = mode
+    }
+
+    func setModelName(_ modelName: String) {
+        guard let normalized = CodexModelSettings.normalized(modelName) else { return }
+        requestedModelName = normalized
+        reportedModelName = nil
+        publishModelInfo(contextPercent: 0)
     }
 
     func respondToUserInput(answers: [String: [String]]) {
@@ -791,51 +815,6 @@ private final class Observer: @unchecked Sendable {
         }
     }
 
-    private func collaborationModePayload() -> [String: Any] {
-        [
-            "mode": collaborationMode.rawValue,
-            "settings": [
-                "model": rawModelName,
-                "reasoning_effort": NSNull(),
-                "developer_instructions": NSNull(),
-            ],
-        ]
-    }
-
-    private func refreshSessionMetadataFromFile(at path: String) {
-        guard let data = FileManager.default.contents(atPath: path),
-              let content = String(data: data, encoding: .utf8)
-        else { return }
-
-        var latestRawModelName = rawModelName
-        var latestModelName = ""
-        var latestMode = collaborationMode
-        var latestContextPercent = 0.0
-
-        for line in content.split(separator: "\n") {
-            guard let data = line.data(using: .utf8),
-                  let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
-            else { continue }
-
-            if let rawModelName = CodexAppServerMonitor.rawModelName(fromSessionEvent: object) {
-                latestRawModelName = rawModelName
-            }
-            if let modelName = CodexAppServerMonitor.modelName(fromSessionEvent: object) {
-                latestModelName = modelName
-            }
-            if let mode = CodexAppServerMonitor.collaborationMode(fromSessionEvent: object) {
-                latestMode = mode
-            }
-            if let contextPercent = CodexAppServerMonitor.contextPercentUsed(fromSessionEvent: object) {
-                latestContextPercent = contextPercent
-            }
-        }
-
-        rawModelName = latestRawModelName
-        collaborationMode = latestMode
-        onModelInfo(agent.id, latestRawModelName, latestModelName, latestMode, latestContextPercent)
-    }
-
     private func consumeStdout(_ data: Data) {
         guard !data.isEmpty else { return }
         queue.async { [weak self] in
@@ -897,6 +876,54 @@ private final class Observer: @unchecked Sendable {
 }
 
 private extension Observer {
+    func collaborationModePayload() -> [String: Any] {
+        CodexAppServerMonitor.collaborationModePayload(
+            mode: collaborationMode,
+            modelName: requestedModelName
+        )
+    }
+
+    func publishModelInfo(contextPercent: Double) {
+        let displayRawModelName = reportedModelName ?? requestedModelName
+        onModelInfo(
+            agent.id,
+            displayRawModelName,
+            CodexAppServerMonitor.friendlyModelName(displayRawModelName),
+            collaborationMode,
+            contextPercent
+        )
+    }
+
+    func refreshSessionMetadataFromFile(at path: String) {
+        guard let data = FileManager.default.contents(atPath: path),
+              let content = String(data: data, encoding: .utf8)
+        else { return }
+
+        var latestReportedModelName = reportedModelName
+        var latestMode = collaborationMode
+        var latestContextPercent = 0.0
+
+        for line in content.split(separator: "\n") {
+            guard let data = line.data(using: .utf8),
+                  let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+            else { continue }
+
+            if let rawModelName = CodexAppServerMonitor.rawModelName(fromSessionEvent: object) {
+                latestReportedModelName = rawModelName
+            }
+            if let mode = CodexAppServerMonitor.collaborationMode(fromSessionEvent: object) {
+                latestMode = mode
+            }
+            if let contextPercent = CodexAppServerMonitor.contextPercentUsed(fromSessionEvent: object) {
+                latestContextPercent = contextPercent
+            }
+        }
+
+        reportedModelName = latestReportedModelName
+        collaborationMode = latestMode
+        publishModelInfo(contextPercent: latestContextPercent)
+    }
+
     func handleJSONObject(_ object: [String: Any]) {
         guard let event = CodexProtocol.Event.parse(object) else { return }
         switch event {
