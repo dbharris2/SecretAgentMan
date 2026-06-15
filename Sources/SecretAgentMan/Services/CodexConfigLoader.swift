@@ -1,23 +1,30 @@
 import Foundation
 
 struct CodexConfigDefaults {
+    let modelName: String?
     let approvalPolicy: CodexApprovalPolicy?
     let sandboxMode: CodexSandboxMode?
 }
 
 enum CodexConfigLoader {
-    static func loadDefaults() -> CodexConfigDefaults {
-        let url = URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent(".codex/config.toml")
+    static func loadDefaults(from configURL: URL? = nil) -> CodexConfigDefaults {
+        let url = configURL ?? URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent(".codex/config.toml")
         guard let content = try? String(contentsOf: url, encoding: .utf8) else {
-            return CodexConfigDefaults(approvalPolicy: nil, sandboxMode: nil)
+            return CodexConfigDefaults(modelName: nil, approvalPolicy: nil, sandboxMode: nil)
         }
 
+        var modelName: String?
         var approvalPolicy: CodexApprovalPolicy?
         var sandboxMode: CodexSandboxMode?
 
         for rawLine in content.components(separatedBy: .newlines) {
             let line = strippedTomlLine(rawLine)
             guard !line.isEmpty, !line.hasPrefix("[") else { continue }
+
+            if modelName == nil,
+               let value = tomlStringValue(for: "model", in: line) {
+                modelName = CodexModelSettings.normalized(value)
+            }
 
             if approvalPolicy == nil,
                let value = tomlStringValue(for: "approval_policy", in: line) {
@@ -30,7 +37,7 @@ enum CodexConfigLoader {
             }
         }
 
-        return CodexConfigDefaults(approvalPolicy: approvalPolicy, sandboxMode: sandboxMode)
+        return CodexConfigDefaults(modelName: modelName, approvalPolicy: approvalPolicy, sandboxMode: sandboxMode)
     }
 
     private static func strippedTomlLine(_ line: String) -> String {

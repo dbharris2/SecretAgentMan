@@ -6,6 +6,7 @@ enum UserDefaultsKeys {
     static let claudePluginDirectory = "pluginDirectory"
     static let diffViewMode = "diffViewMode"
     static let defaultAgentFolder = "defaultAgentFolder"
+    static let codexModel = "codexModel"
     static let codexApprovalPolicy = "codexApprovalPolicy"
     static let codexSandboxMode = "codexSandboxMode"
     static let selectedAgentId = "selectedAgentId"

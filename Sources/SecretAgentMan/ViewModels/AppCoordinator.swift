@@ -144,6 +144,18 @@ final class AppCoordinator {
         codexMonitor.setSandboxMode(for: agentId, mode: mode)
     }
 
+    func setCodexModel(for agentId: UUID, modelName: String) {
+        guard let normalized = CodexModelSettings.normalized(modelName) else { return }
+        UserDefaults.standard.set(normalized, forKey: UserDefaultsKeys.codexModel)
+        agentSessions.ensureCodexSession(for: agentId)
+        codexMonitor.setModelName(for: agentId, modelName: normalized)
+    }
+
+    func refreshCodexModel(for agentId: UUID) {
+        agentSessions.ensureCodexSession(for: agentId)
+        codexMonitor.setModelName(for: agentId, modelName: CodexModelSettings.storedValue)
+    }
+
     func answerCodexUserInput(for agentId: UUID, answers: [String: [String]]) {
         codexMonitor.respondToUserInput(for: agentId, answers: answers)
     }

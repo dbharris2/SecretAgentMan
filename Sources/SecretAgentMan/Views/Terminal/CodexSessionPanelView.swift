@@ -43,7 +43,8 @@ struct CodexSessionPanelView: View {
 
     private var currentModelName: String {
         let name = snapshot?.metadata.displayModelName
-        return (name?.isEmpty == false ? name : nil) ?? "Codex"
+        return (name?.isEmpty == false ? name : nil)
+            ?? CodexAppServerMonitor.friendlyModelName(CodexModelSettings.storedValue)
     }
 
     private var currentCollaborationMode: CodexCollaborationMode {
@@ -168,6 +169,7 @@ private struct CodexComposerView: View {
 
     @AppStorage(UserDefaultsKeys.codexApprovalPolicy) private var rawApprovalPolicy: String?
     @AppStorage(UserDefaultsKeys.codexSandboxMode) private var rawSandboxMode: String?
+    @AppStorage(UserDefaultsKeys.codexModel) private var rawModelName: String?
     @State private var configDefaults = CodexConfigLoader.loadDefaults()
 
     private var currentApprovalPolicy: CodexApprovalPolicy {
@@ -184,6 +186,18 @@ private struct CodexComposerView: View {
             return mode
         }
         return configDefaults.sandboxMode ?? .workspaceWrite
+    }
+
+    private var currentRequestedModelName: String {
+        CodexModelSettings.effectiveModel(configDefaults: configDefaults)
+    }
+
+    private var modelPickerOptions: [String] {
+        var options = CodexModelSettings.suggestedModelNames
+        if !options.contains(currentRequestedModelName) {
+            options.insert(currentRequestedModelName, at: 0)
+        }
+        return options
     }
 
     private var skillSuggestions: [SkillInfo] {
@@ -210,7 +224,22 @@ private struct CodexComposerView: View {
             }
         } trailingControls: {
             HStack(spacing: 6) {
-                ComposerPill(text: currentModelName)
+                ComposerModePickerButton(
+                    title: "Model",
+                    modes: modelPickerOptions,
+                    currentMode: currentRequestedModelName,
+                    label: { modelName in
+                        modelName == currentRequestedModelName
+                            ? currentModelName
+                            : CodexAppServerMonitor.friendlyModelName(modelName)
+                    },
+                    shortcutKey: "g",
+                    shortcutModifiers: [.command, .shift],
+                    shortcutLabel: "⌘⇧G",
+                    onSelect: { modelName in
+                        coordinator.setCodexModel(for: agent.id, modelName: modelName)
+                    }
+                )
                 ComposerModePickerButton(
                     title: "Mode",
                     modes: CodexCollaborationMode.allCases,
@@ -248,6 +277,10 @@ private struct CodexComposerView: View {
                     usageRingButton(limits: limits)
                 }
             }
+        }
+        .onChange(of: rawModelName) { _, _ in
+            configDefaults = CodexConfigLoader.loadDefaults()
+            coordinator.refreshCodexModel(for: agent.id)
         }
         .onChange(of: coordinator.composerInsert) { _, text in
             if let text {
