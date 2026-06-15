@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 struct SettingsView: View {
@@ -25,8 +26,10 @@ struct GeneralSettingsView: View {
     @AppStorage(UserDefaultsKeys.codexApprovalPolicy) private var codexApprovalPolicyOverride: String?
     @AppStorage(UserDefaultsKeys.codexSandboxMode) private var codexSandboxModeOverride: String?
     @AppStorage(UserDefaultsKeys.favoriteThemes) private var favoriteThemesJSON = "[]"
+    @AppStorage(UserDefaultsKeys.terminalFontName) private var terminalFontName = ""
     @State private var searchText = ""
     @State private var allThemes: [String] = []
+    @State private var installedFontFamilies: [String] = []
     @State private var listSelection: String?
 
     @State private var codexConfigDefaults = CodexConfigLoader.loadDefaults()
@@ -92,6 +95,22 @@ struct GeneralSettingsView: View {
     private var nonFavoriteThemes: [String] {
         let favs = favoriteThemes
         return allThemes.filter { !favs.contains($0) }
+    }
+
+    private var terminalFontStatus: String {
+        let requestedName = terminalFontName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let font = ShellManager.terminalFont()
+        let displayName = font.displayName ?? font.fontName
+
+        guard !requestedName.isEmpty else {
+            return "Current: \(displayName)."
+        }
+
+        if ShellManager.resolveFont(named: requestedName, size: 13) == nil {
+            return "Font not found; using \(displayName)."
+        }
+
+        return "Current: \(displayName)."
     }
 
     private func toggleFavorite(_ theme: String) {
@@ -233,6 +252,36 @@ struct GeneralSettingsView: View {
 
             Divider()
 
+            Section {
+                Text("Terminal Font")
+                    .font(.headline)
+
+                HStack {
+                    TextField("Font family or PostScript name", text: $terminalFontName)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(maxWidth: 360)
+
+                    Menu("Installed Fonts") {
+                        ForEach(installedFontFamilies, id: \.self) { family in
+                            Button(family) {
+                                terminalFontName = family
+                            }
+                        }
+                    }
+
+                    Button("Use Default") {
+                        terminalFontName = ""
+                    }
+                    .disabled(terminalFontName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+
+                Text(terminalFontStatus)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Divider()
+
             Text("App Theme")
                 .font(.headline)
 
@@ -284,8 +333,12 @@ struct GeneralSettingsView: View {
         .onChange(of: selectedTheme) {
             shellManager.themeName = selectedTheme
         }
+        .onChange(of: terminalFontName) {
+            shellManager.applyFontToAll()
+        }
         .onAppear {
             allThemes = GhosttyThemeLoader.availableThemes()
+            installedFontFamilies = NSFontManager.shared.availableFontFamilies.sorted()
             listSelection = selectedTheme
             shellManager.themeName = selectedTheme
         }

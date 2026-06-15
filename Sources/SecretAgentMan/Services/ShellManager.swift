@@ -107,24 +107,95 @@ final class ShellManager {
         let baseSize: CGFloat = 13
         let size = baseSize * effectiveScale
 
-        if let config = try? String(
-            contentsOfFile: NSHomeDirectory() + "/.config/ghostty/config",
-            encoding: .utf8
-        ) {
-            for line in config.components(separatedBy: "\n") {
-                let trimmed = line.trimmingCharacters(in: .whitespaces)
-                if trimmed.hasPrefix("font-family") {
-                    let parts = trimmed.split(separator: "=", maxSplits: 1)
-                    if parts.count == 2 {
-                        let fontName = parts[1].trimmingCharacters(in: .whitespaces)
-                        if let font = NSFont(name: fontName, size: size) {
-                            return font
-                        }
-                    }
-                }
+        if let fontName = UserDefaults.standard.string(forKey: UserDefaultsKeys.terminalFontName),
+           let font = resolveFont(named: fontName, size: size) {
+            return font
+        }
+
+        for fontName in ghosttyFontNames() {
+            if let font = resolveFont(named: fontName, size: size) {
+                return font
             }
         }
         return NSFont(name: "Monaco", size: size) ?? NSFont.monospacedSystemFont(ofSize: size, weight: .regular)
+    }
+
+    static func resolveFont(named rawName: String, size: CGFloat) -> NSFont? {
+        let name = cleanFontName(rawName)
+        guard !name.isEmpty else { return nil }
+
+        if let font = NSFont(name: name, size: size) {
+            return font
+        }
+
+        let fontManager = NSFontManager.shared
+        if let family = fontManager.availableFontFamilies.first(where: { $0.caseInsensitiveCompare(name) == .orderedSame }),
+           let font = fontManager.font(withFamily: family, traits: [], weight: 5, size: size) {
+            return font
+        }
+
+        for family in fontManager.availableFontFamilies {
+            guard let members = fontManager.availableMembers(ofFontFamily: family) else { continue }
+            for member in members {
+                guard let fontName = member.first as? String else { continue }
+                if fontName.caseInsensitiveCompare(name) == .orderedSame,
+                   let font = NSFont(name: fontName, size: size) {
+                    return font
+                }
+            }
+        }
+
+        return nil
+    }
+
+    private static func ghosttyFontNames() -> [String] {
+        let home = NSHomeDirectory()
+        let paths = [
+            "\(home)/.config/ghostty/config",
+            "\(home)/.config/ghostty/config.ghostty",
+            "\(home)/Library/Application Support/com.mitchellh.ghostty/config.ghostty"
+        ]
+
+        return paths.compactMap { path in
+            guard let config = try? String(contentsOfFile: path, encoding: .utf8) else { return nil }
+            return ghosttyFontName(in: config)
+        }
+    }
+
+    private static func ghosttyFontName(in config: String) -> String? {
+        for line in config.components(separatedBy: "\n") {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            guard !trimmed.isEmpty, !trimmed.hasPrefix("#") else { continue }
+
+            let parts = trimmed.split(separator: "=", maxSplits: 1, omittingEmptySubsequences: false)
+            guard parts.count == 2 else { continue }
+
+            let key = parts[0].trimmingCharacters(in: .whitespaces)
+            guard key == "font-family" else { continue }
+
+            let fontName = cleanFontName(String(parts[1]))
+            if !fontName.isEmpty {
+                return fontName
+            }
+        }
+
+        return nil
+    }
+
+    private static func cleanFontName(_ rawName: String) -> String {
+        var name = rawName.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let commentStart = name.firstIndex(of: "#") {
+            name = String(name[..<commentStart]).trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+
+        if name.count >= 2,
+           let first = name.first,
+           let last = name.last,
+           (first == "\"" && last == "\"") || (first == "'" && last == "'") {
+            name = String(name.dropFirst().dropLast())
+        }
+
+        return name.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     private func applyTheme(to terminal: LocalProcessTerminalView) {

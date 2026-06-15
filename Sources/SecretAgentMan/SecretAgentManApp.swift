@@ -4,6 +4,7 @@ import SwiftUI
 struct SecretAgentManApp: App {
     @State private var coordinator = AppCoordinator()
     @AppStorage(UserDefaultsKeys.terminalTheme) private var themeName = "Catppuccin Mocha"
+    @AppStorage(UserDefaultsKeys.terminalFontName) private var terminalFontName = ""
 
     var body: some Scene {
         let appTheme = AppTheme.load(named: themeName)
@@ -15,6 +16,9 @@ struct SecretAgentManApp: App {
                 .environment(\.appTheme, appTheme)
                 .preferredColorScheme(appTheme.isDark ? .dark : .light)
                 .onChange(of: fontScale) {
+                    coordinator.shellManager.applyFontToAll()
+                }
+                .onChange(of: terminalFontName) {
                     coordinator.shellManager.applyFontToAll()
                 }
                 .onChange(of: themeName) {
