@@ -127,204 +127,208 @@ struct GeneralSettingsView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: Spacing.xxl) {
-            Section {
-                Text("Default Agent Folder")
-                    .font(.headline)
+        ScrollView {
+            VStack(alignment: .leading, spacing: Spacing.xxl) {
+                Section {
+                    Text("Default Agent Folder")
+                        .font(.headline)
 
-                HStack {
-                    TextField("Default folder path", text: $defaultAgentFolder)
-                        .textFieldStyle(.roundedBorder)
-
-                    Button("Browse...") {
-                        let panel = NSOpenPanel()
-                        panel.canChooseDirectories = true
-                        panel.canChooseFiles = false
-                        if panel.runModal() == .OK, let url = panel.url {
-                            defaultAgentFolder = url.path
-                        }
-                    }
-                }
-
-                Text("Pre-filled when creating new agents")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            Divider()
-
-            Section {
-                Text("Claude Plugins")
-                    .font(.headline)
-
-                HStack {
-                    TextField("Plugin directory path", text: $claudePluginDirectory)
-                        .textFieldStyle(.roundedBorder)
-
-                    Button("Browse...") {
-                        let panel = NSOpenPanel()
-                        panel.canChooseDirectories = true
-                        panel.canChooseFiles = false
-                        if panel.runModal() == .OK, let url = panel.url {
-                            claudePluginDirectory = url.path
-                        }
-                    }
-                }
-
-                Text("Passed as --plugin-dir to new Claude sessions")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            Divider()
-
-            Section {
-                Text("Codex")
-                    .font(.headline)
-
-                VStack(alignment: .leading, spacing: Spacing.md) {
                     HStack {
-                        TextField("Model ID override", text: codexModelOverrideSelection)
+                        TextField("Default folder path", text: $defaultAgentFolder)
                             .textFieldStyle(.roundedBorder)
-                            .frame(maxWidth: 240)
 
-                        Menu("Presets") {
-                            ForEach(CodexModelSettings.suggestedModelNames, id: \.self) { modelName in
-                                Button(modelName) {
-                                    codexModelOverride = modelName
+                        Button("Browse...") {
+                            let panel = NSOpenPanel()
+                            panel.canChooseDirectories = true
+                            panel.canChooseFiles = false
+                            if panel.runModal() == .OK, let url = panel.url {
+                                defaultAgentFolder = url.path
+                            }
+                        }
+                    }
+
+                    Text("Pre-filled when creating new agents")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                Divider()
+
+                Section {
+                    Text("Claude Plugins")
+                        .font(.headline)
+
+                    HStack {
+                        TextField("Plugin directory path", text: $claudePluginDirectory)
+                            .textFieldStyle(.roundedBorder)
+
+                        Button("Browse...") {
+                            let panel = NSOpenPanel()
+                            panel.canChooseDirectories = true
+                            panel.canChooseFiles = false
+                            if panel.runModal() == .OK, let url = panel.url {
+                                claudePluginDirectory = url.path
+                            }
+                        }
+                    }
+
+                    Text("Passed as --plugin-dir to new Claude sessions")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                Divider()
+
+                Section {
+                    Text("Codex")
+                        .font(.headline)
+
+                    VStack(alignment: .leading, spacing: Spacing.md) {
+                        HStack {
+                            TextField("Model ID override", text: codexModelOverrideSelection)
+                                .textFieldStyle(.roundedBorder)
+                                .frame(maxWidth: 240)
+
+                            Menu("Presets") {
+                                ForEach(CodexModelSettings.suggestedModelNames, id: \.self) { modelName in
+                                    Button(modelName) {
+                                        codexModelOverride = modelName
+                                    }
+                                }
+                            }
+
+                            Button("Use Config Default") {
+                                codexModelOverride = nil
+                            }
+                            .disabled(codexModelOverride == nil)
+                        }
+
+                        Text("Active model: \(effectiveCodexModelName)")
+                    }
+
+                    VStack(alignment: .leading, spacing: Spacing.md) {
+                        HStack {
+                            Picker("Approval Policy", selection: codexApprovalPolicySelection) {
+                                ForEach(CodexApprovalPolicy.allCases, id: \.rawValue) { policy in
+                                    Text(policy.label).tag(policy.rawValue)
+                                }
+                            }
+                            .pickerStyle(.menu)
+
+                            Button("Use Config Default") {
+                                codexApprovalPolicyOverride = nil
+                            }
+                            .disabled(codexApprovalPolicyOverride == nil)
+                        }
+
+                        Text(effectiveCodexApprovalPolicy.settingsDescription)
+                    }
+
+                    VStack(alignment: .leading, spacing: Spacing.md) {
+                        HStack {
+                            Picker("Sandbox Mode", selection: codexSandboxModeSelection) {
+                                ForEach(CodexSandboxMode.allCases, id: \.rawValue) { mode in
+                                    Text(mode.label).tag(mode.rawValue)
+                                }
+                            }
+                            .pickerStyle(.menu)
+
+                            Button("Use Config Default") {
+                                codexSandboxModeOverride = nil
+                            }
+                            .disabled(codexSandboxModeOverride == nil)
+                        }
+
+                        Text(effectiveCodexSandboxMode.settingsDescription)
+                    }
+
+                    VStack(alignment: .leading, spacing: Spacing.sm) {
+                        Text("Defaults come from ~/.codex/config.toml when present.")
+                        Text("Plugins and MCP servers are discovered from ~/.codex")
+                        Text("Selections here become app-specific overrides for new Codex turns and future session starts.")
+                    }
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                }
+
+                Divider()
+
+                Section {
+                    Text("Terminal Font")
+                        .font(.headline)
+
+                    HStack {
+                        TextField("Font family or PostScript name", text: $terminalFontName)
+                            .textFieldStyle(.roundedBorder)
+                            .frame(maxWidth: 360)
+
+                        Menu("Installed Fonts") {
+                            ForEach(installedFontFamilies, id: \.self) { family in
+                                Button(family) {
+                                    terminalFontName = family
                                 }
                             }
                         }
 
-                        Button("Use Config Default") {
-                            codexModelOverride = nil
+                        Button("Use Default") {
+                            terminalFontName = ""
                         }
-                        .disabled(codexModelOverride == nil)
+                        .disabled(terminalFontName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     }
 
-                    Text("Active model: \(effectiveCodexModelName)")
-                }
-
-                VStack(alignment: .leading, spacing: Spacing.md) {
-                    HStack {
-                        Picker("Approval Policy", selection: codexApprovalPolicySelection) {
-                            ForEach(CodexApprovalPolicy.allCases, id: \.rawValue) { policy in
-                                Text(policy.label).tag(policy.rawValue)
-                            }
-                        }
-                        .pickerStyle(.menu)
-
-                        Button("Use Config Default") {
-                            codexApprovalPolicyOverride = nil
-                        }
-                        .disabled(codexApprovalPolicyOverride == nil)
-                    }
-
-                    Text(effectiveCodexApprovalPolicy.settingsDescription)
-                }
-
-                VStack(alignment: .leading, spacing: Spacing.md) {
-                    HStack {
-                        Picker("Sandbox Mode", selection: codexSandboxModeSelection) {
-                            ForEach(CodexSandboxMode.allCases, id: \.rawValue) { mode in
-                                Text(mode.label).tag(mode.rawValue)
-                            }
-                        }
-                        .pickerStyle(.menu)
-
-                        Button("Use Config Default") {
-                            codexSandboxModeOverride = nil
-                        }
-                        .disabled(codexSandboxModeOverride == nil)
-                    }
-
-                    Text(effectiveCodexSandboxMode.settingsDescription)
-                }
-
-                VStack(alignment: .leading, spacing: Spacing.sm) {
-                    Text("Defaults come from ~/.codex/config.toml when present.")
-                    Text("Plugins and MCP servers are discovered from ~/.codex")
-                    Text("Selections here become app-specific overrides for new Codex turns and future session starts.")
-                }
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            }
-
-            Divider()
-
-            Section {
-                Text("Terminal Font")
-                    .font(.headline)
-
-                HStack {
-                    TextField("Font family or PostScript name", text: $terminalFontName)
-                        .textFieldStyle(.roundedBorder)
-                        .frame(maxWidth: 360)
-
-                    Menu("Installed Fonts") {
-                        ForEach(installedFontFamilies, id: \.self) { family in
-                            Button(family) {
-                                terminalFontName = family
-                            }
-                        }
-                    }
-
-                    Button("Use Default") {
-                        terminalFontName = ""
-                    }
-                    .disabled(terminalFontName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                }
-
-                Text(terminalFontStatus)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            Divider()
-
-            Text("App Theme")
-                .font(.headline)
-
-            HStack(spacing: Spacing.xxl) {
-                ThemePreviewLarge(themeName: selectedTheme)
-                VStack(alignment: .leading, spacing: Spacing.xs) {
-                    Text(selectedTheme)
-                        .scaledFont(size: 14, weight: .semibold)
-                    Text("Current theme")
+                    Text(terminalFontStatus)
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
-                Spacer()
-            }
-            .padding(Spacing.xl)
-            .background(Color.accentColor.opacity(0.08))
-            .clipShape(RoundedRectangle(cornerRadius: 8))
 
-            TextField("Search themes...", text: $searchText)
-                .textFieldStyle(.roundedBorder)
+                Divider()
 
-            List(selection: $listSelection) {
-                if searchText.isEmpty, !favoriteThemesSorted.isEmpty {
-                    Section("Favorites") {
-                        ForEach(favoriteThemesSorted, id: \.self) { theme in
+                Text("App Theme")
+                    .font(.headline)
+
+                HStack(spacing: Spacing.xxl) {
+                    ThemePreviewLarge(themeName: selectedTheme)
+                    VStack(alignment: .leading, spacing: Spacing.xs) {
+                        Text(selectedTheme)
+                            .scaledFont(size: 14, weight: .semibold)
+                        Text("Current theme")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                }
+                .padding(Spacing.xl)
+                .background(Color.accentColor.opacity(0.08))
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+
+                TextField("Search themes...", text: $searchText)
+                    .textFieldStyle(.roundedBorder)
+
+                List(selection: $listSelection) {
+                    if searchText.isEmpty, !favoriteThemesSorted.isEmpty {
+                        Section("Favorites") {
+                            ForEach(favoriteThemesSorted, id: \.self) { theme in
+                                themeRow(theme).tag(theme)
+                            }
+                        }
+                        Section("All Themes") {
+                            ForEach(nonFavoriteThemes, id: \.self) { theme in
+                                themeRow(theme).tag(theme)
+                            }
+                        }
+                    } else {
+                        ForEach(filteredThemes, id: \.self) { theme in
                             themeRow(theme).tag(theme)
                         }
-                    }
-                    Section("All Themes") {
-                        ForEach(nonFavoriteThemes, id: \.self) { theme in
-                            themeRow(theme).tag(theme)
-                        }
-                    }
-                } else {
-                    ForEach(filteredThemes, id: \.self) { theme in
-                        themeRow(theme).tag(theme)
                     }
                 }
+                .listStyle(.inset)
+                .clipShape(RoundedRectangle(cornerRadius: 6))
+                .frame(height: 320)
             }
-            .listStyle(.inset)
-            .clipShape(RoundedRectangle(cornerRadius: 6))
+            .padding(20)
+            .frame(maxWidth: .infinity, alignment: .topLeading)
         }
-        .padding(20)
         .onChange(of: listSelection) {
             if let theme = listSelection {
                 selectedTheme = theme
