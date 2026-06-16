@@ -59,7 +59,10 @@ struct VCSLogView: View {
             loadLog(trigger: "selectedAgentChanged")
         }
         .onChange(of: coordinator.repositoryMonitor.vcsChangeCount) { _, _ in
-            guard isVisible else { return }
+            guard isVisible,
+                  let folder,
+                  coordinator.repositoryMonitor.lastVCSChangedFolder?.standardizedFileURL == folder.standardizedFileURL
+            else { return }
             scheduleDebouncedLoad(trigger: "vcsChange")
         }
     }
@@ -158,7 +161,7 @@ struct VCSLogView: View {
             }
             return CommandSpec(
                 executablePath: executablePath,
-                arguments: ["log", "short"],
+                arguments: ["log", "short", "--no-interactive"],
                 perfLabel: "graphite"
             )
         case .git, .none:

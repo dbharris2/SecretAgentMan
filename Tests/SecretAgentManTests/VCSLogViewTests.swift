@@ -8,7 +8,7 @@ struct VCSLogViewTests {
         let spec = VCSLogView.commandSpec(for: .graphite)
 
         if let spec {
-            #expect(spec.arguments == ["log", "short"])
+            #expect(spec.arguments == ["log", "short", "--no-interactive"])
         } else {
             #expect(spec == nil)
         }
