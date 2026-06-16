@@ -113,20 +113,19 @@ final class RepositoryMonitor {
         let diffService = self.diffService
         Task.detached(priority: .background) {
             let t0 = CFAbsoluteTimeGetCurrent()
-            let result = await diffService.fetchFullDiff(in: folder)
-            PerfLogger.log("fetchFullDiff", start: t0, details: "folder=\(folder.lastPathComponent)")
-            let changes = result.map { diffService.parseChanges(from: $0) }
+            let snapshot = await diffService.fetchWorkingTreeSnapshot(in: folder)
+            PerfLogger.log("fetchWorkingTreeSnapshot", start: t0, details: "folder=\(folder.lastPathComponent)")
             await MainActor.run {
                 guard generation == self.diffGeneration, self.store.selectedAgentId == agentId else { return }
-                guard let diff = result, let changes else {
+                guard let snapshot else {
                     // Transient VCS failure (e.g. mid-pull/rebase). Preserve existing state and retry.
                     if retryCount < Self.maxDiffRetries {
                         self.scheduleDiffRetry(trigger: trigger, retryCount: retryCount + 1)
                     }
                     return
                 }
-                self.fullDiff = diff
-                self.fileChanges = changes
+                self.fullDiff = snapshot.fullDiff
+                self.fileChanges = snapshot.changes
                 PerfLogger.log("refreshDiffs.total", start: refreshStart, details: "folder=\(folder.lastPathComponent) trigger=\(trigger)")
             }
         }

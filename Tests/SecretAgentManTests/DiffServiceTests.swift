@@ -162,6 +162,117 @@ struct DiffServiceTests {
     }
 
     @Test
+    func fetchWorkingTreeSnapshotIncludesGitStagingStates() async throws {
+        let root = try makeTemporaryDirectory()
+        try runGit(["init"], in: root)
+        try runGit(["config", "user.name", "Test User"], in: root)
+        try runGit(["config", "user.email", "test@example.com"], in: root)
+
+        for path in ["staged.txt", "unstaged.txt", "both.txt"] {
+            try "base\n".write(
+                to: root.appendingPathComponent(path),
+                atomically: true,
+                encoding: .utf8
+            )
+        }
+        try runGit(["add", "."], in: root)
+        try runGit(["commit", "-m", "initial"], in: root)
+
+        try "base\nstaged\n".write(
+            to: root.appendingPathComponent("staged.txt"),
+            atomically: true,
+            encoding: .utf8
+        )
+        try runGit(["add", "staged.txt"], in: root)
+
+        try "base\nunstaged\n".write(
+            to: root.appendingPathComponent("unstaged.txt"),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        try "base\nstaged\n".write(
+            to: root.appendingPathComponent("both.txt"),
+            atomically: true,
+            encoding: .utf8
+        )
+        try runGit(["add", "both.txt"], in: root)
+        try "base\nstaged\nunstaged\n".write(
+            to: root.appendingPathComponent("both.txt"),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        try "new\n".write(
+            to: root.appendingPathComponent("untracked.txt"),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        let snapshot = try #require(await service.fetchWorkingTreeSnapshot(in: root))
+        let byPath = snapshot.changes.reduce(into: [String: FileChange]()) { result, change in
+            result[change.path] = change
+        }
+
+        #expect(byPath["staged.txt"]?.locations == Set([.staged]))
+        #expect(byPath["unstaged.txt"]?.locations == Set([.unstaged]))
+        #expect(byPath["both.txt"]?.locations == Set([.staged, .unstaged]))
+        #expect(byPath["untracked.txt"]?.locations == Set([.untracked]))
+        #expect(snapshot.fullDiff.contains("diff --git a/staged.txt b/staged.txt"))
+        #expect(snapshot.fullDiff.contains("diff --git a/unstaged.txt b/unstaged.txt"))
+        #expect(snapshot.fullDiff.contains("diff --git a/both.txt b/both.txt"))
+        #expect(snapshot.fullDiff.contains("diff --git a/untracked.txt b/untracked.txt"))
+    }
+
+    @Test
+    func fetchWorkingTreeSnapshotIncludesIndexChangesCanceledByWorktree() async throws {
+        let root = try makeTemporaryDirectory()
+        try runGit(["init"], in: root)
+        try runGit(["config", "user.name", "Test User"], in: root)
+        try runGit(["config", "user.email", "test@example.com"], in: root)
+
+        let file = root.appendingPathComponent("net-zero.txt")
+        try "base\n".write(to: file, atomically: true, encoding: .utf8)
+        try runGit(["add", "net-zero.txt"], in: root)
+        try runGit(["commit", "-m", "initial"], in: root)
+
+        try "staged\n".write(to: file, atomically: true, encoding: .utf8)
+        try runGit(["add", "net-zero.txt"], in: root)
+        try "base\n".write(to: file, atomically: true, encoding: .utf8)
+
+        let snapshot = try #require(await service.fetchWorkingTreeSnapshot(in: root))
+        let change = try #require(snapshot.changes.first { $0.path == "net-zero.txt" })
+
+        #expect(change.locations == Set([.staged, .unstaged]))
+        #expect(change.status == .modified)
+    }
+
+    @Test
+    func fetchWorkingTreeSnapshotTreatsGraphiteReposLikeGitWorkingTrees() async throws {
+        let root = try makeTemporaryDirectory()
+        try runGit(["init"], in: root)
+        try runGit(["config", "user.name", "Test User"], in: root)
+        try runGit(["config", "user.email", "test@example.com"], in: root)
+        FileManager.default.createFile(
+            atPath: root.appendingPathComponent(".git/.graphite_repo_config").path,
+            contents: Data()
+        )
+
+        try "new\n".write(
+            to: root.appendingPathComponent("graphite-untracked.txt"),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        let snapshot = try #require(await service.fetchWorkingTreeSnapshot(in: root))
+
+        #expect(service.detectVCS(in: root) == .graphite)
+        #expect(snapshot.changes.first?.path == "graphite-untracked.txt")
+        #expect(snapshot.changes.first?.locations == Set([.untracked]))
+        #expect(snapshot.fullDiff.contains("diff --git a/graphite-untracked.txt b/graphite-untracked.txt"))
+    }
+
+    @Test
     func detectsGraphiteRepoFromGraphiteConfig() throws {
         let root = try makeTemporaryDirectory()
         try FileManager.default.createDirectory(at: root.appendingPathComponent(".git"), withIntermediateDirectories: true)
