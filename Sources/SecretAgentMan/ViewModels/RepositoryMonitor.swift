@@ -10,8 +10,9 @@ final class RepositoryMonitor {
     var fullDiff: String = ""
     var branchNames: [String: String] = [:]
     var repoTypes: [String: DiffService.VCSType] = [:]
-    /// Bumped on any VCS directory change — views can observe this to trigger refreshes.
+    /// Bumped on meaningful VCS metadata changes so views can refresh VCS-only content.
     var vcsChangeCount = 0
+    var lastVCSChangedFolder: URL?
 
     var onDiffChanged: ((URL) -> Void)?
     var onBranchChanged: ((URL) -> Void)?
@@ -42,7 +43,6 @@ final class RepositoryMonitor {
 
     func start() {
         fileWatcher.onDirectoryChanged = { [self] changedFolder in
-            vcsChangeCount += 1
             onDiffChanged?(changedFolder)
             if let selected = store.selectedAgent,
                selected.folder.standardizedFileURL == changedFolder {
@@ -51,8 +51,9 @@ final class RepositoryMonitor {
         }
 
         fileWatcher.onVCSMetadataChanged = { [self] changedFolder in
-            vcsChangeCount += 1
             guard shouldHandleVCSMetadataChange(for: changedFolder) else { return }
+            lastVCSChangedFolder = changedFolder
+            vcsChangeCount += 1
             scheduleBranchRefresh(for: changedFolder, trigger: "vcsMetadataChanged")
             onBranchChanged?(changedFolder)
             if let selected = store.selectedAgent,
