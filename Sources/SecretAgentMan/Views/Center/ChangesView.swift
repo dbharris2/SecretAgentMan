@@ -88,6 +88,20 @@ struct ChangesView: View {
                         Spacer()
 
                         HStack(spacing: Spacing.md) {
+                            if let label = change.locationLabel {
+                                Text(label)
+                                    .scaledFont(size: 10, weight: .medium)
+                                    .lineLimit(1)
+                                    .minimumScaleFactor(0.8)
+                                    .foregroundStyle(locationColor(change.locations, theme: theme))
+                                    .padding(.horizontal, 5)
+                                    .padding(.vertical, 1)
+                                    .background(
+                                        Capsule()
+                                            .fill(locationColor(change.locations, theme: theme).opacity(0.12))
+                                    )
+                            }
+
                             if change.insertions > 0 {
                                 Text("+\(change.insertions)")
                                     .scaledFont(size: 11, weight: .medium, design: .monospaced)
@@ -150,5 +164,18 @@ struct ChangesView: View {
         case .deleted: theme.red
         case .renamed: theme.blue
         }
+    }
+
+    private func locationColor(_ locations: Set<FileChange.ChangeLocation>, theme: AppTheme) -> Color {
+        if locations.contains(.untracked) {
+            return theme.blue
+        }
+        if locations.contains(.staged), locations.contains(.unstaged) {
+            return theme.magenta
+        }
+        if locations.contains(.staged) {
+            return theme.green
+        }
+        return theme.yellow
     }
 }

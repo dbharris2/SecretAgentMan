@@ -8,6 +8,11 @@ actor DiffService {
         case none
     }
 
+    struct DiffSnapshot {
+        let fullDiff: String
+        let changes: [FileChange]
+    }
+
     nonisolated func detectVCS(in directory: URL) -> VCSType {
         let fm = FileManager.default
         if fm.fileExists(atPath: directory.appendingPathComponent(".jj").path) {
@@ -97,14 +102,42 @@ actor DiffService {
         case .jj:
             return await runCommand("/opt/homebrew/bin/jj", args: ["diff", "--git"], in: directory)
         case .graphite, .git:
-            return await runCommand("/usr/bin/git", args: ["diff"], in: directory)
+            return await fetchGitWorkingTreeDiff(in: directory, locationsByPath: nil)
         case .none:
             return ""
         }
     }
 
+    nonisolated func fetchWorkingTreeSnapshot(in directory: URL) async -> DiffSnapshot? {
+        let vcs = detectVCS(in: directory)
+        switch vcs {
+        case .jj:
+            guard let diff = await fetchFullDiff(in: directory) else { return nil }
+            return DiffSnapshot(fullDiff: diff, changes: parseChanges(from: diff))
+        case .graphite, .git:
+            guard let status = await runCommand(
+                "/usr/bin/git",
+                args: ["status", "--porcelain=v1", "-z", "--untracked-files=all"],
+                in: directory
+            ) else { return nil }
+            let locationsByPath = parseGitStatusLocations(status)
+            guard let diff = await fetchGitWorkingTreeDiff(in: directory, locationsByPath: locationsByPath) else {
+                return nil
+            }
+            return DiffSnapshot(
+                fullDiff: diff,
+                changes: parseChanges(from: diff, locationsByPath: locationsByPath)
+            )
+        case .none:
+            return DiffSnapshot(fullDiff: "", changes: [])
+        }
+    }
+
     /// Extract file changes directly from unified diff output (no truncation).
-    nonisolated func parseChanges(from diff: String) -> [FileChange] {
+    nonisolated func parseChanges(
+        from diff: String,
+        locationsByPath: [String: Set<FileChange.ChangeLocation>] = [:]
+    ) -> [FileChange] {
         var changes: [FileChange] = []
         let lines = diff.components(separatedBy: "\n")
 
@@ -129,7 +162,8 @@ actor DiffService {
                         path: path,
                         insertions: insertions,
                         deletions: deletions,
-                        status: status
+                        status: status,
+                        locations: locationsByPath[path] ?? []
                     ))
                 }
 
@@ -163,11 +197,142 @@ actor DiffService {
                 path: path,
                 insertions: insertions,
                 deletions: deletions,
-                status: status
+                status: status,
+                locations: locationsByPath[path] ?? []
             ))
         }
 
-        return changes
+        guard !locationsByPath.isEmpty else { return changes }
+        let diffPaths = Set(changes.map(\.path))
+        let statusOnlyChanges = locationsByPath
+            .filter { !diffPaths.contains($0.key) }
+            .sorted { $0.key < $1.key }
+            .map { path, locations in
+                FileChange(
+                    id: path,
+                    path: path,
+                    insertions: 0,
+                    deletions: 0,
+                    status: .modified,
+                    locations: locations
+                )
+            }
+
+        return changes + statusOnlyChanges
+    }
+
+    private nonisolated func fetchGitWorkingTreeDiff(
+        in directory: URL,
+        locationsByPath: [String: Set<FileChange.ChangeLocation>]?
+    ) async -> String? {
+        var parts: [String] = []
+        let hasHead = await runCommand("/usr/bin/git", args: ["rev-parse", "--verify", "HEAD"], in: directory) != nil
+
+        if hasHead {
+            guard let trackedDiff = await runCommand(
+                "/usr/bin/git",
+                args: ["diff", "--no-color", "HEAD", "--"],
+                in: directory
+            ) else { return nil }
+            parts.append(trackedDiff)
+        } else {
+            guard let stagedDiff = await runCommand(
+                "/usr/bin/git",
+                args: ["diff", "--no-color", "--cached", "--"],
+                in: directory
+            ) else { return nil }
+            guard let unstagedDiff = await runCommand(
+                "/usr/bin/git",
+                args: ["diff", "--no-color", "--"],
+                in: directory
+            ) else { return nil }
+            parts.append(stagedDiff)
+            parts.append(unstagedDiff)
+        }
+
+        let untrackedPaths: [String]
+        if let locationsByPath {
+            untrackedPaths = locationsByPath
+                .filter { $0.value.contains(.untracked) }
+                .map(\.key)
+                .sorted()
+        } else {
+            guard let rawPaths = await runCommand(
+                "/usr/bin/git",
+                args: ["ls-files", "--others", "--exclude-standard", "-z"],
+                in: directory
+            ) else { return nil }
+            untrackedPaths = rawPaths
+                .split(separator: "\0", omittingEmptySubsequences: true)
+                .map(String.init)
+                .sorted()
+        }
+
+        for path in untrackedPaths {
+            guard let untrackedDiff = await runCommand(
+                "/usr/bin/git",
+                args: ["diff", "--no-color", "--no-index", "--", "/dev/null", path],
+                in: directory,
+                allowedExitCodes: [0, 1]
+            ) else { return nil }
+            parts.append(untrackedDiff)
+        }
+
+        return joinedDiffs(parts)
+    }
+
+    private nonisolated func parseGitStatusLocations(
+        _ output: String
+    ) -> [String: Set<FileChange.ChangeLocation>] {
+        let records = output
+            .split(separator: "\0", omittingEmptySubsequences: true)
+            .map(String.init)
+        var locationsByPath: [String: Set<FileChange.ChangeLocation>] = [:]
+        var index = 0
+
+        while index < records.count {
+            let record = records[index]
+            guard record.count >= 3 else {
+                index += 1
+                continue
+            }
+
+            let status = Array(record.prefix(2))
+            let indexStatus = status[0]
+            let worktreeStatus = status[1]
+            let path = String(record.dropFirst(3))
+
+            var locations: Set<FileChange.ChangeLocation> = []
+            if indexStatus == "?", worktreeStatus == "?" {
+                locations.insert(.untracked)
+            } else {
+                if indexStatus != " ", indexStatus != "!", indexStatus != "?" {
+                    locations.insert(.staged)
+                }
+                if worktreeStatus != " ", worktreeStatus != "!", worktreeStatus != "?" {
+                    locations.insert(.unstaged)
+                }
+            }
+
+            if !path.isEmpty, !locations.isEmpty {
+                locationsByPath[path, default: []].formUnion(locations)
+            }
+
+            if indexStatus == "R" || indexStatus == "C" {
+                index += 1
+            }
+            index += 1
+        }
+
+        return locationsByPath
+    }
+
+    private nonisolated func joinedDiffs(_ parts: [String]) -> String {
+        let diff = parts
+            .map { $0.trimmingCharacters(in: .newlines) }
+            .filter { !$0.isEmpty }
+            .joined(separator: "\n")
+        return diff.isEmpty ? "" : "\(diff)\n"
     }
 
     private nonisolated func extractPath(from diffLine: String) -> String {
@@ -194,7 +359,12 @@ actor DiffService {
 
     /// Runs `command` and returns stdout on success (exit code 0), or `nil` on launch failure
     /// or non-zero exit. `nil` lets callers distinguish real errors from empty-but-successful output.
-    private nonisolated func runCommand(_ command: String, args: [String], in directory: URL) async -> String? {
+    private nonisolated func runCommand(
+        _ command: String,
+        args: [String],
+        in directory: URL,
+        allowedExitCodes: Set<Int32> = [0]
+    ) async -> String? {
         let process = Process()
         let pipe = Pipe()
 
@@ -208,7 +378,7 @@ actor DiffService {
             try process.run()
             let data = pipe.fileHandleForReading.readDataToEndOfFile()
             process.waitUntilExit()
-            guard process.terminationStatus == 0 else { return nil }
+            guard allowedExitCodes.contains(process.terminationStatus) else { return nil }
             return String(data: data, encoding: .utf8) ?? ""
         } catch {
             return nil
