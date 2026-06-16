@@ -161,7 +161,7 @@ struct VCSLogView: View {
             }
             return CommandSpec(
                 executablePath: executablePath,
-                arguments: ["log", "short", "--no-interactive"],
+                arguments: ["log", "--no-interactive"],
                 perfLabel: "graphite"
             )
         case .git, .none:
@@ -171,6 +171,21 @@ struct VCSLogView: View {
 
     private nonisolated static func executablePath(candidates: [String]) -> String? {
         candidates.first { FileManager.default.isExecutableFile(atPath: $0) }
+    }
+
+    nonisolated static func commandEnvironment(
+        for spec: CommandSpec,
+        base: [String: String] = ProcessInfo.processInfo.environment
+    ) -> [String: String] {
+        var env = base
+        if spec.perfLabel == "graphite" {
+            env["TERM"] = "xterm-256color"
+            env["FORCE_COLOR"] = "1"
+            env.removeValue(forKey: "NO_COLOR")
+        } else {
+            env["TERM"] = "dumb"
+        }
+        return env
     }
 
     private nonisolated static func runLog(in folder: URL, vcsType: DiffService.VCSType) -> String {
@@ -193,9 +208,7 @@ struct VCSLogView: View {
         process.executableURL = URL(fileURLWithPath: spec.executablePath)
         process.arguments = spec.arguments
         process.currentDirectoryURL = folder
-        var env = ProcessInfo.processInfo.environment
-        env["TERM"] = "dumb"
-        process.environment = env
+        process.environment = commandEnvironment(for: spec)
         process.standardOutput = outputPipe
         process.standardError = errorPipe
 
