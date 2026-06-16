@@ -121,7 +121,12 @@ actor DiffService {
                 in: directory
             ) else { return nil }
             let locationsByPath = parseGitStatusLocations(status)
-            guard let diff = await fetchGitWorkingTreeDiff(in: directory, locationsByPath: locationsByPath) else {
+            let baseRevision = vcs == .graphite ? await fetchGraphiteMergeBase(in: directory) : nil
+            guard let diff = await fetchGitWorkingTreeDiff(
+                in: directory,
+                locationsByPath: locationsByPath,
+                baseRevision: baseRevision
+            ) else {
                 return nil
             }
             return DiffSnapshot(
@@ -223,12 +228,20 @@ actor DiffService {
 
     private nonisolated func fetchGitWorkingTreeDiff(
         in directory: URL,
-        locationsByPath: [String: Set<FileChange.ChangeLocation>]?
+        locationsByPath: [String: Set<FileChange.ChangeLocation>]?,
+        baseRevision: String? = nil
     ) async -> String? {
         var parts: [String] = []
         let hasHead = await runCommand("/usr/bin/git", args: ["rev-parse", "--verify", "HEAD"], in: directory) != nil
 
-        if hasHead {
+        if let baseRevision {
+            guard let trackedDiff = await runCommand(
+                "/usr/bin/git",
+                args: ["diff", "--no-color", baseRevision, "--"],
+                in: directory
+            ) else { return nil }
+            parts.append(trackedDiff)
+        } else if hasHead {
             guard let trackedDiff = await runCommand(
                 "/usr/bin/git",
                 args: ["diff", "--no-color", "HEAD", "--"],
@@ -333,6 +346,82 @@ actor DiffService {
             .filter { !$0.isEmpty }
             .joined(separator: "\n")
         return diff.isEmpty ? "" : "\(diff)\n"
+    }
+
+    private nonisolated func fetchGraphiteMergeBase(in directory: URL) async -> String? {
+        guard let currentBranch = await fetchCurrentGitBranch(in: directory),
+              let baseBranch = await fetchGraphiteBaseBranch(in: directory),
+              currentBranch != baseBranch
+        else { return nil }
+
+        guard await gitRevisionExists(baseBranch, in: directory) else { return nil }
+        let mergeBaseOutput = await runCommand(
+            "/usr/bin/git",
+            args: ["merge-base", baseBranch, "HEAD"],
+            in: directory
+        )
+        return mergeBaseOutput.flatMap { firstNonemptyLine(in: $0) }
+    }
+
+    private nonisolated func fetchGraphiteBaseBranch(in directory: URL) async -> String? {
+        if let parent = await fetchGraphiteBranchName(args: ["parent", "--no-interactive"], in: directory) {
+            return parent
+        }
+        if let trunk = await fetchGraphiteBranchName(args: ["trunk", "--no-interactive"], in: directory) {
+            return trunk
+        }
+        return await fetchDefaultGitBranch(in: directory)
+    }
+
+    private nonisolated func fetchGraphiteBranchName(args: [String], in directory: URL) async -> String? {
+        guard let executable = graphiteExecutablePath(),
+              let output = await runCommand(executable, args: args, in: directory)
+        else { return nil }
+        return firstNonemptyLine(in: output)
+    }
+
+    private nonisolated func fetchDefaultGitBranch(in directory: URL) async -> String? {
+        let remoteHeadOutput = await runCommand(
+            "/usr/bin/git",
+            args: ["symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD"],
+            in: directory
+        )
+        if let remoteHead = remoteHeadOutput.flatMap({ firstNonemptyLine(in: $0) }) {
+            return remoteHead
+        }
+
+        for branch in ["main", "master", "trunk"] {
+            if await gitRevisionExists(branch, in: directory) {
+                return branch
+            }
+        }
+        return nil
+    }
+
+    private nonisolated func fetchCurrentGitBranch(in directory: URL) async -> String? {
+        guard let output = await runCommand("/usr/bin/git", args: ["branch", "--show-current"], in: directory) else {
+            return nil
+        }
+        return firstNonemptyLine(in: output)
+    }
+
+    private nonisolated func gitRevisionExists(_ revision: String, in directory: URL) async -> Bool {
+        await runCommand("/usr/bin/git", args: ["rev-parse", "--verify", "\(revision)^{commit}"], in: directory) != nil
+    }
+
+    private nonisolated func firstNonemptyLine(in output: String) -> String? {
+        output
+            .components(separatedBy: .newlines)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .first { !$0.isEmpty }
+    }
+
+    private nonisolated func graphiteExecutablePath() -> String? {
+        [
+            NSHomeDirectory() + "/.local/bin/gt",
+            "/opt/homebrew/bin/gt",
+            "/usr/local/bin/gt",
+        ].first { FileManager.default.isExecutableFile(atPath: $0) }
     }
 
     private nonisolated func extractPath(from diffLine: String) -> String {
