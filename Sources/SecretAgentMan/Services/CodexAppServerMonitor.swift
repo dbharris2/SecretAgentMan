@@ -254,6 +254,7 @@ final class CodexAppServerMonitor {
 
     func respondToApproval(for agentId: UUID, action: ApprovalAction) {
         observers[agentId]?.respondToApproval(action: action)
+        resolveApprovalRequest(id: agentId)
     }
 
     func interrupt(for agentId: UUID) {
@@ -863,6 +864,8 @@ private final class Observer: @unchecked Sendable {
     }
 
     private func handleProcessTermination() {
+        let hadPendingApproval = pendingApprovalRequest != nil
+        let hadPendingUserInput = pendingUserInputRequest != nil
         stdoutPipe.fileHandleForReading.readabilityHandler = nil
         stderrPipe.fileHandleForReading.readabilityHandler = nil
         pendingRequests.removeAll()
@@ -872,6 +875,12 @@ private final class Observer: @unchecked Sendable {
         pendingUserInputRequest = nil
         didInitialize = false
         activeTurnId = nil
+        if hadPendingApproval {
+            onApprovalResolved(agent.id)
+        }
+        if hadPendingUserInput {
+            onUserInputResolved(agent.id)
+        }
     }
 }
 

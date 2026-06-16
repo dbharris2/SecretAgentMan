@@ -136,8 +136,24 @@ enum AgentSessionReducer {
         _ prompt: SessionPromptRequest,
         to snapshot: inout AgentSessionSnapshot
     ) {
+        if snapshot.activePrompt?.id == prompt.id {
+            snapshot.activePrompt = prompt
+            snapshot.queuedPrompts.removeAll { $0.id == prompt.id }
+            return
+        }
+
         if snapshot.activePrompt == nil {
             snapshot.activePrompt = prompt
+            snapshot.queuedPrompts.removeAll { $0.id == prompt.id }
+        } else if let index = snapshot.queuedPrompts.firstIndex(where: { $0.id == prompt.id }) {
+            snapshot.queuedPrompts[index] = prompt
+            var didKeepUpdatedPrompt = false
+            snapshot.queuedPrompts.removeAll { queuedPrompt in
+                guard queuedPrompt.id == prompt.id else { return false }
+                if didKeepUpdatedPrompt { return true }
+                didKeepUpdatedPrompt = true
+                return false
+            }
         } else {
             snapshot.queuedPrompts.append(prompt)
         }
@@ -148,6 +164,7 @@ enum AgentSessionReducer {
         to snapshot: inout AgentSessionSnapshot
     ) {
         if snapshot.activePrompt?.id == id {
+            snapshot.queuedPrompts.removeAll { $0.id == id }
             if snapshot.queuedPrompts.isEmpty {
                 snapshot.activePrompt = nil
             } else {
@@ -155,9 +172,7 @@ enum AgentSessionReducer {
             }
             return
         }
-        if let index = snapshot.queuedPrompts.firstIndex(where: { $0.id == id }) {
-            snapshot.queuedPrompts.remove(at: index)
-        }
+        snapshot.queuedPrompts.removeAll { $0.id == id }
     }
 
     private static func applyMetadataUpdate(
