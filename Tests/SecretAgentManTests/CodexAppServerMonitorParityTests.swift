@@ -250,6 +250,73 @@ struct CodexAppServerMonitorParityTests {
         #expect(snap.queuedPrompts.isEmpty)
     }
 
+    @Test func approvalDecisionDismissesPromptWhenObserverStateIsGone() {
+        // Regression: the app-server process can clear the observer-side
+        // pending approval while the monitor-owned visible prompt remains.
+        // A user click must still dismiss that stale card.
+        let monitor = CodexAppServerMonitor()
+        let agentId = UUID()
+        var events: [SessionEvent] = []
+        monitor.onSessionEvent = { _, event in events.append(event) }
+
+        monitor.presentApprovalRequest(
+            id: agentId,
+            request: CodexApprovalRequest(
+                agentId: agentId,
+                requestId: 1,
+                threadId: "t",
+                turnId: "T1",
+                itemId: "approve-1",
+                kind: .command(command: "curl http://localhost:3000", reason: "Need network access"),
+                actions: [
+                    ApprovalAction(id: "approve", label: "Yes, proceed", kind: .allowOnce),
+                    ApprovalAction(id: "decline", label: "No", kind: .rejectOnce, isDestructive: true),
+                ]
+            )
+        )
+
+        monitor.respondToApproval(
+            for: agentId,
+            action: ApprovalAction(id: "approve", label: "Yes, proceed", kind: .allowOnce)
+        )
+
+        let snap = events.replay()
+
+        #expect(snap.activePrompt == nil)
+        #expect(snap.queuedPrompts.isEmpty)
+    }
+
+    @Test func duplicateApprovalPresentationDismissesWithSingleDecision() {
+        let monitor = CodexAppServerMonitor()
+        let agentId = UUID()
+        var events: [SessionEvent] = []
+        monitor.onSessionEvent = { _, event in events.append(event) }
+        let request = CodexApprovalRequest(
+            agentId: agentId,
+            requestId: 1,
+            threadId: "t",
+            turnId: "T1",
+            itemId: "approve-1",
+            kind: .command(command: "curl http://localhost:3000", reason: "Need network access"),
+            actions: [
+                ApprovalAction(id: "approve", label: "Yes, proceed", kind: .allowOnce),
+                ApprovalAction(id: "decline", label: "No", kind: .rejectOnce, isDestructive: true),
+            ]
+        )
+
+        monitor.presentApprovalRequest(id: agentId, request: request)
+        monitor.presentApprovalRequest(id: agentId, request: request)
+        monitor.respondToApproval(
+            for: agentId,
+            action: ApprovalAction(id: "approve", label: "Yes, proceed", kind: .allowOnce)
+        )
+
+        let snap = events.replay()
+
+        #expect(snap.activePrompt == nil)
+        #expect(snap.queuedPrompts.isEmpty)
+    }
+
     // MARK: - Metadata
 
     @Test func collaborationModeUpdateLandsInSnapshotMetadata() {
