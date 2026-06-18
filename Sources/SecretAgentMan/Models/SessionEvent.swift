@@ -312,6 +312,16 @@ extension AgentSessionSnapshot {
         return nil
     }
 
+    /// All pending approval prompts, including queued prompts. Approval
+    /// responses are addressed by prompt id, so these can be shown together.
+    var approvalPrompts: [ApprovalPrompt] {
+        let prompts = activePrompt.map { [$0] } ?? []
+        return (prompts + queuedPrompts).compactMap { request in
+            if case let .approval(prompt) = request { return prompt }
+            return nil
+        }
+    }
+
     /// The active user-input prompt, or nil if the active prompt is an approval
     /// (or no prompt is active).
     var userInputPrompt: UserInputPrompt? {

@@ -212,6 +212,7 @@ struct AgentSessionReducerTests {
 
         #expect(snap.activePrompt == first)
         #expect(snap.queuedPrompts == [second])
+        #expect(snap.approvalPrompts.map(\.id) == ["a1", "a2"])
     }
 
     @Test func resolvingActivePromotesQueued() {

@@ -43,7 +43,7 @@ final class ClaudeStreamMonitor {
     // Load-bearing: the monitor needs the original request to resolve
     // approvals/elicitations via `observers[agentId]?.respondToApproval(...)`
     // using provider-specific fields like `requestId`.
-    private(set) var pendingApprovalRequests: [UUID: ClaudeApprovalRequest] = [:]
+    private(set) var pendingApprovalRequests: [UUID: [String: ClaudeApprovalRequest]] = [:]
     private(set) var pendingElicitations: [UUID: ClaudeElicitationRequest] = [:]
     private(set) var runtimeStates: [UUID: AgentState] = [:]
 
@@ -152,17 +152,20 @@ final class ClaudeStreamMonitor {
             approvalRequest: { [weak self] id, request in
                 Task { @MainActor in
                     guard let self else { return }
-                    self.pendingApprovalRequests[id] = request
+                    self.pendingApprovalRequests[id, default: [:]][request.requestId] = request
                     self.emit(.promptPresented(.approval(Self.mapApprovalPrompt(request))), for: id)
                 }
             },
-            approvalResolved: { [weak self] id in
+            approvalResolved: { [weak self] id, requestId in
                 Task { @MainActor in
                     guard let self else { return }
-                    if let pending = self.pendingApprovalRequests[id] {
+                    if let pending = self.pendingApprovalRequests[id]?[requestId] {
                         self.emit(.promptResolved(id: pending.requestId), for: id)
                     }
-                    self.pendingApprovalRequests.removeValue(forKey: id)
+                    self.pendingApprovalRequests[id]?.removeValue(forKey: requestId)
+                    if self.pendingApprovalRequests[id]?.isEmpty == true {
+                        self.pendingApprovalRequests.removeValue(forKey: id)
+                    }
                 }
             },
             elicitationRequest: { [weak self] id, request in
@@ -357,8 +360,14 @@ final class ClaudeStreamMonitor {
         observers[agentId]?.sendMessage(trimmed, images: images)
     }
 
-    func respondToApproval(for agentId: UUID, action: ApprovalAction) {
-        observers[agentId]?.respondToApproval(action: action)
+    func respondToApproval(for agentId: UUID, promptId: String, action: ApprovalAction) {
+        observers[agentId]?.respondToApproval(promptId: promptId, action: action)
+        let pending = pendingApprovalRequests[agentId]?[promptId]
+        emit(.promptResolved(id: pending?.requestId ?? promptId), for: agentId)
+        pendingApprovalRequests[agentId]?.removeValue(forKey: promptId)
+        if pendingApprovalRequests[agentId]?.isEmpty == true {
+            pendingApprovalRequests.removeValue(forKey: agentId)
+        }
     }
 
     func setPermissionMode(for agentId: UUID, mode: String) {
@@ -630,7 +639,7 @@ struct ClaudeObserverDelegate {
     let sessionReady: (UUID, String) -> Void
     let transcriptItem: (UUID, CodexTranscriptItem) -> Void
     let approvalRequest: (UUID, ClaudeApprovalRequest) -> Void
-    let approvalResolved: (UUID) -> Void
+    let approvalResolved: (UUID, String) -> Void
     let elicitationRequest: (UUID, ClaudeElicitationRequest) -> Void
     let elicitationResolved: (UUID) -> Void
     let streamingText: (UUID, String) -> Void
@@ -668,7 +677,7 @@ final class ClaudeObserver: @unchecked Sendable {
     private var stdoutBuffer = Data()
     private var stderrBuffer = Data()
     private var stderrLineBuffer = Data()
-    private var pendingApproval: PendingApproval?
+    private var pendingApprovals: [String: PendingApproval] = [:]
     private var pendingElicitation: PendingElicitation?
     private var pendingMessages: [String] = []
     private var didLaunch = false
@@ -773,7 +782,7 @@ final class ClaudeObserver: @unchecked Sendable {
     func stop() {
         stdoutPipe.fileHandleForReading.readabilityHandler = nil
         stderrPipe.fileHandleForReading.readabilityHandler = nil
-        pendingApproval = nil
+        pendingApprovals.removeAll()
         pendingElicitation = nil
         pendingMessages.removeAll()
         didLaunch = false
@@ -818,11 +827,11 @@ final class ClaudeObserver: @unchecked Sendable {
         }
     }
 
-    func respondToApproval(action: ApprovalAction) {
+    func respondToApproval(promptId: String, action: ApprovalAction) {
         queue.async { [weak self] in
             guard let self else { return }
-            if let pending = self.pendingApproval {
-                self.pendingApproval = nil
+            if let pending = self.pendingApprovals[promptId] {
+                self.pendingApprovals.removeValue(forKey: promptId)
                 if action.kind == .allowAlways,
                    let shellAllowRule = action.metadata?.shellAllowRule {
                     try? ClaudeSettingsStore.allowShellRule(shellAllowRule, in: self.agent.folder)
@@ -836,7 +845,7 @@ final class ClaudeObserver: @unchecked Sendable {
             }
             // Always notify so a stuck card (worker state out of sync with the
             // monitor's snapshot) still dismisses when the user clicks Allow/Deny.
-            self.delegate.approvalResolved(self.agent.id)
+            self.delegate.approvalResolved(self.agent.id, promptId)
         }
     }
 
@@ -1030,7 +1039,7 @@ final class ClaudeObserver: @unchecked Sendable {
         // Don't overwrite needsPermission/awaitingResponse — partial-message
         // snapshots (--include-partial-messages) can arrive in the same buffer
         // batch after a control_request.
-        if pendingApproval == nil, pendingElicitation == nil {
+        if pendingApprovals.isEmpty, pendingElicitation == nil {
             publishIfChanged(.active)
         }
     }
@@ -1087,7 +1096,7 @@ final class ClaudeObserver: @unchecked Sendable {
 
         // Don't overwrite needsPermission/awaitingResponse — stream events
         // can arrive in the same buffer batch after a control_request.
-        if pendingApproval == nil, pendingElicitation == nil {
+        if pendingApprovals.isEmpty, pendingElicitation == nil {
             publishIfChanged(.active)
         }
     }
@@ -1124,7 +1133,7 @@ final class ClaudeObserver: @unchecked Sendable {
                 requestId: requestId,
                 permission: permission
             )
-            pendingApproval = PendingApproval(requestId: requestId, toolInput: permission.input)
+            pendingApprovals[requestId] = PendingApproval(requestId: requestId, toolInput: permission.input)
             delegate.approvalRequest(agent.id, approval)
             publishIfChanged(.needsPermission)
 
@@ -1200,9 +1209,12 @@ final class ClaudeObserver: @unchecked Sendable {
     }
 
     private func clearPendingPrompts() {
-        if pendingApproval != nil {
-            pendingApproval = nil
-            delegate.approvalResolved(agent.id)
+        if !pendingApprovals.isEmpty {
+            let promptIds = pendingApprovals.keys.sorted()
+            pendingApprovals.removeAll()
+            for promptId in promptIds {
+                delegate.approvalResolved(agent.id, promptId)
+            }
         }
         if pendingElicitation != nil {
             pendingElicitation = nil

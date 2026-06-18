@@ -457,7 +457,7 @@ struct ClaudeStreamMonitorTests {
             sessionReady: { _, _ in },
             transcriptItem: { _, _ in },
             approvalRequest: { _, _ in },
-            approvalResolved: { _ in },
+            approvalResolved: { _, _ in },
             elicitationRequest: { _, _ in },
             elicitationResolved: { _ in },
             streamingText: { _, _ in },
