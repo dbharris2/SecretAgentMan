@@ -17,8 +17,8 @@ struct ClaudeSessionPanelView: View {
         snapshot?.finalizedTranscript ?? []
     }
 
-    private var pendingApproval: ApprovalPrompt? {
-        snapshot?.approvalPrompt
+    private var pendingApprovals: [ApprovalPrompt] {
+        snapshot?.approvalPrompts ?? []
     }
 
     private var pendingElicitation: UserInputPrompt? {
@@ -45,7 +45,7 @@ struct ClaudeSessionPanelView: View {
                 streaming: streaming,
                 isThinking: isThinking,
                 activeTool: activeTool,
-                hasPendingCard: pendingApproval != nil || pendingElicitation != nil,
+                hasPendingCard: !pendingApprovals.isEmpty || pendingElicitation != nil,
                 fontScale: fontScale,
                 emptyStateText: "Claude session is ready. Send a message to start."
             ) {
@@ -61,7 +61,7 @@ struct ClaudeSessionPanelView: View {
                         }
                     }
 
-                    if let pendingApproval {
+                    ForEach(pendingApprovals) { pendingApproval in
                         approvalCard(pendingApproval)
                     }
                 })
@@ -92,7 +92,7 @@ struct ClaudeSessionPanelView: View {
             onDecline: {},
             actions: prompt.actions,
             onSelectAction: { action in
-                coordinator.answerClaudeApproval(for: agent.id, action: action)
+                coordinator.answerClaudeApproval(for: agent.id, promptId: prompt.id, action: action)
             }
         )
     }

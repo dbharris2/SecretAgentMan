@@ -14,7 +14,7 @@ final class CodexAppServerMonitor {
     // also reads these to suppress terminal-state races until the
     // coordinator migrates to snapshot-driven suppression.
     private(set) var pendingUserInputRequests: [UUID: CodexUserInputRequest] = [:]
-    private(set) var pendingApprovalRequests: [UUID: CodexApprovalRequest] = [:]
+    private(set) var pendingApprovalRequests: [UUID: [String: CodexApprovalRequest]] = [:]
     private(set) var runtimeStates: [UUID: AgentState] = [:]
     /// Debug-only channel retained per plan (provider-specific raw event
     /// details may exist internally for debugging).
@@ -103,9 +103,9 @@ final class CodexAppServerMonitor {
             Task { @MainActor in
                 self?.resolveUserInputRequest(id: id)
             }
-        } onApprovalResolved: { [weak self] id in
+        } onApprovalResolved: { [weak self] id, promptId in
             Task { @MainActor in
-                self?.resolveApprovalRequest(id: id)
+                self?.resolveApprovalRequest(id: id, promptId: promptId)
             }
         } onModelInfo: { [weak self] id, rawModel, displayModel, mode, contextPct in
             Task { @MainActor in
@@ -141,7 +141,7 @@ final class CodexAppServerMonitor {
     }
 
     func presentApprovalRequest(id agentId: UUID, request: CodexApprovalRequest) {
-        pendingApprovalRequests[agentId] = request
+        pendingApprovalRequests[agentId, default: [:]][request.itemId] = request
         finalizeLingeringStreams(for: agentId)
         emit(.promptPresented(.approval(Self.mapApprovalPrompt(request))), for: agentId)
     }
@@ -154,12 +154,16 @@ final class CodexAppServerMonitor {
         pendingUserInputRequests.removeValue(forKey: agentId)
     }
 
-    func resolveApprovalRequest(id agentId: UUID) {
-        if let pending = pendingApprovalRequests[agentId] {
+    func resolveApprovalRequest(id agentId: UUID, promptId: String) {
+        let pending = pendingApprovalRequests[agentId]?[promptId]
+        if let pending {
             finalizeLingeringStreams(for: agentId)
-            emit(.promptResolved(id: pending.itemId), for: agentId)
         }
-        pendingApprovalRequests.removeValue(forKey: agentId)
+        emit(.promptResolved(id: pending?.itemId ?? promptId), for: agentId)
+        pendingApprovalRequests[agentId]?.removeValue(forKey: promptId)
+        if pendingApprovalRequests[agentId]?.isEmpty == true {
+            pendingApprovalRequests.removeValue(forKey: agentId)
+        }
     }
 
     func handleTranscriptItem(_ agentId: UUID, item: CodexTranscriptItem) {
@@ -252,9 +256,9 @@ final class CodexAppServerMonitor {
         observers[agentId]?.setModelName(modelName)
     }
 
-    func respondToApproval(for agentId: UUID, action: ApprovalAction) {
-        observers[agentId]?.respondToApproval(action: action)
-        resolveApprovalRequest(id: agentId)
+    func respondToApproval(for agentId: UUID, promptId: String, action: ApprovalAction) {
+        observers[agentId]?.respondToApproval(promptId: promptId, action: action)
+        resolveApprovalRequest(id: agentId, promptId: promptId)
     }
 
     func interrupt(for agentId: UUID) {
@@ -369,7 +373,7 @@ private final class Observer: @unchecked Sendable {
     private let onApprovalRequest: (UUID, CodexApprovalRequest) -> Void
     private let onDebugMessage: (UUID, String) -> Void
     private let onUserInputResolved: (UUID) -> Void
-    private let onApprovalResolved: (UUID) -> Void
+    private let onApprovalResolved: (UUID, String) -> Void
     private let onModelInfo: (UUID, String, String, CodexCollaborationMode, Double) -> Void
     private let onActiveToolChanged: (UUID, String?) -> Void
 
@@ -386,7 +390,7 @@ private final class Observer: @unchecked Sendable {
     private var pollTimer: Timer?
     private var didInitialize = false
     private var lastObservedState: AgentState?
-    private var pendingApprovalRequest: PendingApprovalServerRequest?
+    private var pendingApprovalRequests: [String: PendingApprovalServerRequest] = [:]
     private var pendingUserInputRequest: PendingUserInputServerRequest?
     private var pendingMessages: [String] = []
     private var sessionFilePath: String?
@@ -413,7 +417,7 @@ private final class Observer: @unchecked Sendable {
         onApprovalRequest: @escaping (UUID, CodexApprovalRequest) -> Void,
         onDebugMessage: @escaping (UUID, String) -> Void,
         onUserInputResolved: @escaping (UUID) -> Void,
-        onApprovalResolved: @escaping (UUID) -> Void,
+        onApprovalResolved: @escaping (UUID, String) -> Void,
         onModelInfo: @escaping (UUID, String, String, CodexCollaborationMode, Double) -> Void,
         onActiveToolChanged: @escaping (UUID, String?) -> Void
     ) {
@@ -471,7 +475,7 @@ private final class Observer: @unchecked Sendable {
         stdoutPipe.fileHandleForReading.readabilityHandler = nil
         stderrPipe.fileHandleForReading.readabilityHandler = nil
         pendingRequests.removeAll()
-        pendingApprovalRequest = nil
+        pendingApprovalRequests.removeAll()
         pendingUserInputRequest = nil
         pendingMessages.removeAll()
         didInitialize = false
@@ -712,10 +716,10 @@ private final class Observer: @unchecked Sendable {
         }
     }
 
-    func respondToApproval(action: ApprovalAction) {
+    func respondToApproval(promptId: String, action: ApprovalAction) {
         queue.async { [weak self] in
             guard let self,
-                  let pendingRequest = self.pendingApprovalRequest
+                  let pendingRequest = self.pendingApprovalRequests[promptId]
             else { return }
 
             if action.kind == .allowAlways,
@@ -724,8 +728,8 @@ private final class Observer: @unchecked Sendable {
             }
 
             if case .unsupportedPermissions = pendingRequest.request.kind {
-                self.pendingApprovalRequest = nil
-                self.onApprovalResolved(self.agent.id)
+                self.pendingApprovalRequests.removeValue(forKey: promptId)
+                self.onApprovalResolved(self.agent.id, promptId)
                 return
             }
 
@@ -752,9 +756,9 @@ private final class Observer: @unchecked Sendable {
                 id: pendingRequest.requestId, decision: decision
             )
 
-            self.pendingApprovalRequest = nil
+            self.pendingApprovalRequests.removeValue(forKey: promptId)
             self.writeEncodable(response)
-            self.onApprovalResolved(self.agent.id)
+            self.onApprovalResolved(self.agent.id, promptId)
         }
     }
 
@@ -864,19 +868,19 @@ private final class Observer: @unchecked Sendable {
     }
 
     private func handleProcessTermination() {
-        let hadPendingApproval = pendingApprovalRequest != nil
+        let pendingApprovalIds = pendingApprovalRequests.keys.sorted()
         let hadPendingUserInput = pendingUserInputRequest != nil
         stdoutPipe.fileHandleForReading.readabilityHandler = nil
         stderrPipe.fileHandleForReading.readabilityHandler = nil
         pendingRequests.removeAll()
         pollTimer?.invalidate()
         pollTimer = nil
-        pendingApprovalRequest = nil
+        pendingApprovalRequests.removeAll()
         pendingUserInputRequest = nil
         didInitialize = false
         activeTurnId = nil
-        if hadPendingApproval {
-            onApprovalResolved(agent.id)
+        for promptId in pendingApprovalIds {
+            onApprovalResolved(agent.id, promptId)
         }
         if hadPendingUserInput {
             onUserInputResolved(agent.id)
@@ -954,7 +958,7 @@ private extension Observer {
                 method: method,
                 params: params
             ) else { return }
-            pendingApprovalRequest = PendingApprovalServerRequest(requestId: requestId, request: request)
+            pendingApprovalRequests[request.itemId] = PendingApprovalServerRequest(requestId: requestId, request: request)
             publishIfChanged(.needsPermission)
             onApprovalRequest(agent.id, request)
 

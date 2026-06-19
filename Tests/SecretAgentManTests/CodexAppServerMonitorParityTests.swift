@@ -277,6 +277,7 @@ struct CodexAppServerMonitorParityTests {
 
         monitor.respondToApproval(
             for: agentId,
+            promptId: "approve-1",
             action: ApprovalAction(id: "approve", label: "Yes, proceed", kind: .allowOnce)
         )
 
@@ -308,6 +309,7 @@ struct CodexAppServerMonitorParityTests {
         monitor.presentApprovalRequest(id: agentId, request: request)
         monitor.respondToApproval(
             for: agentId,
+            promptId: "approve-1",
             action: ApprovalAction(id: "approve", label: "Yes, proceed", kind: .allowOnce)
         )
 
@@ -315,6 +317,51 @@ struct CodexAppServerMonitorParityTests {
 
         #expect(snap.activePrompt == nil)
         #expect(snap.queuedPrompts.isEmpty)
+    }
+
+    @Test func answeringFirstOfMultipleApprovalsLeavesSecondPending() {
+        let monitor = CodexAppServerMonitor()
+        let agentId = UUID()
+        var events: [SessionEvent] = []
+        monitor.onSessionEvent = { _, event in events.append(event) }
+        let approve = ApprovalAction(id: "approve", label: "Yes, proceed", kind: .allowOnce)
+
+        let first = CodexApprovalRequest(
+            agentId: agentId,
+            requestId: 1,
+            threadId: "t",
+            turnId: "T1",
+            itemId: "approve-1",
+            kind: .command(command: "just lint", reason: "Check formatting"),
+            actions: [
+                approve,
+                ApprovalAction(id: "decline", label: "No", kind: .rejectOnce, isDestructive: true),
+            ]
+        )
+        let second = CodexApprovalRequest(
+            agentId: agentId,
+            requestId: 2,
+            threadId: "t",
+            turnId: "T1",
+            itemId: "approve-2",
+            kind: .command(command: "just test", reason: "Run tests"),
+            actions: [
+                approve,
+                ApprovalAction(id: "decline", label: "No", kind: .rejectOnce, isDestructive: true),
+            ]
+        )
+
+        monitor.presentApprovalRequest(id: agentId, request: first)
+        monitor.presentApprovalRequest(id: agentId, request: second)
+        #expect(monitor.pendingApprovalRequests[agentId]?.keys.sorted() == ["approve-1", "approve-2"])
+
+        monitor.respondToApproval(for: agentId, promptId: "approve-1", action: approve)
+
+        let snap = events.replay()
+
+        #expect(snap.activePrompt?.id == "approve-2")
+        #expect(snap.queuedPrompts.isEmpty)
+        #expect(monitor.pendingApprovalRequests[agentId]?.keys.sorted() == ["approve-2"])
     }
 
     // MARK: - Metadata

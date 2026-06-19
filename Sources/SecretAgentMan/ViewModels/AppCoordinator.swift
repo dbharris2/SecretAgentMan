@@ -160,8 +160,8 @@ final class AppCoordinator {
         codexMonitor.respondToUserInput(for: agentId, answers: answers)
     }
 
-    func answerCodexApproval(for agentId: UUID, action: ApprovalAction) {
-        codexMonitor.respondToApproval(for: agentId, action: action)
+    func answerCodexApproval(for agentId: UUID, promptId: String, action: ApprovalAction) {
+        codexMonitor.respondToApproval(for: agentId, promptId: promptId, action: action)
     }
 
     // MARK: - Claude Actions
@@ -175,8 +175,8 @@ final class AppCoordinator {
         claudeMonitor.sendMessage(for: agentId, text: text, images: images)
     }
 
-    func answerClaudeApproval(for agentId: UUID, action: ApprovalAction) {
-        claudeMonitor.respondToApproval(for: agentId, action: action)
+    func answerClaudeApproval(for agentId: UUID, promptId: String, action: ApprovalAction) {
+        claudeMonitor.respondToApproval(for: agentId, promptId: promptId, action: action)
     }
 
     func answerClaudeElicitation(for agentId: UUID, answer: String) {

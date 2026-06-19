@@ -21,8 +21,8 @@ struct CodexSessionPanelView: View {
         snapshot?.userInputPrompt
     }
 
-    private var pendingApproval: ApprovalPrompt? {
-        snapshot?.approvalPrompt
+    private var pendingApprovals: [ApprovalPrompt] {
+        snapshot?.approvalPrompts ?? []
     }
 
     private var debugMessage: String? {
@@ -60,7 +60,7 @@ struct CodexSessionPanelView: View {
                 streaming: streamingText,
                 isThinking: isThinking,
                 activeTool: activeTool,
-                hasPendingCard: pendingInput != nil || pendingApproval != nil,
+                hasPendingCard: pendingInput != nil || !pendingApprovals.isEmpty,
                 fontScale: fontScale,
                 emptyStateText: "Codex session is ready. Send a message to start.",
                 groupsToolActivity: false
@@ -81,7 +81,7 @@ struct CodexSessionPanelView: View {
                         inputCard(pendingInput)
                     }
 
-                    if let pendingApproval {
+                    ForEach(pendingApprovals) { pendingApproval in
                         approvalCard(pendingApproval)
                     }
                 })
@@ -108,18 +108,20 @@ struct CodexSessionPanelView: View {
             onApprove: {
                 coordinator.answerCodexApproval(
                     for: agent.id,
+                    promptId: prompt.id,
                     action: ApprovalAction(id: "approve", label: "Approve", kind: .allowOnce)
                 )
             },
             onDecline: {
                 coordinator.answerCodexApproval(
                     for: agent.id,
+                    promptId: prompt.id,
                     action: ApprovalAction(id: "decline", label: "Decline", kind: .rejectOnce, isDestructive: true)
                 )
             },
             actions: prompt.actions,
             onSelectAction: { action in
-                coordinator.answerCodexApproval(for: agent.id, action: action)
+                coordinator.answerCodexApproval(for: agent.id, promptId: prompt.id, action: action)
             }
         )
     }

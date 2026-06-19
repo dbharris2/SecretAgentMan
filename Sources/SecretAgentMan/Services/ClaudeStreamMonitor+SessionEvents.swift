@@ -12,7 +12,7 @@ extension ClaudeStreamMonitor {
         // Claude terminal state is non-authoritative. Suppress `.finished`
         // whenever more-specific state (pending prompt or active stream) exists.
         if state == .finished {
-            let hasPendingPrompt = pendingApprovalRequests[agentId] != nil
+            let hasPendingPrompt = pendingApprovalRequests[agentId]?.isEmpty == false
                 || pendingElicitations[agentId] != nil
             let hasActiveStream = activeStreamingId[agentId] != nil
             guard !hasPendingPrompt, !hasActiveStream else { return }
