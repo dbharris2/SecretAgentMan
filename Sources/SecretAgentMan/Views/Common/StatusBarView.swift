@@ -65,7 +65,6 @@ struct StatusBarView: View {
             HStack(spacing: Spacing.lg) {
                 panelToggleButton(icon: "doc.text", panel: .plans, label: "Plans")
                 panelToggleImageButton(image: "PRIcon", panel: .prs, label: "Pull Requests")
-                panelToggleButton(icon: "exclamationmark.circle", panel: .issues, label: "Issues")
                 if let vcsType = selectedRepoVCSType, vcsType.supportsLogPanel {
                     panelToggleButton(icon: "arrow.triangle.branch", panel: .vcs, label: "VCS")
                 }

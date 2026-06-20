@@ -5,7 +5,6 @@ final class AppCoordinator {
     let agentSessions: AgentSessionCoordinator
     let repositoryMonitor: RepositoryMonitor
     let prStore: PRStore
-    let issueStore: IssueStore
     let planStore: PlanStore
     let usageMonitor: UsageMonitor
 
@@ -45,13 +44,11 @@ final class AppCoordinator {
         )
 
         let usageMonitor = UsageMonitor(store: agentSessions.store)
-        let issueStore = IssueStore(store: agentSessions.store)
         let planStore = PlanStore()
 
         self.agentSessions = agentSessions
         self.repositoryMonitor = repositoryMonitor
         self.prStore = prStore
-        self.issueStore = issueStore
         self.planStore = planStore
         self.usageMonitor = usageMonitor
         self.store = agentSessions.store
@@ -79,7 +76,6 @@ final class AppCoordinator {
         agentSessions.start()
         repositoryMonitor.start()
         prStore.start()
-        issueStore.start()
         planStore.start()
         usageMonitor.start()
     }
@@ -88,7 +84,6 @@ final class AppCoordinator {
         repositoryMonitor.stop()
         agentSessions.stop()
         prStore.stop()
-        issueStore.stop()
         planStore.stop()
         usageMonitor.stop()
     }
@@ -236,14 +231,6 @@ final class AppCoordinator {
 
     func reviewPR(_ pr: GitHubPRService.GitHubPR) {
         prStore.reviewPR(pr)
-    }
-
-    func selectIssue(_ issue: GitHubIssue?) {
-        issueStore.selectIssue(issue)
-    }
-
-    func workOnIssue(_ issue: GitHubIssue) {
-        issueStore.workOnIssue(issue)
     }
 
     private static func restoreActiveSidebarPanel(from userDefaults: UserDefaults) -> SidebarPanel? {
