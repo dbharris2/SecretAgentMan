@@ -3,6 +3,7 @@ import SwiftUI
 struct StatusBarView: View {
     @Environment(AppCoordinator.self) private var coordinator
     @Environment(\.appTheme) private var theme
+    @Environment(\.fontScale) private var fontScale
     @AppStorage("shellPanelVisible") private var isShellPanelVisible = false
 
     @State private var showingMCPPopover = false
@@ -242,13 +243,15 @@ struct StatusBarView: View {
 
     private func panelToggleImageButton(image: String, panel: SidebarPanel, label: String)
         -> some View {
-        Button {
+        let iconSize = 12 * CGFloat(fontScale)
+
+        return Button {
             coordinator.activeSidebarPanel = coordinator.activeSidebarPanel == panel ? nil : panel
         } label: {
             HStack(spacing: Spacing.sm) {
                 Image(image)
                     .resizable()
-                    .frame(width: 12, height: 12)
+                    .frame(width: iconSize, height: iconSize)
                 Text(label)
                     .scaledFont(size: 11)
             }
