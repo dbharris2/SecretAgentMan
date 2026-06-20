@@ -203,7 +203,7 @@ struct SessionChatView: View {
             .buttonStyle(.plain)
 
             if isExpanded {
-                SessionMarkdownText(text: combinedText, fontScale: fontScale, allowsExpansion: true)
+                SessionMarkdownText(text: combinedText, fontScale: fontScale)
                     .padding(.leading, 24)
                     .opacity(0.85)
             }
@@ -252,7 +252,7 @@ struct SessionChatView: View {
             if isExpanded {
                 VStack(alignment: .leading, spacing: Spacing.md) {
                     ForEach(items, id: \.id) { item in
-                        SessionMarkdownText(text: item.text, fontScale: fontScale, allowsExpansion: true)
+                        SessionMarkdownText(text: item.text, fontScale: fontScale)
                             .padding(.leading, 18)
                     }
                 }
