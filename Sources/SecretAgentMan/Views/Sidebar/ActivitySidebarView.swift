@@ -3,7 +3,6 @@ import SwiftUI
 enum SidebarPanel: String {
     case plans
     case prs
-    case issues
     case vcs
 }
 
@@ -40,16 +39,6 @@ struct ActivitySidebarView: View {
                             lastPollTime: coordinator.prStore.lastPRPollTime,
                             reviewerGroups: coordinator.reviewerGroupStore.groups,
                             selectedPRId: coordinator.prStore.selectedGitHubPR?.id
-                        )
-                    case .issues:
-                        IssueListView(
-                            sections: coordinator.issueStore.issueSections,
-                            isLoading: coordinator.issueStore.isLoadingIssues,
-                            rateLimit: coordinator.prStore.githubRateLimit,
-                            lastPollTime: coordinator.issueStore.lastIssuePollTime,
-                            selectedIssueId: coordinator.issueStore.selectedIssue?.id,
-                            onSelect: coordinator.selectIssue,
-                            onWorkOnIssue: coordinator.workOnIssue
                         )
                     case .vcs:
                         VCSLogView()

@@ -34,4 +34,16 @@ struct AppCoordinatorTests {
 
         #expect(restored.activeSidebarPanel == .vcs)
     }
+
+    @Test
+    func removedIssuesPanelStateRestoresAsNil() throws {
+        let suiteName = "AppCoordinatorTests.removedIssuesPanel.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        defaults.set("issues", forKey: UserDefaultsKeys.activeSidebarPanel)
+
+        let restored = AppCoordinator(loadStateFromDisk: false, userDefaults: defaults)
+
+        #expect(restored.activeSidebarPanel == nil)
+    }
 }
