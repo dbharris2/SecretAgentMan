@@ -77,6 +77,59 @@ struct CodexAppServerMonitorParityTests {
         #expect(snap.runState == .idle)
     }
 
+    @Test func interruptFinalizesStreamAndPublishesIdleLocally() {
+        let monitor = CodexAppServerMonitor()
+        let agentId = UUID()
+        var events: [SessionEvent] = []
+        var states: [AgentState] = []
+        monitor.onSessionEvent = { _, event in events.append(event) }
+        monitor.onStateChange = { _, state in states.append(state) }
+
+        monitor.handleStateChange(for: agentId, state: .active)
+        monitor.emitStreamDelta(id: agentId, itemId: "msg-1", delta: "partial answer")
+        monitor.interrupt(for: agentId)
+        monitor.handleStateChange(for: agentId, state: .active)
+        monitor.emitStreamDelta(id: agentId, itemId: "msg-1", delta: " late text")
+
+        let snap = events.replay()
+
+        #expect(states == [.active, .idle])
+        #expect(snap.streamingAssistantText == nil)
+        #expect(snap.finalizedTranscript.count == 1)
+        #expect(snap.finalizedTranscript[0].id == "msg-1")
+        #expect(snap.finalizedTranscript[0].text == "partial answer")
+        #expect(snap.finalizedTranscript[0].isStreaming == false)
+        #expect(snap.runState == .idle)
+    }
+
+    @Test func localUserMessageAfterInterruptAllowsNewProviderStream() {
+        let monitor = CodexAppServerMonitor()
+        let agentId = UUID()
+        var events: [SessionEvent] = []
+        var states: [AgentState] = []
+        monitor.onSessionEvent = { _, event in events.append(event) }
+        monitor.onStateChange = { _, state in states.append(state) }
+
+        monitor.handleStateChange(for: agentId, state: .active)
+        monitor.emitStreamDelta(id: agentId, itemId: "msg-1", delta: "partial answer")
+        monitor.interrupt(for: agentId)
+        monitor.recordSentUserMessage(for: agentId, text: "next turn", imageData: [])
+        monitor.sendMessage(for: agentId, text: "next turn")
+        monitor.handleStateChange(for: agentId, state: .active)
+        monitor.emitStreamDelta(id: agentId, itemId: "msg-1", delta: " late text")
+        monitor.emitStreamDelta(id: agentId, itemId: "msg-2", delta: "fresh answer")
+
+        let snap = events.replay()
+
+        #expect(states == [.active, .idle, .active])
+        #expect(snap.streamingAssistantText == "fresh answer")
+        #expect(snap.finalizedTranscript.count == 2)
+        #expect(snap.finalizedTranscript[0].text == "partial answer")
+        #expect(snap.finalizedTranscript[1].kind == .userMessage)
+        #expect(snap.finalizedTranscript[1].text == "next turn")
+        #expect(snap.runState == .running)
+    }
+
     @Test func laterTranscriptItemFinalizesLingeringStream() {
         let monitor = CodexAppServerMonitor()
         let agentId = UUID()
@@ -139,6 +192,36 @@ struct CodexAppServerMonitorParityTests {
         #expect(snap.finalizedTranscript[0].id == "msg-1")
         #expect(snap.finalizedTranscript[0].isStreaming == false)
         #expect(snap.activePrompt?.id == "approve-1")
+    }
+
+    @Test func interruptClearsPendingApprovalPromptLocally() {
+        let monitor = CodexAppServerMonitor()
+        let agentId = UUID()
+        var events: [SessionEvent] = []
+        monitor.onSessionEvent = { _, event in events.append(event) }
+
+        monitor.presentApprovalRequest(
+            id: agentId,
+            request: CodexApprovalRequest(
+                agentId: agentId,
+                requestId: 1,
+                threadId: "t",
+                turnId: "T1",
+                itemId: "approve-1",
+                kind: .command(command: "rm -rf", reason: "dangerous"),
+                actions: [
+                    ApprovalAction(id: "approve", label: "Yes, proceed", kind: .allowOnce),
+                    ApprovalAction(id: "decline", label: "No", kind: .rejectOnce, isDestructive: true),
+                ]
+            )
+        )
+        monitor.interrupt(for: agentId)
+
+        let snap = events.replay()
+
+        #expect(snap.activePrompt == nil)
+        #expect(snap.runState == .idle)
+        #expect(monitor.pendingApprovalRequests[agentId] == nil)
     }
 
     @Test func localUserMessageFinalizesLingeringStream() {

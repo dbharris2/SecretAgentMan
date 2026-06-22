@@ -26,6 +26,10 @@ final class CodexAppServerMonitor {
     /// Visibility relaxed from `private` so the +SessionEvents extension in a
     /// separate file can access them.
     @ObservationIgnored var streamingItemIds: [UUID: Set<String>] = [:]
+    /// After a local interrupt, late provider events belong to the cancelled
+    /// turn until the next local send or a non-in-flight provider status.
+    @ObservationIgnored var interruptedProviderEventAgentIds: Set<UUID> = []
+    @ObservationIgnored var interruptedProviderItemIds: [UUID: Set<String>] = [:]
 
     struct PendingLocalUserMessage {
         let id: String
@@ -117,6 +121,12 @@ final class CodexAppServerMonitor {
     }
 
     func handleStateChange(for agentId: UUID, state: AgentState) {
+        if shouldSuppressProviderStateChange(for: agentId, state: state) {
+            return
+        }
+        if !Self.isInFlightState(state) {
+            clearInterruptedProviderGate(for: agentId)
+        }
         runtimeStates[agentId] = state
         onStateChange?(agentId, state)
 
@@ -167,6 +177,8 @@ final class CodexAppServerMonitor {
     }
 
     func handleTranscriptItem(_ agentId: UUID, item: CodexTranscriptItem) {
+        guard !shouldSuppressProviderItem(agentId: agentId, itemId: item.id)
+        else { return }
         finalizeLingeringStreams(before: item, for: agentId)
 
         // Reconcile with an in-flight local user message: the monitor records
@@ -215,10 +227,14 @@ final class CodexAppServerMonitor {
         runtimeStates.removeValue(forKey: agentId)
         debugMessages.removeValue(forKey: agentId)
         streamingItemIds.removeValue(forKey: agentId)
+        interruptedProviderEventAgentIds.remove(agentId)
+        interruptedProviderItemIds.removeValue(forKey: agentId)
         pendingLocalUserMessages.removeValue(forKey: agentId)
     }
 
     func sendMessage(for agentId: UUID, text: String, imagePaths: [String] = []) {
+        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !imagePaths.isEmpty else { return }
+        interruptedProviderEventAgentIds.remove(agentId)
         observers[agentId]?.sendMessage(text, imagePaths: imagePaths)
     }
 
@@ -262,6 +278,7 @@ final class CodexAppServerMonitor {
     }
 
     func interrupt(for agentId: UUID) {
+        applyLocalInterrupt(for: agentId)
         observers[agentId]?.interrupt()
     }
 
@@ -273,6 +290,57 @@ final class CodexAppServerMonitor {
             text: text
         )
         emitTranscriptUpsert(agentId, item: item, canonicalId: item.id)
+    }
+
+    private func applyLocalInterrupt(for agentId: UUID) {
+        guard shouldApplyLocalInterrupt(for: agentId) else { return }
+
+        let interruptedItemIds = streamingItemIds[agentId] ?? []
+        if !interruptedItemIds.isEmpty {
+            interruptedProviderItemIds[agentId, default: []].formUnion(interruptedItemIds)
+        }
+        finalizeLingeringStreams(for: agentId)
+        resolveUserInputRequest(id: agentId)
+        for promptId in pendingApprovalRequests[agentId]?.keys.sorted() ?? [] {
+            resolveApprovalRequest(id: agentId, promptId: promptId)
+        }
+        applyActiveTool(nil, for: agentId)
+        handleStateChange(for: agentId, state: .idle)
+        interruptedProviderEventAgentIds.insert(agentId)
+    }
+
+    private func shouldApplyLocalInterrupt(for agentId: UUID) -> Bool {
+        if let state = runtimeStates[agentId], Self.isInFlightState(state) {
+            return true
+        }
+        return hasLingeringStreams(for: agentId)
+            || pendingUserInputRequests[agentId] != nil
+            || pendingApprovalRequests[agentId]?.isEmpty == false
+    }
+
+    private static func isInFlightState(_ state: AgentState) -> Bool {
+        switch state {
+        case .active, .needsPermission, .awaitingResponse, .awaitingInput:
+            true
+        case .idle, .finished, .error:
+            false
+        }
+    }
+
+    private func shouldSuppressProviderEvents(for agentId: UUID) -> Bool {
+        interruptedProviderEventAgentIds.contains(agentId)
+    }
+
+    private func shouldSuppressProviderStateChange(for agentId: UUID, state: AgentState) -> Bool {
+        shouldSuppressProviderEvents(for: agentId) && Self.isInFlightState(state)
+    }
+
+    func shouldSuppressProviderItem(agentId: UUID, itemId: String) -> Bool {
+        interruptedProviderItemIds[agentId]?.contains(itemId) == true
+    }
+
+    private func clearInterruptedProviderGate(for agentId: UUID) {
+        interruptedProviderEventAgentIds.remove(agentId)
     }
 
     private func shouldFinalizeStreams(for state: AgentState) -> Bool {
