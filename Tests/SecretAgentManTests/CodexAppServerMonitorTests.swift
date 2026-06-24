@@ -406,4 +406,31 @@ struct CodexAppServerMonitorTests {
         #expect(percent != nil)
         #expect(abs((percent ?? 0) - 45.799) < 0.01)
     }
+
+    @Test
+    func sessionFileMetadataSkipsOversizedCompactionLines() throws {
+        let fileURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("codex-session-metadata-\(UUID().uuidString).jsonl")
+        let oversizedPayload = String(repeating: "x", count: 1_100_000)
+        let content = [
+            """
+            {"type":"turn_context","payload":{"model":"gpt-5.4","collaboration_mode":{"mode":"plan"}}}
+            """,
+            """
+            {"timestamp":"2026-06-24T00:00:00Z","type":"compacted","payload":{"message":"","replacement_history":["\(
+                oversizedPayload
+            )"],"window_id":1}}
+            """,
+            """
+            {"type":"event_msg","payload":{"type":"token_count","info":{"model_context_window":200.0,"total_token_usage":{"total_tokens":50.0}}}}
+            """,
+        ].joined(separator: "\n")
+        try content.write(to: fileURL, atomically: true, encoding: .utf8)
+
+        let metadata = CodexAppServerMonitor.sessionFileMetadata(atPath: fileURL.path)
+
+        #expect(metadata.rawModelName == "gpt-5.4")
+        #expect(metadata.collaborationMode == .plan)
+        #expect(metadata.contextPercentUsed == 25.0)
+    }
 }
