@@ -976,33 +976,18 @@ private extension Observer {
     }
 
     func refreshSessionMetadataFromFile(at path: String) {
-        guard let data = FileManager.default.contents(atPath: path),
-              let content = String(data: data, encoding: .utf8)
-        else { return }
+        let metadata = CodexAppServerMonitor.sessionFileMetadata(
+            atPath: path,
+            initial: CodexSessionFileMetadata(
+                rawModelName: reportedModelName,
+                collaborationMode: collaborationMode,
+                contextPercentUsed: 0
+            )
+        )
 
-        var latestReportedModelName = reportedModelName
-        var latestMode = collaborationMode
-        var latestContextPercent = 0.0
-
-        for line in content.split(separator: "\n") {
-            guard let data = line.data(using: .utf8),
-                  let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
-            else { continue }
-
-            if let rawModelName = CodexAppServerMonitor.rawModelName(fromSessionEvent: object) {
-                latestReportedModelName = rawModelName
-            }
-            if let mode = CodexAppServerMonitor.collaborationMode(fromSessionEvent: object) {
-                latestMode = mode
-            }
-            if let contextPercent = CodexAppServerMonitor.contextPercentUsed(fromSessionEvent: object) {
-                latestContextPercent = contextPercent
-            }
-        }
-
-        reportedModelName = latestReportedModelName
-        collaborationMode = latestMode
-        publishModelInfo(contextPercent: latestContextPercent)
+        reportedModelName = metadata.rawModelName
+        collaborationMode = metadata.collaborationMode
+        publishModelInfo(contextPercent: metadata.contextPercentUsed)
     }
 
     func handleJSONObject(_ object: [String: Any]) {
