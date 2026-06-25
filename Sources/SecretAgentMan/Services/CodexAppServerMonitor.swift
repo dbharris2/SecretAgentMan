@@ -511,6 +511,7 @@ private final class Observer: @unchecked Sendable {
 
         process.executableURL = URL(fileURLWithPath: ProviderExecutableLocator.executablePath(for: .codex))
         process.arguments = ["app-server", "--enable", "default_mode_request_user_input"]
+        process.environment = ProcessEnvironment.interactive()
         process.standardInput = stdinPipe
         process.standardOutput = stdoutPipe
         process.standardError = stderrPipe

@@ -47,7 +47,7 @@ final class ShellManager {
         // startProcess inside updateNSView causes a main-thread feedback loop
         // (beachball) because data callbacks re-enter SwiftUI updates.
         let shell = Self.userShell()
-        let env = ProcessInfo.processInfo.environment.map { "\($0.key)=\($0.value)" }
+        let env = ProcessEnvironment.interactiveArray()
         let cwd = key
         DispatchQueue.main.async {
             terminal.startProcess(

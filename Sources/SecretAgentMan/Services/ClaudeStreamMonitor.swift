@@ -706,7 +706,7 @@ final class ClaudeObserver: @unchecked Sendable {
         newProcess.executableURL = URL(fileURLWithPath: ProviderExecutableLocator.executablePath(for: .claude))
         newProcess.arguments = buildArguments()
         newProcess.currentDirectoryURL = agent.folder
-        newProcess.environment = ProcessInfo.processInfo.environment
+        newProcess.environment = ProcessEnvironment.interactive()
         newProcess.standardInput = newStdin
         newProcess.standardOutput = newStdout
         newProcess.standardError = newStderr
