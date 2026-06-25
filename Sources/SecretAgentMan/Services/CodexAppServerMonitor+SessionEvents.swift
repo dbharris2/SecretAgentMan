@@ -14,6 +14,8 @@ extension CodexAppServerMonitor {
     }
 
     func emitStreamDelta(id: UUID, itemId: String, delta: String) {
+        guard !shouldSuppressProviderItem(agentId: id, itemId: itemId)
+        else { return }
         var tracked = streamingItemIds[id, default: []]
         if tracked.contains(itemId) {
             emit(.transcriptDelta(id: itemId, appendedText: delta), for: id)
