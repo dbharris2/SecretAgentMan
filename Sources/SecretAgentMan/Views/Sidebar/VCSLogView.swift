@@ -175,7 +175,7 @@ struct VCSLogView: View {
 
     nonisolated static func commandEnvironment(
         for spec: CommandSpec,
-        base: [String: String] = ProcessInfo.processInfo.environment
+        base: [String: String] = ProcessEnvironment.interactive()
     ) -> [String: String] {
         var env = base
         if spec.perfLabel == "graphite" {
