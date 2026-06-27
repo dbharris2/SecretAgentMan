@@ -230,33 +230,19 @@ enum SessionFileDetector {
         for line in content.split(separator: "\n") {
             guard let lineData = line.data(using: .utf8),
                   let object = try? JSONSerialization.jsonObject(with: lineData) as? [String: Any],
-                  let type = object["type"] as? String,
-                  type == "response_item",
-                  let payload = object["payload"] as? [String: Any],
-                  payload["type"] as? String == "message",
-                  payload["role"] as? String == "user"
+                  let item = CodexAppServerMonitor.transcriptItem(fromSessionEvent: object),
+                  item.role == .user
             else { continue }
 
-            let text = extractTextContent(from: payload["content"])
+            if CodexAppServerMonitor.isBootstrapUserContextMessage(item) {
+                continue
+            }
+
+            let text = item.text.trimmingCharacters(in: .whitespacesAndNewlines)
             if !text.isEmpty {
                 return String(text.prefix(200))
             }
         }
         return nil
-    }
-
-    private static func extractTextContent(from content: Any?) -> String {
-        if let str = content as? String {
-            return str.trimmingCharacters(in: .whitespacesAndNewlines)
-        }
-        if let blocks = content as? [[String: Any]] {
-            return blocks.compactMap { block -> String? in
-                guard let type = block["type"] as? String,
-                      type == "input_text" || type == "text"
-                else { return nil }
-                return block["text"] as? String
-            }.joined().trimmingCharacters(in: .whitespacesAndNewlines)
-        }
-        return ""
     }
 }

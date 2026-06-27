@@ -200,6 +200,65 @@ struct SessionFileDetectorTests {
     }
 
     @Test
+    func availableCodexSessionsSkipsBootstrapContextWhenNamingSession() throws {
+        let rootDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+        let dayDir = rootDir.appendingPathComponent("2026/04/07", isDirectory: true)
+        try FileManager.default.createDirectory(at: dayDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: rootDir) }
+
+        let folder = URL(fileURLWithPath: "/tmp/project-a")
+        let file = dayDir.appendingPathComponent("session.jsonl")
+        let content = try [
+            #"{"type":"session_meta","payload":{"id":"codex-session","cwd":"/tmp/project-a"}}"#,
+            codexUserMessageLine(
+                "# AGENTS.md instructions for /tmp/project-a\n\n<environment_context>\n</environment_context>"
+            ),
+            codexUserMessageLine("Is there any way to get better Codex session names?"),
+        ].joined(separator: "\n")
+        try content.write(to: file, atomically: true, encoding: .utf8)
+
+        let agent = Agent(
+            name: "Codex",
+            folder: folder,
+            provider: .codex
+        )
+        let sessions = SessionFileDetector.availableSessions(for: agent, inCodexDirectory: rootDir)
+
+        #expect(sessions.first?.firstMessage == "Is there any way to get better Codex session names?")
+        #expect(sessions.first?.displayName == "Is there any way to get better Codex session names?")
+    }
+
+    @Test
+    func availableCodexSessionsFallsBackToIdWhenOnlyBootstrapContextExists() throws {
+        let rootDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+        let dayDir = rootDir.appendingPathComponent("2026/04/07", isDirectory: true)
+        try FileManager.default.createDirectory(at: dayDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: rootDir) }
+
+        let folder = URL(fileURLWithPath: "/tmp/project-a")
+        let file = dayDir.appendingPathComponent("session.jsonl")
+        let content = try [
+            #"{"type":"session_meta","payload":{"id":"codex-session","cwd":"/tmp/project-a"}}"#,
+            codexUserMessageLine(
+                "# AGENTS.md instructions for /tmp/project-a\n\n<environment_context>\n</environment_context>"
+            ),
+        ].joined(separator: "\n")
+        try content.write(to: file, atomically: true, encoding: .utf8)
+
+        let agent = Agent(
+            name: "Codex",
+            folder: folder,
+            provider: .codex
+        )
+        let sessions = SessionFileDetector.availableSessions(for: agent, inCodexDirectory: rootDir)
+
+        #expect(sessions.first?.firstMessage == nil)
+        #expect(sessions.first?.displayName == "codex-session")
+    }
+
+    @Test
     func codexSessionFileExistsMatchesSessionIdInSessionMeta() throws {
         let rootDir = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString)
@@ -214,4 +273,22 @@ struct SessionFileDetectorTests {
         #expect(SessionFileDetector.codexSessionFileExists("codex-session", inDirectory: rootDir))
         #expect(!SessionFileDetector.codexSessionFileExists("other-session", inDirectory: rootDir))
     }
+}
+
+private func codexUserMessageLine(_ text: String) throws -> String {
+    let object: [String: Any] = [
+        "type": "response_item",
+        "payload": [
+            "type": "message",
+            "role": "user",
+            "content": [
+                [
+                    "type": "input_text",
+                    "text": text,
+                ],
+            ],
+        ],
+    ]
+    let data = try JSONSerialization.data(withJSONObject: object)
+    return String(bytes: data, encoding: .utf8) ?? ""
 }
