@@ -169,6 +169,35 @@ struct CodexAppServerMonitorTests {
     }
 
     @Test
+    func completedCommandToolOutputIsRetainedWithBoundedSize() {
+        let output = String(repeating: "x", count: SessionRetentionPolicy.maxRetainedToolOutputCharacters + 50)
+        let toolItem = CodexAppServerMonitor.transcriptItem(from: [
+            "id": "item-123",
+            "type": "commandExecution",
+            "command": ["lint"],
+            "aggregatedOutput": output,
+        ])
+
+        guard case let .command(detail) = toolItem?.tool else {
+            Issue.record("expected command tool detail")
+            return
+        }
+        #expect(detail.output.count == SessionRetentionPolicy.maxRetainedToolOutputCharacters + SessionRetentionPolicy.toolOutputTruncationSuffix
+            .count)
+        #expect(detail.output.hasSuffix(SessionRetentionPolicy.toolOutputTruncationSuffix))
+    }
+
+    @Test
+    func appendingToolOutputStopsAfterRetentionCap() {
+        let almostFull = String(repeating: "x", count: SessionRetentionPolicy.maxRetainedToolOutputCharacters - 1)
+        let capped = SessionRetentionPolicy.appendRetainedToolOutput("abcdef", to: almostFull)
+        let unchanged = SessionRetentionPolicy.appendRetainedToolOutput("more", to: capped)
+
+        #expect(capped.hasSuffix(SessionRetentionPolicy.toolOutputTruncationSuffix))
+        #expect(unchanged == capped)
+    }
+
+    @Test
     func buildsFileChangeToolItemFromCompletedEvent() {
         let toolItem = CodexAppServerMonitor.transcriptItem(from: [
             "id": "item-456",

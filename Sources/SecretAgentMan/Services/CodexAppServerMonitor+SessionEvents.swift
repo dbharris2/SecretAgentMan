@@ -60,7 +60,7 @@ extension CodexAppServerMonitor {
         return SessionTranscriptItem(
             id: id,
             kind: kind,
-            text: item.displayText,
+            text: SessionRetentionPolicy.visibleTranscriptText(item.displayText),
             imageData: item.images,
             metadata: metadata
         )

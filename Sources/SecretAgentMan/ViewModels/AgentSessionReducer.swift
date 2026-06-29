@@ -78,14 +78,15 @@ enum AgentSessionReducer {
             snapshot.transcript[index] = SessionTranscriptItem(
                 id: item.id,
                 kind: item.kind,
-                text: item.text,
+                text: SessionRetentionPolicy.visibleTranscriptText(item.text),
                 isStreaming: mergedIsStreaming,
                 createdAt: preservedCreatedAt,
                 imageData: item.imageData,
                 metadata: item.metadata
             )
         } else {
-            snapshot.transcript.append(item)
+            snapshot.transcript.append(cappedTranscriptItem(item))
+            trimTranscript(&snapshot)
         }
     }
 
@@ -106,7 +107,7 @@ enum AgentSessionReducer {
         snapshot.transcript[index] = SessionTranscriptItem(
             id: existing.id,
             kind: existing.kind,
-            text: existing.text + appended,
+            text: SessionRetentionPolicy.appendVisibleTranscriptText(appended, to: existing.text),
             isStreaming: true,
             createdAt: existing.createdAt,
             imageData: existing.imageData,
@@ -229,5 +230,23 @@ enum AgentSessionReducer {
         case let (nil, r?): r
         case (nil, nil): nil
         }
+    }
+
+    private static func cappedTranscriptItem(_ item: SessionTranscriptItem) -> SessionTranscriptItem {
+        SessionTranscriptItem(
+            id: item.id,
+            kind: item.kind,
+            text: SessionRetentionPolicy.visibleTranscriptText(item.text),
+            isStreaming: item.isStreaming,
+            createdAt: item.createdAt,
+            imageData: item.imageData,
+            metadata: item.metadata
+        )
+    }
+
+    private static func trimTranscript(_ snapshot: inout AgentSessionSnapshot) {
+        let overflow = snapshot.transcript.count - SessionRetentionPolicy.maxRetainedTranscriptItems
+        guard overflow > 0 else { return }
+        snapshot.transcript.removeFirst(overflow)
     }
 }
