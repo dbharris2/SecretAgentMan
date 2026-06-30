@@ -156,7 +156,7 @@ struct SessionChatView: View {
             }
 
             if let text = streaming, !text.isEmpty {
-                SessionStreamingBubble(text: text, fontScale: fontScale)
+                SessionStreamingBubble(text: text)
             } else if isThinking {
                 SessionThinkingBubble(providerName: providerName, activeTool: activeTool)
             }

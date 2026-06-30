@@ -619,10 +619,11 @@ enum SessionPanelTheme {
 
 struct SessionStreamingBubble: View {
     let text: String
-    let fontScale: Double
 
     var body: some View {
-        SessionMarkdownText(text: text, fontScale: fontScale)
+        Text(text.isEmpty ? " " : text)
+            .scaledFont(size: 13)
+            .textSelection(.enabled)
             .frame(maxWidth: .infinity, alignment: .leading)
     }
 }

@@ -451,6 +451,7 @@ private final class Observer: @unchecked Sendable {
     private let stdinPipe = Pipe()
     private let queue: DispatchQueue
 
+    private var didStartProcess = false
     private var stdoutBuffer = Data()
     private var stderrBuffer = Data()
     private var nextRequestID = 1
@@ -468,7 +469,6 @@ private final class Observer: @unchecked Sendable {
     private var approvalPolicy: CodexApprovalPolicy = .storedValue
     private var sandboxMode: CodexSandboxMode = .storedValue
     private var inProgressToolItems: [String: CodexTranscriptItem] = [:]
-    private var streamingAgentMessages: [String: String] = [:]
     private var activeStreamingItemId: String?
     private var activeTurnId: String?
     private var pendingImageTempPaths: [String] = []
@@ -507,7 +507,11 @@ private final class Observer: @unchecked Sendable {
     }
 
     func start() {
-        guard process.isRunning == false else { return }
+        // A Foundation Process is single-use: after run() has been called,
+        // calling run() again can raise an Objective-C exception even if the
+        // process is no longer running.
+        guard !didStartProcess else { return }
+        didStartProcess = true
 
         process.executableURL = URL(fileURLWithPath: ProviderExecutableLocator.executablePath(for: .codex))
         process.arguments = ["app-server", "--enable", "default_mode_request_user_input"]
@@ -531,6 +535,7 @@ private final class Observer: @unchecked Sendable {
         do {
             try process.run()
         } catch {
+            didStartProcess = false
             onStateChange(agent.id, .error)
             return
         }
@@ -671,6 +676,7 @@ private final class Observer: @unchecked Sendable {
         guard let turns = thread["turns"] as? [[String: Any]] else { return }
 
         var sawTaskStarted = false
+        var recentItems: [CodexTranscriptItem] = []
         for turn in turns {
             guard let items = turn["items"] as? [[String: Any]] else { continue }
             for rawItem in items {
@@ -679,8 +685,14 @@ private final class Observer: @unchecked Sendable {
                     continue
                 }
                 sawTaskStarted = true
-                onTranscriptItem(agent.id, item)
+                recentItems.append(item)
+                if recentItems.count > SessionRetentionPolicy.maxRetainedTranscriptItems {
+                    recentItems.removeFirst(recentItems.count - SessionRetentionPolicy.maxRetainedTranscriptItems)
+                }
             }
+        }
+        for item in recentItems {
+            onTranscriptItem(agent.id, item)
         }
     }
 
@@ -1079,28 +1091,27 @@ private extension Observer {
     }
 
     func handleAgentMessageDelta(itemId: String, delta: String) {
-        let existing = streamingAgentMessages[itemId] ?? ""
-        let updated = existing + delta
-        streamingAgentMessages[itemId] = updated
         activeStreamingItemId = itemId
-        onStreamingText(agent.id, updated)
         onStreamDelta(agent.id, itemId, delta)
     }
 
     func handleToolOutputDelta(itemId: String, delta: String) {
         guard var item = inProgressToolItems[itemId] else { return }
+        let previousDisplayText = item.displayText
         switch item.tool {
         case var .command(detail)?:
-            detail.output += delta
+            detail.output = SessionRetentionPolicy.appendRetainedToolOutput(delta, to: detail.output)
             item.tool = .command(detail)
         case var .fileChange(detail)?:
-            detail.patch += delta
+            detail.patch = SessionRetentionPolicy.appendRetainedToolOutput(delta, to: detail.patch)
             item.tool = .fileChange(detail)
         default:
             return
         }
         inProgressToolItems[itemId] = item
-        onTranscriptItem(agent.id, item)
+        if item.displayText != previousDisplayText {
+            onTranscriptItem(agent.id, item)
+        }
     }
 
     func handleItemCompleted(item: [String: Any]) {
@@ -1120,7 +1131,6 @@ private extension Observer {
         }
 
         if itemType == "agentMessage", let rawId {
-            streamingAgentMessages.removeValue(forKey: rawId)
             if activeStreamingItemId == rawId {
                 activeStreamingItemId = nil
                 onStreamingText(agent.id, "")

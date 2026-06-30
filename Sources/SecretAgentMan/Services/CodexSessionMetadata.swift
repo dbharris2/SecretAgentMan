@@ -267,7 +267,7 @@ extension CodexAppServerMonitor {
 
         let detail = CodexCommandToolDetail(
             command: commandText(from: item) ?? "",
-            output: item["aggregatedOutput"] as? String ?? "",
+            output: SessionRetentionPolicy.retainedToolOutput(item["aggregatedOutput"] as? String ?? ""),
             status: item["status"] as? String,
             exitCode: item["exitCode"] as? Int ?? item["exit_code"] as? Int,
             durationMs: item["durationMs"] as? Double ?? item["duration_ms"] as? Double,
@@ -291,7 +291,7 @@ extension CodexAppServerMonitor {
         else { return nil }
 
         let detail = CodexFileChangeToolDetail(
-            patch: fileChangePatchText(from: item),
+            patch: SessionRetentionPolicy.retainedToolOutput(fileChangePatchText(from: item)),
             status: item["status"] as? String,
             isRunning: isRunning
         )
