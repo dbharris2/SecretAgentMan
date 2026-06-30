@@ -47,14 +47,14 @@ final class ShellManager {
         // startProcess inside updateNSView causes a main-thread feedback loop
         // (beachball) because data callbacks re-enter SwiftUI updates.
         let shell = Self.userShell()
-        let env = ProcessEnvironment.interactiveArray()
+        let env = ProcessEnvironment.interactiveTerminalArray(shell: shell)
         let cwd = key
         DispatchQueue.main.async {
             terminal.startProcess(
                 executable: shell,
                 args: [],
                 environment: env,
-                execName: (shell as NSString).lastPathComponent,
+                execName: Self.loginShellName(for: shell),
                 currentDirectory: cwd
             )
         }
@@ -97,6 +97,10 @@ final class ShellManager {
         } catch {}
 
         return ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh"
+    }
+
+    private static func loginShellName(for shell: String) -> String {
+        "-\((shell as NSString).lastPathComponent)"
     }
 
     /// Read terminal font from Ghostty config, falling back to system monospace.

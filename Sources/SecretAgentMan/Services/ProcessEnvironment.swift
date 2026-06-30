@@ -18,6 +18,33 @@ enum ProcessEnvironment {
         environmentArray(interactive(base: base))
     }
 
+    static func interactiveTerminal(
+        base: [String: String] = ProcessInfo.processInfo.environment,
+        shell: String? = nil
+    ) -> [String: String] {
+        var environment = interactive(base: base)
+
+        environment["TERM"] = "xterm-256color"
+        if environment["COLORTERM"]?.isEmpty ?? true {
+            environment["COLORTERM"] = "truecolor"
+        }
+        if environment["LANG"]?.isEmpty ?? true {
+            environment["LANG"] = "en_US.UTF-8"
+        }
+        if let shell, !shell.isEmpty {
+            environment["SHELL"] = shell
+        }
+
+        return environment
+    }
+
+    static func interactiveTerminalArray(
+        base: [String: String] = ProcessInfo.processInfo.environment,
+        shell: String? = nil
+    ) -> [String] {
+        environmentArray(interactiveTerminal(base: base, shell: shell))
+    }
+
     static func environmentArray(_ environment: [String: String]) -> [String] {
         environment.keys.sorted().map { key in
             "\(key)=\(environment[key] ?? "")"

@@ -26,6 +26,38 @@ struct ProcessEnvironmentTests {
     }
 
     @Test
+    func interactiveTerminalEnvironmentAddsTerminalDefaults() {
+        let environment = ProcessEnvironment.interactiveTerminal(
+            base: [
+                "HOME": "/Users/tester",
+                "PATH": "/usr/bin:/bin",
+                "TERM": "dumb",
+            ],
+            shell: "/bin/zsh"
+        )
+
+        #expect(environment["HOME"] == "/Users/tester")
+        #expect(environment["TERM"] == "xterm-256color")
+        #expect(environment["COLORTERM"] == "truecolor")
+        #expect(environment["LANG"] == "en_US.UTF-8")
+        #expect(environment["SHELL"] == "/bin/zsh")
+    }
+
+    @Test
+    func interactiveTerminalEnvironmentPreservesExplicitLocaleAndColorMode() {
+        let environment = ProcessEnvironment.interactiveTerminal(base: [
+            "HOME": "/Users/tester",
+            "PATH": "/usr/bin:/bin",
+            "COLORTERM": "24bit",
+            "LANG": "en_GB.UTF-8",
+        ])
+
+        #expect(environment["TERM"] == "xterm-256color")
+        #expect(environment["COLORTERM"] == "24bit")
+        #expect(environment["LANG"] == "en_GB.UTF-8")
+    }
+
+    @Test
     func mergedPathPreservesCustomEntriesAndDeduplicatesStandardPaths() throws {
         let path = ProcessEnvironment.mergedPath(
             currentPath: "/custom/bin:/opt/homebrew/bin:/usr/bin:/custom/bin",
