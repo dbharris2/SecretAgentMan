@@ -19,8 +19,11 @@ final class CodexAppServerMonitor {
     /// Debug-only channel retained per plan (provider-specific raw event
     /// details may exist internally for debugging).
     private(set) var debugMessages: [UUID: String] = [:]
+    private(set) var availableModels: [CodexAvailableModel] = CodexModelSettings.fallbackModels
 
     @ObservationIgnored private var observers: [UUID: Observer] = [:]
+    @ObservationIgnored private var modelDiscovery: CodexModelDiscovery?
+    @ObservationIgnored private var modelDiscoveryID: UUID?
 
     /// Normalized event emission state (Phase 1 dual-emit migration).
     /// Visibility relaxed from `private` so the +SessionEvents extension in a
@@ -114,6 +117,11 @@ final class CodexAppServerMonitor {
         } onModelInfo: { [weak self] id, rawModel, displayModel, mode, contextPct in
             Task { @MainActor in
                 self?.applyModelInfo(id: id, rawModel: rawModel, displayModel: displayModel, mode: mode, contextPct: contextPct)
+            }
+        } onAvailableModels: { [weak self] _, models in
+            Task { @MainActor in
+                guard !models.isEmpty else { return }
+                self?.availableModels = models
             }
         } onActiveToolChanged: { [weak self] id, name in
             Task { @MainActor in self?.applyActiveTool(name, for: id) }
@@ -218,6 +226,9 @@ final class CodexAppServerMonitor {
             observer.stop()
         }
         observers.removeAll()
+        modelDiscovery?.stop()
+        modelDiscovery = nil
+        modelDiscoveryID = nil
     }
 
     func removeObserver(for agentId: UUID) {
@@ -270,6 +281,29 @@ final class CodexAppServerMonitor {
 
     func setModelName(for agentId: UUID, modelName: String) {
         observers[agentId]?.setModelName(modelName)
+    }
+
+    func refreshAvailableModels() {
+        if let observer = observers.values.first {
+            observer.refreshAvailableModels()
+            return
+        }
+        guard modelDiscovery == nil else { return }
+
+        let discoveryID = UUID()
+        let discovery = CodexModelDiscovery { [weak self] models in
+            Task { @MainActor in
+                guard let self, self.modelDiscoveryID == discoveryID else { return }
+                self.modelDiscovery = nil
+                self.modelDiscoveryID = nil
+                if !models.isEmpty {
+                    self.availableModels = models
+                }
+            }
+        }
+        modelDiscovery = discovery
+        modelDiscoveryID = discoveryID
+        discovery.start()
     }
 
     func respondToApproval(for agentId: UUID, promptId: String, action: ApprovalAction) {
@@ -443,6 +477,7 @@ private final class Observer: @unchecked Sendable {
     private let onUserInputResolved: (UUID) -> Void
     private let onApprovalResolved: (UUID, String) -> Void
     private let onModelInfo: (UUID, String, String, CodexCollaborationMode, Double) -> Void
+    private let onAvailableModels: (UUID, [CodexAvailableModel]) -> Void
     private let onActiveToolChanged: (UUID, String?) -> Void
 
     private let process = Process()
@@ -465,6 +500,7 @@ private final class Observer: @unchecked Sendable {
     private var sessionFilePath: String?
     private var requestedModelName = CodexModelSettings.storedValue
     private var reportedModelName: String?
+    private var availableModelsByName: [String: CodexAvailableModel] = [:]
     private var collaborationMode: CodexCollaborationMode = .default
     private var approvalPolicy: CodexApprovalPolicy = .storedValue
     private var sandboxMode: CodexSandboxMode = .storedValue
@@ -487,6 +523,7 @@ private final class Observer: @unchecked Sendable {
         onUserInputResolved: @escaping (UUID) -> Void,
         onApprovalResolved: @escaping (UUID, String) -> Void,
         onModelInfo: @escaping (UUID, String, String, CodexCollaborationMode, Double) -> Void,
+        onAvailableModels: @escaping (UUID, [CodexAvailableModel]) -> Void,
         onActiveToolChanged: @escaping (UUID, String?) -> Void
     ) {
         self.agent = agent
@@ -502,6 +539,7 @@ private final class Observer: @unchecked Sendable {
         self.onUserInputResolved = onUserInputResolved
         self.onApprovalResolved = onApprovalResolved
         self.onModelInfo = onModelInfo
+        self.onAvailableModels = onAvailableModels
         self.onActiveToolChanged = onActiveToolChanged
         queue = DispatchQueue(label: "CodexAppServerMonitor.\(agent.id.uuidString)")
     }
@@ -602,6 +640,7 @@ private final class Observer: @unchecked Sendable {
             ]
         ) { [weak self] _ in
             guard let self else { return }
+            self.refreshAvailableModels()
             self.startOrResumeThread()
         }
     }
@@ -776,6 +815,12 @@ private final class Observer: @unchecked Sendable {
         requestedModelName = normalized
         reportedModelName = nil
         publishModelInfo(contextPercent: 0)
+    }
+
+    func refreshAvailableModels() {
+        queue.async { [weak self] in
+            self?.fetchAvailableModels(cursor: nil, accumulated: [], pagesRemaining: 10)
+        }
     }
 
     func respondToUserInput(answers: [String: [String]]) {
@@ -970,6 +1015,46 @@ private final class Observer: @unchecked Sendable {
 }
 
 private extension Observer {
+    func fetchAvailableModels(
+        cursor: String?,
+        accumulated: [CodexAvailableModel],
+        pagesRemaining: Int
+    ) {
+        guard pagesRemaining > 0 else {
+            publishAvailableModels(accumulated)
+            return
+        }
+
+        var params: [String: Any] = [
+            "includeHidden": false,
+            "limit": 100,
+        ]
+        if let cursor {
+            params["cursor"] = cursor
+        }
+
+        sendRequest(method: "model/list", params: params) { [weak self] response in
+            guard let self else { return }
+            let page = CodexModelSettings.models(from: response)
+            let models = CodexModelSettings.deduplicated(accumulated + page)
+            if let nextCursor = CodexModelSettings.nextCursor(from: response) {
+                self.fetchAvailableModels(
+                    cursor: nextCursor,
+                    accumulated: models,
+                    pagesRemaining: pagesRemaining - 1
+                )
+            } else {
+                self.publishAvailableModels(models)
+            }
+        }
+    }
+
+    func publishAvailableModels(_ models: [CodexAvailableModel]) {
+        guard !models.isEmpty else { return }
+        availableModelsByName = Dictionary(uniqueKeysWithValues: models.map { ($0.model, $0) })
+        onAvailableModels(agent.id, models)
+    }
+
     func collaborationModePayload() -> [String: Any] {
         CodexAppServerMonitor.collaborationModePayload(
             mode: collaborationMode,
@@ -982,7 +1067,8 @@ private extension Observer {
         onModelInfo(
             agent.id,
             displayRawModelName,
-            CodexAppServerMonitor.friendlyModelName(displayRawModelName),
+            availableModelsByName[displayRawModelName]?.displayTitle
+                ?? CodexAppServerMonitor.friendlyModelName(displayRawModelName),
             collaborationMode,
             contextPercent
         )

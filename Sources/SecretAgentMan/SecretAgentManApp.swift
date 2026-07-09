@@ -31,6 +31,7 @@ struct SecretAgentManApp: App {
         Settings {
             SettingsView(
                 shellManager: coordinator.shellManager,
+                codexMonitor: coordinator.codexMonitor,
                 reviewerGroupStore: coordinator.reviewerGroupStore
             )
         }
