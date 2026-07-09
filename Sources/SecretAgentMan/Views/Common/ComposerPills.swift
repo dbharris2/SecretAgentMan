@@ -26,6 +26,7 @@ struct ComposerModePickerButton<Mode: Hashable>: View {
     let modes: [Mode]
     let currentMode: Mode
     let label: (Mode) -> String
+    var detail: (Mode) -> String? = { _ in nil }
     let shortcutKey: KeyEquivalent
     let shortcutModifiers: EventModifiers
     let shortcutLabel: String
@@ -57,7 +58,8 @@ struct ComposerModePickerButton<Mode: Hashable>: View {
                 shortcutLabel: shortcutLabel,
                 modes: modes,
                 currentMode: currentMode,
-                label: label
+                label: label,
+                detail: detail
             ) { mode in
                 onSelect(mode)
                 isPresented = false
@@ -72,6 +74,7 @@ private struct ComposerModeList<Mode: Hashable>: View {
     let modes: [Mode]
     let currentMode: Mode
     let label: (Mode) -> String
+    let detail: (Mode) -> String?
     let onSelect: (Mode) -> Void
 
     @Environment(\.appTheme) private var theme
@@ -99,7 +102,16 @@ private struct ComposerModeList<Mode: Hashable>: View {
                     onSelect(mode)
                 } label: {
                     HStack {
-                        Text(label(mode)).scaledFont(size: 12)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(label(mode))
+                                .scaledFont(size: 12)
+                            if let detail = detail(mode), !detail.isEmpty {
+                                Text(detail)
+                                    .scaledFont(size: 10)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(2)
+                            }
+                        }
                         Spacer()
                         if currentMode == mode {
                             Image(systemName: "checkmark")

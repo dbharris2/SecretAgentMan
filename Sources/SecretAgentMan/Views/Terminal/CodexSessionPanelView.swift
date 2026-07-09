@@ -194,12 +194,33 @@ private struct CodexComposerView: View {
         CodexModelSettings.effectiveModel(configDefaults: configDefaults)
     }
 
+    private var modelPickerModels: [CodexAvailableModel] {
+        CodexModelSettings.modelOptions(
+            discoveredModels: coordinator.codexMonitor.availableModels,
+            currentModelName: currentRequestedModelName
+        )
+    }
+
     private var modelPickerOptions: [String] {
-        var options = CodexModelSettings.suggestedModelNames
-        if !options.contains(currentRequestedModelName) {
-            options.insert(currentRequestedModelName, at: 0)
+        modelPickerModels.map(\.model)
+    }
+
+    private var modelPickerModelsByName: [String: CodexAvailableModel] {
+        Dictionary(uniqueKeysWithValues: modelPickerModels.map { ($0.model, $0) })
+    }
+
+    private func modelLabel(_ modelName: String) -> String {
+        if let discoveredModel = modelPickerModelsByName[modelName] {
+            return discoveredModel.displayTitle
         }
-        return options
+        if modelName == currentRequestedModelName {
+            return currentModelName
+        }
+        return CodexAppServerMonitor.friendlyModelName(modelName)
+    }
+
+    private func modelDescription(_ modelName: String) -> String? {
+        modelPickerModelsByName[modelName]?.description
     }
 
     private var skillSuggestions: [SkillInfo] {
@@ -230,11 +251,8 @@ private struct CodexComposerView: View {
                     title: "Model",
                     modes: modelPickerOptions,
                     currentMode: currentRequestedModelName,
-                    label: { modelName in
-                        modelName == currentRequestedModelName
-                            ? currentModelName
-                            : CodexAppServerMonitor.friendlyModelName(modelName)
-                    },
+                    label: modelLabel,
+                    detail: modelDescription,
                     shortcutKey: "g",
                     shortcutModifiers: [.command, .shift],
                     shortcutLabel: "⌘⇧G",
@@ -283,6 +301,9 @@ private struct CodexComposerView: View {
         .onChange(of: rawModelName) { _, _ in
             configDefaults = CodexConfigLoader.loadDefaults()
             coordinator.refreshCodexModel(for: agent.id)
+        }
+        .task {
+            coordinator.codexMonitor.refreshAvailableModels()
         }
         .onChange(of: coordinator.composerInsert) { _, text in
             if let text {

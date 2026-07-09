@@ -3,11 +3,12 @@ import SwiftUI
 
 struct SettingsView: View {
     let shellManager: ShellManager
+    let codexMonitor: CodexAppServerMonitor
     let reviewerGroupStore: ReviewerGroupStore
 
     var body: some View {
         TabView {
-            GeneralSettingsView(shellManager: shellManager)
+            GeneralSettingsView(shellManager: shellManager, codexMonitor: codexMonitor)
                 .tabItem { Label("General", systemImage: "gear") }
             ReviewerGroupsSettingsView(store: reviewerGroupStore)
                 .tabItem { Label("Reviewers", systemImage: "person.2") }
@@ -18,6 +19,7 @@ struct SettingsView: View {
 
 struct GeneralSettingsView: View {
     let shellManager: ShellManager
+    let codexMonitor: CodexAppServerMonitor
 
     @AppStorage(UserDefaultsKeys.terminalTheme) private var selectedTheme = "Catppuccin Mocha"
     @AppStorage(UserDefaultsKeys.claudePluginDirectory) private var claudePluginDirectory = ""
@@ -36,6 +38,13 @@ struct GeneralSettingsView: View {
 
     private var effectiveCodexModelName: String {
         CodexModelSettings.effectiveModel(configDefaults: codexConfigDefaults)
+    }
+
+    private var codexPresetModels: [CodexAvailableModel] {
+        CodexModelSettings.modelOptions(
+            discoveredModels: codexMonitor.availableModels,
+            currentModelName: effectiveCodexModelName
+        )
     }
 
     private var effectiveCodexApprovalPolicy: CodexApprovalPolicy {
@@ -190,9 +199,9 @@ struct GeneralSettingsView: View {
                                 .frame(maxWidth: 240)
 
                             Menu("Presets") {
-                                ForEach(CodexModelSettings.suggestedModelNames, id: \.self) { modelName in
-                                    Button(modelName) {
-                                        codexModelOverride = modelName
+                                ForEach(codexPresetModels) { model in
+                                    Button(model.displayTitle) {
+                                        codexModelOverride = model.model
                                     }
                                 }
                             }
@@ -345,6 +354,8 @@ struct GeneralSettingsView: View {
             installedFontFamilies = NSFontManager.shared.availableFontFamilies.sorted()
             listSelection = selectedTheme
             shellManager.themeName = selectedTheme
+            codexConfigDefaults = CodexConfigLoader.loadDefaults()
+            codexMonitor.refreshAvailableModels()
         }
     }
 
