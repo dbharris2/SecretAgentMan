@@ -63,7 +63,8 @@ struct CodexSessionPanelView: View {
                 hasPendingCard: pendingInput != nil || !pendingApprovals.isEmpty,
                 fontScale: fontScale,
                 emptyStateText: "Codex session is ready. Send a message to start.",
-                groupsToolActivity: false
+                groupsToolActivity: true,
+                collapsesIndividualToolActivity: true
             ) {
                 AnyView(Group {
                     if let debugMessage, pendingInput == nil {

@@ -25,16 +25,21 @@ enum TranscriptItemKind: Equatable {
 struct TranscriptItemMetadata: Equatable {
     let toolName: String?
     let displayTitle: String?
+    /// Paths reported by a file-change tool. These remain available even when
+    /// the accompanying patch is a hunk without a diff header.
+    let filePaths: [String]
     /// Debug-only. View and reducer logic must not branch on this value.
     let providerItemType: String?
 
     init(
         toolName: String? = nil,
         displayTitle: String? = nil,
+        filePaths: [String] = [],
         providerItemType: String? = nil
     ) {
         self.toolName = toolName
         self.displayTitle = displayTitle
+        self.filePaths = filePaths
         self.providerItemType = providerItemType
     }
 }
