@@ -214,6 +214,7 @@ struct CodexAppServerMonitorTests {
             return
         }
         #expect(detail.patch.contains("+new"))
+        #expect(detail.paths == ["foo.txt"])
         #expect(detail.isRunning == false)
     }
 

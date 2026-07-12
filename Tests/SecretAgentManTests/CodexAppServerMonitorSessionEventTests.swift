@@ -39,12 +39,18 @@ struct CodexAppServerMonitorSessionEventTests {
     }
 
     @Test func mapTranscriptItemFileChangeToolBecomesToolActivity() {
-        let detail = CodexFileChangeToolDetail(patch: "diff", status: nil, isRunning: false)
+        let detail = CodexFileChangeToolDetail(
+            patch: "diff",
+            paths: ["/Users/devonharris/code/SecretAgentMan/Sources/Example.swift"],
+            status: nil,
+            isRunning: false
+        )
         var item = CodexTranscriptItem(id: "x", role: .system, text: "")
         item.tool = .fileChange(detail)
         let normalized = CodexAppServerMonitor.mapTranscriptItem(item)
         #expect(normalized.kind == .toolActivity)
         #expect(normalized.metadata?.toolName == "fileChange")
+        #expect(normalized.metadata?.filePaths == ["/Users/devonharris/code/SecretAgentMan/Sources/Example.swift"])
     }
 
     @Test func mapTranscriptItemUserAssistantSystem() {

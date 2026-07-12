@@ -175,6 +175,7 @@ struct CodexCommandToolDetail: Equatable {
 
 struct CodexFileChangeToolDetail: Equatable {
     var patch: String
+    var paths: [String] = []
     var status: String?
     var isRunning: Bool
 
@@ -292,6 +293,7 @@ extension CodexAppServerMonitor {
 
         let detail = CodexFileChangeToolDetail(
             patch: SessionRetentionPolicy.retainedToolOutput(fileChangePatchText(from: item)),
+            paths: fileChangePaths(from: item),
             status: item["status"] as? String,
             isRunning: isRunning
         )
@@ -700,6 +702,11 @@ extension CodexAppServerMonitor {
         return changes.compactMap { $0["diff"] as? String }
             .filter { !$0.isEmpty }
             .joined(separator: "\n\n")
+    }
+
+    fileprivate nonisolated static func fileChangePaths(from item: [String: Any]) -> [String] {
+        guard let changes = item["changes"] as? [[String: Any]] else { return [] }
+        return changes.compactMap { $0["path"] as? String }
     }
 
     fileprivate nonisolated static func trimmedTranscriptOutput(

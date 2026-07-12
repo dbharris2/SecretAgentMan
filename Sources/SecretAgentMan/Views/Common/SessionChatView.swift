@@ -10,6 +10,10 @@ struct SessionChatView: View {
     let fontScale: Double
     let emptyStateText: String
     var groupsToolActivity: Bool = true
+    /// Codex can emit a large patch for every individual file edit. Keep even
+    /// a one-item edit run behind a disclosure so it does not dominate the
+    /// conversation transcript.
+    var collapsesIndividualToolActivity: Bool = false
 
     @ViewBuilder let pendingCards: () -> AnyView
 
@@ -36,7 +40,11 @@ struct SessionChatView: View {
     }
 
     var body: some View {
-        let allSections = TranscriptSection.group(transcript, groupsToolActivity: groupsToolActivity)
+        let allSections = TranscriptSection.group(
+            transcript,
+            groupsToolActivity: groupsToolActivity,
+            collapsesIndividualToolActivity: collapsesIndividualToolActivity
+        )
         let displayedStart = max(0, allSections.count - visibleCount)
         let displayedSections = allSections[displayedStart...]
         let hasMoreAbove = allSections.count > visibleCount
@@ -234,7 +242,9 @@ struct SessionChatView: View {
                         .scaledFont(size: 12)
                         .foregroundStyle(.secondary)
 
-                    if !isExpanded, let summary = collapsedSystemSummary(items: items) {
+                    if !isExpanded,
+                       changedFileItemCount(in: items) == 0,
+                       let summary = collapsedSystemSummary(items: items) {
                         Text("·")
                             .scaledFont(size: 12)
                             .foregroundStyle(.tertiary)
@@ -252,15 +262,76 @@ struct SessionChatView: View {
             if isExpanded {
                 VStack(alignment: .leading, spacing: Spacing.md) {
                     ForEach(items, id: \.id) { item in
-                        SessionMarkdownText(text: item.text, fontScale: fontScale)
-                            .padding(.leading, 18)
+                        if item.metadata?.toolName == "fileChange" {
+                            fileChangeDisclosureRows(item: item)
+                        } else {
+                            SessionMarkdownText(text: item.text, fontScale: fontScale)
+                                .padding(.leading, 18)
+                        }
                     }
                 }
             }
         }
     }
 
+    @ViewBuilder
+    private func fileChangeDisclosureRows(item: SessionTranscriptItem) -> some View {
+        let paths = changedPaths(in: item)
+        if paths.isEmpty {
+            toolActivityDisclosure(item: item, path: nil)
+        } else {
+            ForEach(paths, id: \.self) { path in
+                toolActivityDisclosure(item: item, path: path)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func toolActivityDisclosure(item: SessionTranscriptItem, path: String?) -> some View {
+        let itemGroupId = "tool-\(item.id)-\(path ?? "unknown")"
+        let isExpanded = expandedGroups.contains(itemGroupId)
+
+        VStack(alignment: .leading, spacing: Spacing.sm) {
+            Button {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    if isExpanded {
+                        expandedGroups.remove(itemGroupId)
+                    } else {
+                        expandedGroups.insert(itemGroupId)
+                    }
+                }
+            } label: {
+                HStack(spacing: Spacing.md) {
+                    Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
+                        .scaledFont(size: 10)
+                        .foregroundStyle(.tertiary)
+                        .frame(width: 12)
+                    Image(systemName: "pencil")
+                        .scaledFont(size: 10)
+                        .foregroundStyle(.tertiary)
+                    Text(path.map(TranscriptFileChangePresentation.fileName(from:)) ?? "Edited file")
+                        .scaledFont(size: 12)
+                        .foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            if isExpanded {
+                SessionMarkdownText(text: item.text, fontScale: fontScale)
+                    .padding(.leading, 24)
+            }
+        }
+        .padding(.leading, 18)
+    }
+
     private func systemGroupLabel(items: [SessionTranscriptItem]) -> String {
+        let changedFileCount = max(changedPaths(in: items).count, changedFileItemCount(in: items))
+        if changedFileCount > 0 {
+            return "Edited \(changedFileCount) \(changedFileCount == 1 ? "file" : "files")"
+        }
+
         let kinds: [TranscriptItemKind] = [.toolActivity, .plan, .diffSummary, .systemMessage, .error]
         let parts = kinds.compactMap { kind -> String? in
             let count = items.count(where: { $0.kind == kind })
@@ -321,6 +392,41 @@ struct SessionChatView: View {
         let details = lines.dropFirst().filter { !$0.hasSuffix(":") }
         return (title, Array(details))
     }
+
+    private func changedPaths(in items: [SessionTranscriptItem]) -> [String] {
+        items
+            .filter { $0.metadata?.toolName == "fileChange" }
+            .flatMap { changedPaths(in: $0) }
+            .uniqued()
+    }
+
+    private func changedPaths(in item: SessionTranscriptItem) -> [String] {
+        item.metadata?.filePaths.isEmpty == false
+            ? item.metadata?.filePaths ?? []
+            : changedPaths(in: item.text)
+    }
+
+    private func changedFileItemCount(in items: [SessionTranscriptItem]) -> Int {
+        items.count { $0.metadata?.toolName == "fileChange" }
+    }
+
+    private func changedPaths(in text: String) -> [String] {
+        text
+            .split(separator: "\n")
+            .compactMap { line -> String? in
+                let value = String(line)
+                guard value.hasPrefix("+++ b/") else { return nil }
+                let path = String(value.dropFirst("+++ b/".count))
+                return path == "/dev/null" ? nil : path
+            }
+            .uniqued()
+    }
+}
+
+enum TranscriptFileChangePresentation {
+    static func fileName(from path: String) -> String {
+        path.split(separator: "/").last.map(String.init) ?? path
+    }
 }
 
 // MARK: - Transcript Grouping
@@ -343,7 +449,8 @@ private enum TranscriptSection: Identifiable {
 
     static func group(
         _ items: [SessionTranscriptItem],
-        groupsToolActivity: Bool = true
+        groupsToolActivity: Bool = true,
+        collapsesIndividualToolActivity: Bool = false
     ) -> [TranscriptSection] {
         var sections: [TranscriptSection] = []
         var systemRun: [SessionTranscriptItem] = []
@@ -351,7 +458,8 @@ private enum TranscriptSection: Identifiable {
 
         func flushSystemRun() {
             guard !systemRun.isEmpty else { return }
-            if systemRun.count == 1 {
+            if systemRun.count == 1,
+               !(collapsesIndividualToolActivity && systemRun[0].kind == .toolActivity) {
                 sections.append(.single(systemRun[0]))
             } else {
                 let groupId = "group-\(systemRun[0].id)"

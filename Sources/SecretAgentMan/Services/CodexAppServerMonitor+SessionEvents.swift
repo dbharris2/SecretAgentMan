@@ -56,7 +56,15 @@ extension CodexAppServerMonitor {
         let id = overrideId ?? item.id
         let kind = Self.transcriptItemKind(for: item)
         let toolName = item.toolName ?? Self.inferToolName(item.tool)
-        let metadata = (toolName != nil) ? TranscriptItemMetadata(toolName: toolName) : nil
+        let filePaths: [String] = if case let .fileChange(detail)? = item.tool {
+            detail.paths
+        } else {
+            []
+        }
+        let metadata = (toolName != nil) ? TranscriptItemMetadata(
+            toolName: toolName,
+            filePaths: filePaths
+        ) : nil
         return SessionTranscriptItem(
             id: id,
             kind: kind,
