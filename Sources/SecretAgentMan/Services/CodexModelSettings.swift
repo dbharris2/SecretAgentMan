@@ -14,6 +14,17 @@ struct CodexAvailableModel: Identifiable, Hashable {
         displayName.isEmpty ? CodexAvailableModel.friendlyModelName(model) : displayName
     }
 
+    func effectiveReasoningEffort(preferred: String?) -> String? {
+        guard !supportedReasoningEfforts.isEmpty else { return nil }
+        if let preferred, supportedReasoningEfforts.contains(preferred) {
+            return preferred
+        }
+        if let defaultReasoningEffort, supportedReasoningEfforts.contains(defaultReasoningEffort) {
+            return defaultReasoningEffort
+        }
+        return supportedReasoningEfforts.first
+    }
+
     static func fallback(id: String, description: String = "") -> CodexAvailableModel {
         CodexAvailableModel(
             id: id,
@@ -92,6 +103,10 @@ enum CodexModelSettings {
         effectiveModel()
     }
 
+    static var storedReasoningEffort: String? {
+        effectiveReasoningEffort()
+    }
+
     static func effectiveModel(
         userDefaults: UserDefaults = .standard,
         configDefaults: CodexConfigDefaults? = nil
@@ -102,6 +117,30 @@ enum CodexModelSettings {
 
         let defaults = configDefaults ?? CodexConfigLoader.loadDefaults()
         return normalized(defaults.modelName) ?? fallbackModelName
+    }
+
+    static func effectiveReasoningEffort(
+        userDefaults: UserDefaults = .standard,
+        configDefaults: CodexConfigDefaults? = nil
+    ) -> String? {
+        if let override = normalized(userDefaults.string(forKey: UserDefaultsKeys.codexReasoningEffort)) {
+            return override
+        }
+
+        let defaults = configDefaults ?? CodexConfigLoader.loadDefaults()
+        return normalized(defaults.reasoningEffort)
+    }
+
+    static func reasoningEffortLabel(_ effort: String) -> String {
+        switch effort {
+        case "minimal": "Minimal"
+        case "low": "Low"
+        case "medium": "Medium"
+        case "high": "High"
+        case "xhigh": "Extra High"
+        case "max": "Max"
+        default: effort.capitalized
+        }
     }
 
     static func models(from response: [String: Any], includeHidden: Bool = false) -> [CodexAvailableModel] {

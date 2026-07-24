@@ -7,6 +7,7 @@ enum UserDefaultsKeys {
     static let diffViewMode = "diffViewMode"
     static let defaultAgentFolder = "defaultAgentFolder"
     static let codexModel = "codexModel"
+    static let codexReasoningEffort = "codexReasoningEffort"
     static let codexApprovalPolicy = "codexApprovalPolicy"
     static let codexSandboxMode = "codexSandboxMode"
     static let selectedAgentId = "selectedAgentId"

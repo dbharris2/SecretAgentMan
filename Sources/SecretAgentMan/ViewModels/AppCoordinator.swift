@@ -146,6 +146,14 @@ final class AppCoordinator {
         codexMonitor.setModelName(for: agentId, modelName: normalized)
     }
 
+    func setCodexReasoningEffort(_ effort: String?) {
+        if let effort = CodexModelSettings.normalized(effort) {
+            UserDefaults.standard.set(effort, forKey: UserDefaultsKeys.codexReasoningEffort)
+        } else {
+            UserDefaults.standard.removeObject(forKey: UserDefaultsKeys.codexReasoningEffort)
+        }
+    }
+
     func refreshCodexModel(for agentId: UUID) {
         agentSessions.ensureCodexSession(for: agentId)
         codexMonitor.setModelName(for: agentId, modelName: CodexModelSettings.storedValue)

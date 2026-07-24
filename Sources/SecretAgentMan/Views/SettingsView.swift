@@ -25,6 +25,7 @@ struct GeneralSettingsView: View {
     @AppStorage(UserDefaultsKeys.claudePluginDirectory) private var claudePluginDirectory = ""
     @AppStorage(UserDefaultsKeys.defaultAgentFolder) private var defaultAgentFolder = ""
     @AppStorage(UserDefaultsKeys.codexModel) private var codexModelOverride: String?
+    @AppStorage(UserDefaultsKeys.codexReasoningEffort) private var codexReasoningEffortOverride: String?
     @AppStorage(UserDefaultsKeys.codexApprovalPolicy) private var codexApprovalPolicyOverride: String?
     @AppStorage(UserDefaultsKeys.codexSandboxMode) private var codexSandboxModeOverride: String?
     @AppStorage(UserDefaultsKeys.favoriteThemes) private var favoriteThemesJSON = "[]"
@@ -53,6 +54,16 @@ struct GeneralSettingsView: View {
             return policy
         }
         return codexConfigDefaults.approvalPolicy ?? .onRequest
+    }
+
+    private var codexReasoningEffortOptions: [String] {
+        codexPresetModels.first(where: { $0.model == effectiveCodexModelName })?.supportedReasoningEfforts ?? []
+    }
+
+    private var effectiveCodexReasoningEffort: String? {
+        let configured = CodexModelSettings.effectiveReasoningEffort(configDefaults: codexConfigDefaults)
+        return codexPresetModels.first(where: { $0.model == effectiveCodexModelName })?
+            .effectiveReasoningEffort(preferred: configured)
     }
 
     private var effectiveCodexSandboxMode: CodexSandboxMode {
@@ -213,6 +224,29 @@ struct GeneralSettingsView: View {
                         }
 
                         Text("Active model: \(effectiveCodexModelName)")
+                    }
+
+                    if let effectiveCodexReasoningEffort, !codexReasoningEffortOptions.isEmpty {
+                        VStack(alignment: .leading, spacing: Spacing.md) {
+                            HStack {
+                                Picker("Reasoning", selection: Binding(
+                                    get: { effectiveCodexReasoningEffort },
+                                    set: { codexReasoningEffortOverride = $0 }
+                                )) {
+                                    ForEach(codexReasoningEffortOptions, id: \.self) { effort in
+                                        Text(CodexModelSettings.reasoningEffortLabel(effort)).tag(effort)
+                                    }
+                                }
+                                .pickerStyle(.menu)
+
+                                Button("Use Config Default") {
+                                    codexReasoningEffortOverride = nil
+                                }
+                                .disabled(codexReasoningEffortOverride == nil)
+                            }
+
+                            Text("Controls the amount of reasoning Codex uses for new turns.")
+                        }
                     }
 
                     VStack(alignment: .leading, spacing: Spacing.md) {
