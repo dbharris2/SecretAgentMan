@@ -34,10 +34,12 @@ jobs:
           sudo mv swiftformat /usr/local/bin/
 
       - name: Run SwiftLint
-        run: swiftlint
+        run: /usr/local/bin/swiftlint
 
       - name: Run SwiftFormat
-        run: swiftformat . --lint
+        run: |
+          /usr/local/bin/swiftformat --version
+          /usr/local/bin/swiftformat . --lint
 
   build:
     runs-on: macos-26
