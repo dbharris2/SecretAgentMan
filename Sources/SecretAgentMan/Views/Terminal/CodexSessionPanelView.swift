@@ -173,6 +173,7 @@ private struct CodexComposerView: View {
     @AppStorage(UserDefaultsKeys.codexApprovalPolicy) private var rawApprovalPolicy: String?
     @AppStorage(UserDefaultsKeys.codexSandboxMode) private var rawSandboxMode: String?
     @AppStorage(UserDefaultsKeys.codexModel) private var rawModelName: String?
+    @AppStorage(UserDefaultsKeys.codexReasoningEffort) private var rawReasoningEffort: String?
     @State private var configDefaults = CodexConfigLoader.loadDefaults()
 
     private var currentApprovalPolicy: CodexApprovalPolicy {
@@ -208,6 +209,15 @@ private struct CodexComposerView: View {
 
     private var modelPickerModelsByName: [String: CodexAvailableModel] {
         Dictionary(uniqueKeysWithValues: modelPickerModels.map { ($0.model, $0) })
+    }
+
+    private var reasoningEffortOptions: [String] {
+        modelPickerModelsByName[currentRequestedModelName]?.supportedReasoningEfforts ?? []
+    }
+
+    private var currentReasoningEffort: String? {
+        let configured = CodexModelSettings.effectiveReasoningEffort(configDefaults: configDefaults)
+        return modelPickerModelsByName[currentRequestedModelName]?.effectiveReasoningEffort(preferred: configured)
     }
 
     private func modelLabel(_ modelName: String) -> String {
@@ -261,6 +271,19 @@ private struct CodexComposerView: View {
                         coordinator.setCodexModel(for: agent.id, modelName: modelName)
                     }
                 )
+                if let currentReasoningEffort, !reasoningEffortOptions.isEmpty {
+                    ComposerModePickerButton(
+                        title: "Reasoning",
+                        modes: reasoningEffortOptions,
+                        currentMode: currentReasoningEffort,
+                        label: CodexModelSettings.reasoningEffortLabel,
+                        shortcutKey: "r",
+                        shortcutModifiers: [.command, .shift],
+                        shortcutLabel: "⌘⇧R"
+                    ) { effort in
+                        coordinator.setCodexReasoningEffort(effort)
+                    }
+                }
                 ComposerModePickerButton(
                     title: "Mode",
                     modes: CodexCollaborationMode.allCases,
@@ -302,6 +325,9 @@ private struct CodexComposerView: View {
         .onChange(of: rawModelName) { _, _ in
             configDefaults = CodexConfigLoader.loadDefaults()
             coordinator.refreshCodexModel(for: agent.id)
+        }
+        .onChange(of: rawReasoningEffort) { _, _ in
+            configDefaults = CodexConfigLoader.loadDefaults()
         }
         .task {
             coordinator.codexMonitor.refreshAvailableModels()

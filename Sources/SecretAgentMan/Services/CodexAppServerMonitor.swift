@@ -21,6 +21,7 @@ final class CodexAppServerMonitor {
     private(set) var debugMessages: [UUID: String] = [:]
     private(set) var availableModels: [CodexAvailableModel] = CodexModelSettings.fallbackModels
 
+    @ObservationIgnored private let modelCatalog = CodexModelCatalog(models: CodexModelSettings.fallbackModels)
     @ObservationIgnored private var observers: [UUID: Observer] = [:]
     @ObservationIgnored private var modelDiscovery: CodexModelDiscovery?
     @ObservationIgnored private var modelDiscoveryID: UUID?
@@ -76,7 +77,7 @@ final class CodexAppServerMonitor {
     }
 
     private func makeObserver(for agent: Agent) -> Observer {
-        Observer(agent: agent) { [weak self] id, state in
+        Observer(agent: agent, modelCatalog: modelCatalog) { [weak self] id, state in
             Task { @MainActor in
                 self?.handleStateChange(for: id, state: state)
             }
@@ -120,12 +121,17 @@ final class CodexAppServerMonitor {
             }
         } onAvailableModels: { [weak self] _, models in
             Task { @MainActor in
-                guard !models.isEmpty else { return }
-                self?.availableModels = models
+                self?.updateAvailableModels(models)
             }
         } onActiveToolChanged: { [weak self] id, name in
             Task { @MainActor in self?.applyActiveTool(name, for: id) }
         }
+    }
+
+    private func updateAvailableModels(_ models: [CodexAvailableModel]) {
+        guard !models.isEmpty else { return }
+        modelCatalog.replace(models)
+        availableModels = models
     }
 
     func handleStateChange(for agentId: UUID, state: AgentState) {
@@ -296,9 +302,7 @@ final class CodexAppServerMonitor {
                 guard let self, self.modelDiscoveryID == discoveryID else { return }
                 self.modelDiscovery = nil
                 self.modelDiscoveryID = nil
-                if !models.isEmpty {
-                    self.availableModels = models
-                }
+                self.updateAvailableModels(models)
             }
         }
         modelDiscovery = discovery
@@ -437,15 +441,47 @@ final class CodexAppServerMonitor {
         }
     }
 
-    nonisolated static func collaborationModePayload(mode: CodexCollaborationMode, modelName: String) -> [String: Any] {
-        [
+    nonisolated static func collaborationModePayload(
+        mode: CodexCollaborationMode,
+        modelName: String,
+        reasoningEffort: String?,
+        availableModel: CodexAvailableModel? = nil
+    ) -> [String: Any] {
+        let supportedReasoningEffort = availableModel?.effectiveReasoningEffort(preferred: reasoningEffort)
+        return [
             "mode": mode.rawValue,
             "settings": [
                 "model": modelName,
-                "reasoning_effort": NSNull(),
+                "reasoning_effort": supportedReasoningEffort.map { $0 as Any } ?? NSNull(),
                 "developer_instructions": NSNull(),
             ],
         ]
+    }
+}
+
+final class CodexModelCatalog: @unchecked Sendable {
+    private let lock = NSLock()
+    private var modelsByName: [String: CodexAvailableModel]
+
+    init(models: [CodexAvailableModel]) {
+        modelsByName = Self.index(models)
+    }
+
+    func replace(_ models: [CodexAvailableModel]) {
+        guard !models.isEmpty else { return }
+        lock.lock()
+        modelsByName = Self.index(models)
+        lock.unlock()
+    }
+
+    func model(named name: String) -> CodexAvailableModel? {
+        lock.lock()
+        defer { lock.unlock() }
+        return modelsByName[name]
+    }
+
+    private static func index(_ models: [CodexAvailableModel]) -> [String: CodexAvailableModel] {
+        models.reduce(into: [:]) { $0[$1.model] = $1 }
     }
 }
 
@@ -500,7 +536,7 @@ private final class Observer: @unchecked Sendable {
     private var sessionFilePath: String?
     private var requestedModelName = CodexModelSettings.storedValue
     private var reportedModelName: String?
-    private var availableModelsByName: [String: CodexAvailableModel] = [:]
+    private let modelCatalog: CodexModelCatalog
     private var collaborationMode: CodexCollaborationMode = .default
     private var approvalPolicy: CodexApprovalPolicy = .storedValue
     private var sandboxMode: CodexSandboxMode = .storedValue
@@ -511,6 +547,7 @@ private final class Observer: @unchecked Sendable {
 
     init(
         agent: Agent,
+        modelCatalog: CodexModelCatalog,
         onStateChange: @escaping (UUID, AgentState) -> Void,
         onSessionReady: @escaping (UUID, String) -> Void,
         onTranscriptItem: @escaping (UUID, CodexTranscriptItem) -> Void,
@@ -527,6 +564,7 @@ private final class Observer: @unchecked Sendable {
         onActiveToolChanged: @escaping (UUID, String?) -> Void
     ) {
         self.agent = agent
+        self.modelCatalog = modelCatalog
         self.onStateChange = onStateChange
         self.onSessionReady = onSessionReady
         self.onTranscriptItem = onTranscriptItem
@@ -1051,14 +1089,17 @@ private extension Observer {
 
     func publishAvailableModels(_ models: [CodexAvailableModel]) {
         guard !models.isEmpty else { return }
-        availableModelsByName = Dictionary(uniqueKeysWithValues: models.map { ($0.model, $0) })
+        modelCatalog.replace(models)
         onAvailableModels(agent.id, models)
     }
 
     func collaborationModePayload() -> [String: Any] {
-        CodexAppServerMonitor.collaborationModePayload(
+        let model = modelCatalog.model(named: requestedModelName)
+        return CodexAppServerMonitor.collaborationModePayload(
             mode: collaborationMode,
-            modelName: requestedModelName
+            modelName: requestedModelName,
+            reasoningEffort: CodexModelSettings.storedReasoningEffort,
+            availableModel: model
         )
     }
 
@@ -1067,7 +1108,7 @@ private extension Observer {
         onModelInfo(
             agent.id,
             displayRawModelName,
-            availableModelsByName[displayRawModelName]?.displayTitle
+            modelCatalog.model(named: displayRawModelName)?.displayTitle
                 ?? CodexAppServerMonitor.friendlyModelName(displayRawModelName),
             collaborationMode,
             contextPercent

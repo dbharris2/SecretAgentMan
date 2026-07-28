@@ -2,6 +2,7 @@ import Foundation
 
 struct CodexConfigDefaults {
     let modelName: String?
+    let reasoningEffort: String?
     let approvalPolicy: CodexApprovalPolicy?
     let sandboxMode: CodexSandboxMode?
 }
@@ -10,10 +11,11 @@ enum CodexConfigLoader {
     static func loadDefaults(from configURL: URL? = nil) -> CodexConfigDefaults {
         let url = configURL ?? URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent(".codex/config.toml")
         guard let content = try? String(contentsOf: url, encoding: .utf8) else {
-            return CodexConfigDefaults(modelName: nil, approvalPolicy: nil, sandboxMode: nil)
+            return CodexConfigDefaults(modelName: nil, reasoningEffort: nil, approvalPolicy: nil, sandboxMode: nil)
         }
 
         var modelName: String?
+        var reasoningEffort: String?
         var approvalPolicy: CodexApprovalPolicy?
         var sandboxMode: CodexSandboxMode?
 
@@ -24,6 +26,11 @@ enum CodexConfigLoader {
             if modelName == nil,
                let value = tomlStringValue(for: "model", in: line) {
                 modelName = CodexModelSettings.normalized(value)
+            }
+
+            if reasoningEffort == nil,
+               let value = tomlStringValue(for: "model_reasoning_effort", in: line) {
+                reasoningEffort = CodexModelSettings.normalized(value)
             }
 
             if approvalPolicy == nil,
@@ -37,7 +44,12 @@ enum CodexConfigLoader {
             }
         }
 
-        return CodexConfigDefaults(modelName: modelName, approvalPolicy: approvalPolicy, sandboxMode: sandboxMode)
+        return CodexConfigDefaults(
+            modelName: modelName,
+            reasoningEffort: reasoningEffort,
+            approvalPolicy: approvalPolicy,
+            sandboxMode: sandboxMode
+        )
     }
 
     private static func strippedTomlLine(_ line: String) -> String {

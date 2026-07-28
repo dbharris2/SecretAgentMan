@@ -7,6 +7,7 @@ struct CodexModelSettingsTests {
     func configLoaderParsesModelDefault() throws {
         let url = try writeConfig("""
         model = "gpt-5.5"
+        model_reasoning_effort = "high"
         approval_policy = "never"
         sandbox_mode = "read-only"
         """)
@@ -15,6 +16,7 @@ struct CodexModelSettingsTests {
         let defaults = CodexConfigLoader.loadDefaults(from: url)
 
         #expect(defaults.modelName == "gpt-5.5")
+        #expect(defaults.reasoningEffort == "high")
         #expect(defaults.approvalPolicy == .never)
         #expect(defaults.sandboxMode == .readOnly)
     }
@@ -28,6 +30,7 @@ struct CodexModelSettingsTests {
 
         let configDefaults = CodexConfigDefaults(
             modelName: "gpt-5.4",
+            reasoningEffort: nil,
             approvalPolicy: nil,
             sandboxMode: nil
         )
@@ -56,12 +59,22 @@ struct CodexModelSettingsTests {
 
         #expect(CodexModelSettings.effectiveModel(
             userDefaults: userDefaults,
-            configDefaults: CodexConfigDefaults(modelName: "gpt-5.4", approvalPolicy: nil, sandboxMode: nil)
+            configDefaults: CodexConfigDefaults(
+                modelName: "gpt-5.4",
+                reasoningEffort: nil,
+                approvalPolicy: nil,
+                sandboxMode: nil
+            )
         ) == "gpt-5.4")
 
         #expect(CodexModelSettings.effectiveModel(
             userDefaults: userDefaults,
-            configDefaults: CodexConfigDefaults(modelName: nil, approvalPolicy: nil, sandboxMode: nil)
+            configDefaults: CodexConfigDefaults(
+                modelName: nil,
+                reasoningEffort: nil,
+                approvalPolicy: nil,
+                sandboxMode: nil
+            )
         ) == CodexModelSettings.fallbackModelName)
     }
 
@@ -163,13 +176,131 @@ struct CodexModelSettingsTests {
 
     @Test
     func collaborationModePayloadUsesRequestedModel() throws {
+        let model = CodexAvailableModel(
+            id: "gpt-5.5",
+            model: "gpt-5.5",
+            displayName: "",
+            description: "",
+            hidden: false,
+            isDefault: false,
+            supportedReasoningEfforts: ["medium", "xhigh"],
+            defaultReasoningEffort: "xhigh"
+        )
         let payload = CodexAppServerMonitor.collaborationModePayload(
             mode: .default,
-            modelName: "gpt-5.5"
+            modelName: "gpt-5.5",
+            reasoningEffort: "xhigh",
+            availableModel: model
         )
         let settings = try #require(payload["settings"] as? [String: Any])
 
         #expect(settings["model"] as? String == "gpt-5.5")
+        #expect(settings["reasoning_effort"] as? String == "xhigh")
+    }
+
+    @Test
+    func collaborationModePayloadUsesModelDefaultForUnsupportedReasoningOverride() throws {
+        let model = CodexAvailableModel(
+            id: "gpt-5.5",
+            model: "gpt-5.5",
+            displayName: "",
+            description: "",
+            hidden: false,
+            isDefault: false,
+            supportedReasoningEfforts: ["medium", "high"],
+            defaultReasoningEffort: "high"
+        )
+        let payload = CodexAppServerMonitor.collaborationModePayload(
+            mode: .default,
+            modelName: "gpt-5.5",
+            reasoningEffort: "xhigh",
+            availableModel: model
+        )
+        let settings = try #require(payload["settings"] as? [String: Any])
+
+        #expect(settings["reasoning_effort"] as? String == "high")
+    }
+
+    @Test
+    func collaborationModePayloadOmitsReasoningUntilModelCapabilitiesAreKnown() throws {
+        let payload = CodexAppServerMonitor.collaborationModePayload(
+            mode: .default,
+            modelName: "gpt-5.5",
+            reasoningEffort: "xhigh"
+        )
+        let settings = try #require(payload["settings"] as? [String: Any])
+
+        #expect(settings["reasoning_effort"] is NSNull)
+    }
+
+    @Test
+    func effectiveReasoningEffortUsesUserOverrideBeforeConfigDefault() throws {
+        let suiteName = "CodexModelSettingsTests.reasoning.\(UUID().uuidString)"
+        let userDefaults = try #require(UserDefaults(suiteName: suiteName))
+        userDefaults.removePersistentDomain(forName: suiteName)
+        defer { userDefaults.removePersistentDomain(forName: suiteName) }
+
+        let configDefaults = CodexConfigDefaults(
+            modelName: nil,
+            reasoningEffort: "medium",
+            approvalPolicy: nil,
+            sandboxMode: nil
+        )
+        #expect(CodexModelSettings.effectiveReasoningEffort(
+            userDefaults: userDefaults,
+            configDefaults: configDefaults
+        ) == "medium")
+
+        userDefaults.set("xhigh", forKey: UserDefaultsKeys.codexReasoningEffort)
+        #expect(CodexModelSettings.effectiveReasoningEffort(
+            userDefaults: userDefaults,
+            configDefaults: configDefaults
+        ) == "xhigh")
+
+        userDefaults.removeObject(forKey: UserDefaultsKeys.codexReasoningEffort)
+        #expect(CodexModelSettings.effectiveReasoningEffort(
+            userDefaults: userDefaults,
+            configDefaults: configDefaults
+        ) == "medium")
+    }
+
+    @Test
+    func modelFallsBackToItsDefaultForUnsupportedReasoningOverride() {
+        let model = CodexAvailableModel(
+            id: "model",
+            model: "model",
+            displayName: "",
+            description: "",
+            hidden: false,
+            isDefault: false,
+            supportedReasoningEfforts: ["medium", "high"],
+            defaultReasoningEffort: "high"
+        )
+
+        #expect(model.effectiveReasoningEffort(preferred: "xhigh") == "high")
+        #expect(model.effectiveReasoningEffort(preferred: "medium") == "medium")
+    }
+
+    @Test
+    func modelCatalogSharesCapabilityUpdatesAcrossConsumers() {
+        let catalog = CodexModelCatalog(models: [CodexAvailableModel.fallback(id: "model")])
+        let firstConsumer = catalog
+        let secondConsumer = catalog
+        let updatedModel = CodexAvailableModel(
+            id: "model",
+            model: "model",
+            displayName: "",
+            description: "",
+            hidden: false,
+            isDefault: false,
+            supportedReasoningEfforts: ["medium", "high"],
+            defaultReasoningEffort: "high"
+        )
+
+        catalog.replace([updatedModel])
+
+        #expect(firstConsumer.model(named: "model")?.effectiveReasoningEffort(preferred: "xhigh") == "high")
+        #expect(secondConsumer.model(named: "model")?.effectiveReasoningEffort(preferred: "medium") == "medium")
     }
 
     private func writeConfig(_ toml: String) throws -> URL {
